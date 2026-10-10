@@ -417,6 +417,8 @@ curl -s -X POST localhost:8085/api/registrar/registration-certificates -H 'Conte
   -d "{\"identifier\": \"$ID\", \"intendedUseIdentifier\": \"$USE\"}" > identity-check.json
 ```
 
+The CLI does both steps in one: `eudi wallet registrar verifiers add --to $ID --purpose "Checks who you are before a diploma is issued" --dcql pid.json` prints the `verifier_info` value.
+
 The answer has `verifierInfo` like a verifier's. Sign the request as in [step 4 of the verifier](#4-send-a-request-to-the-wallet), with the issuer's key and access certificate:
 
 ```bash

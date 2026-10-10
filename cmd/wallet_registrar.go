@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -59,7 +60,61 @@ func (f *partyFlags) add(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.rp.Country, "country", "", "Country code (default the identifier's country)")
 	cmd.Flags().StringVar(&f.supportURI, "support-uri", "", "Support contact URL (default a placeholder page on the wallet)")
 	cmd.Flags().StringVar(&f.serviceID, "service-id", "", "Service identifier (the organizational unit in access certificates)")
-	_ = cmd.MarkFlagRequired("name")
+}
+
+// check requires --name for a new registration. --to adds to an existing
+// registration, so the party flags don't apply then.
+func (f *partyFlags) check(cmd *cobra.Command, to string) error {
+	if to == "" {
+		if f.rp.TradeName == "" {
+			return fmt.Errorf(`required flag(s) "name" not set`)
+		}
+		return nil
+	}
+	for _, name := range []string{"name", "identifier", "legal-name", "country", "support-uri", "service-id"} {
+		if cmd.Flags().Changed(name) {
+			return fmt.Errorf("--to adds to an existing registration, so it takes no --%s", name)
+		}
+	}
+	return nil
+}
+
+// registeredParty finds a registration by its identifier.
+func registeredParty(svc walletService, identifier string) (registrar.WalletRelyingParty, error) {
+	records, err := svc.RegistrarRecords()
+	if err != nil {
+		return registrar.WalletRelyingParty{}, err
+	}
+	for _, rp := range records {
+		if slices.ContainsFunc(rp.Identifier, func(id registrar.Identifier) bool { return id.Identifier == strings.TrimSpace(identifier) }) {
+			return rp, nil
+		}
+	}
+	return registrar.WalletRelyingParty{}, fmt.Errorf("relying party %s is not registered", identifier)
+}
+
+// extendParty saves a changed registration and issues the certificate for the
+// change. If the certificate fails, it restores the registration.
+func extendParty(svc walletService, before, changed registrar.WalletRelyingParty, request func(registrar.WalletRelyingParty) registrar.RegistrationCertificateRequest) (registrar.WalletRelyingParty, *registrar.RegistrationCertificateResult, error) {
+	stored, err := svc.UpdateRelyingParty(changed)
+	if err != nil {
+		return registrar.WalletRelyingParty{}, nil, err
+	}
+	result, err := svc.RegistrationCertificate(request(stored))
+	if err != nil {
+		if _, restoreErr := svc.UpdateRelyingParty(before); restoreErr != nil {
+			return registrar.WalletRelyingParty{}, nil, fmt.Errorf("%w (restoring the registration: %w)", err, restoreErr)
+		}
+		return registrar.WalletRelyingParty{}, nil, err
+	}
+	return stored, result, nil
+}
+
+// extensionResult is the --json document of add --to.
+type extensionResult struct {
+	RelyingParty registrar.WalletRelyingParty             `json:"relyingParty"`
+	IntendedUse  string                                   `json:"intendedUse,omitempty"`
+	Registration *registrar.RegistrationCertificateResult `json:"registration"`
 }
 
 func (f *partyFlags) register(service registrar.WalletRelyingPartyService) (registrar.WalletRelyingParty, error) {
@@ -191,7 +246,7 @@ both roles.`,
 
 func walletVerifiersAddCmd() *cobra.Command {
 	var party partyFlags
-	var purpose, privacy, dcqlIn string
+	var purpose, privacy, dcqlIn, to string
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Register a verifier with an intended use",
@@ -200,13 +255,25 @@ identifier when --identifier is empty.
 
 The intended use lists the credentials and claims of a DCQL query. Requests
 with that query then pass the over-asking check of --arf (ARF RPRC_21).
-Run registration-cert to get its registration certificate.`,
-		Example: `  eudi wallet registrar verifiers add --name "Example Shop" --purpose "Age check" --dcql query.json`,
-		Args:    cobra.NoArgs,
+Run registration-cert to get its registration certificate.
+
+--to adds the intended use to a registered relying party instead, such as an
+issuer that asks for a PID before it issues. It stays one registration with
+both roles. The command issues the verifier registration certificate and
+prints its verifier_info.`,
+		Example: `  eudi wallet registrar verifiers add --name "Example Shop" --purpose "Age check" --dcql query.json
+  eudi wallet registrar verifiers add --to NTRNL-1A2B3C4D5E6F7A8B --purpose "Identity check before issuance" --dcql pid.json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := party.check(cmd, to); err != nil {
+				return err
+			}
 			use, err := intendedUseFromFlags(purpose, privacy, dcqlIn)
 			if err != nil {
 				return err
+			}
+			if to != "" {
+				return addIntendedUse(cmd, to, use)
 			}
 			stored, err := party.register(registrar.WalletRelyingPartyService{IntendedUses: []registrar.IntendedUse{use}})
 			if err != nil {
@@ -225,6 +292,7 @@ Run registration-cert to get its registration certificate.`,
 	cmd.Flags().StringVar(&purpose, "purpose", "", "Purpose of the intended use (shown in the consent dialog, required)")
 	cmd.Flags().StringVar(&dcqlIn, "dcql", "", "DCQL query with the credentials and claims to register (file, JSON or '-' for stdin, required)")
 	cmd.Flags().StringVar(&privacy, "privacy-policy", "", "Privacy policy URL of the intended use (default a placeholder page on the wallet)")
+	cmd.Flags().StringVar(&to, "to", "", "Identifier of a registered relying party to add the intended use to")
 	_ = cmd.MarkFlagRequired("purpose")
 	_ = cmd.MarkFlagRequired("dcql")
 	_ = cmd.MarkFlagFilename("dcql", "json")
@@ -233,6 +301,7 @@ Run registration-cert to get its registration certificate.`,
 
 func walletIssuersAddCmd() *cobra.Command {
 	var party partyFlags
+	var to string
 	var categories []string
 	var attestations []string
 	cmd := &cobra.Command{
@@ -245,12 +314,20 @@ Each --attestation adds one attestation type (ARF RPRC_15). The registrar
 gives the issuer the entitlement of each type's category in the catalogue
 (ETSI TS 119 475 Annex A.2). --category sets the entitlements instead. Run
 registration-cert to get the registration certificate. It comes inside an
-issuer_info value for your issuer metadata.`,
+issuer_info value for your issuer metadata.
+
+--to adds the attestation types to a registered verifier instead, so it issues
+as well. It stays one registration with both roles. The command issues the
+issuer registration certificate and prints its issuer_info.`,
 		Example: `  eudi wallet registrar issuers add --name "Example University" --attestation dc+sd-jwt:urn:example:diploma:1
   eudi wallet registrar issuers add --name "Example PID Provider" --attestation dc+sd-jwt:urn:eudi:pid:1 --attestation mso_mdoc:eu.europa.ec.eudi.pid.1
-  eudi wallet registrar issuers add --name "Example Bank" --category qeaa --attestation dc+sd-jwt:urn:example:account:1`,
+  eudi wallet registrar issuers add --name "Example Bank" --category qeaa --attestation dc+sd-jwt:urn:example:account:1
+  eudi wallet registrar issuers add --to NTRNL-1A2B3C4D5E6F7A8B --attestation dc+sd-jwt:urn:example:ticket:1`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := party.check(cmd, to); err != nil {
+				return err
+			}
 			var entitlements []string
 			for _, category := range categories {
 				if err := credtemplate.CheckCategory(category); err != nil || category == "" {
@@ -261,6 +338,9 @@ issuer_info value for your issuer metadata.`,
 			provided, err := providedAttestations(attestations)
 			if err != nil {
 				return err
+			}
+			if to != "" {
+				return addProvidedAttestations(cmd, to, entitlements, provided)
 			}
 			stored, err := party.register(registrar.WalletRelyingPartyService{Entitlements: entitlements, ProvidesAttestations: provided})
 			if err != nil {
@@ -278,9 +358,90 @@ issuer_info value for your issuer metadata.`,
 	party.add(cmd)
 	cmd.Flags().StringArrayVar(&categories, "category", nil, "Credential category whose provider entitlement the issuer gets: pid, qeaa, pub-eaa or eaa (repeatable, default the categories of the attestation types in the catalogue)")
 	cmd.Flags().StringArrayVar(&attestations, "attestation", nil, "Attestation type as format:type, such as dc+sd-jwt:urn:eudi:pid:1 or mso_mdoc:eu.europa.ec.eudi.pid.1 (repeatable, required)")
+	cmd.Flags().StringVar(&to, "to", "", "Identifier of a registered verifier to add the attestation types to")
 	_ = cmd.RegisterFlagCompletionFunc("category", staticCompletion(credtemplate.Categories...))
 	_ = cmd.MarkFlagRequired("attestation")
 	return cmd
+}
+
+// addIntendedUse adds an intended use to a registration and issues its
+// verifier registration certificate.
+func addIntendedUse(cmd *cobra.Command, identifier string, use registrar.IntendedUse) error {
+	svc, err := managedWallet()
+	if err != nil {
+		return err
+	}
+	before, err := registeredParty(svc, identifier)
+	if err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	for _, service := range before.Services {
+		for _, existing := range service.IntendedUses {
+			known[existing.IntendedUseIdentifier] = true
+		}
+	}
+	changed := cloneParty(before)
+	changed.Services[0].IntendedUses = append(changed.Services[0].IntendedUses, use)
+	var added string
+	stored, result, err := extendParty(svc, before, changed, func(stored registrar.WalletRelyingParty) registrar.RegistrationCertificateRequest {
+		for _, u := range stored.Services[0].IntendedUses {
+			if !known[u.IntendedUseIdentifier] {
+				added = u.IntendedUseIdentifier
+			}
+		}
+		return registrar.RegistrationCertificateRequest{Identifier: identifier, ServiceIdentifier: stored.Services[0].ServiceIdentifier, IntendedUseIdentifier: added}
+	})
+	if err != nil {
+		return err
+	}
+	printResult(extensionResult{RelyingParty: stored, IntendedUse: added, Registration: result}, func() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Added intended use %s to %s (%s)\n", added, stored.TradeName, identifier)
+		fmt.Fprintln(cmd.OutOrStdout(), result.VerifierInfo)
+	})
+	return nil
+}
+
+// addProvidedAttestations makes a registered verifier an issuer as well and
+// issues its issuer registration certificate.
+func addProvidedAttestations(cmd *cobra.Command, identifier string, entitlements []string, provided []registrar.ProvidedAttestation) error {
+	svc, err := managedWallet()
+	if err != nil {
+		return err
+	}
+	before, err := registeredParty(svc, identifier)
+	if err != nil {
+		return err
+	}
+	if slices.ContainsFunc(before.Services, func(s registrar.WalletRelyingPartyService) bool { return len(s.ProvidesAttestations) > 0 }) {
+		return fmt.Errorf("%s is registered as an issuer already. Run registration-cert --provider for its certificate", identifier)
+	}
+	changed := cloneParty(before)
+	changed.Services[0].ProvidesAttestations = provided
+	changed.Services[0].Entitlements = append(changed.Services[0].Entitlements, entitlements...)
+	stored, result, err := extendParty(svc, before, changed, func(stored registrar.WalletRelyingParty) registrar.RegistrationCertificateRequest {
+		return registrar.RegistrationCertificateRequest{Identifier: identifier, ServiceIdentifier: stored.Services[0].ServiceIdentifier}
+	})
+	if err != nil {
+		return err
+	}
+	printResult(extensionResult{RelyingParty: stored, Registration: result}, func() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Added the attestation types to %s (%s)\n", stored.TradeName, identifier)
+		fmt.Fprintln(cmd.OutOrStdout(), result.IssuerInfo)
+	})
+	return nil
+}
+
+// cloneParty copies a registration so a change leaves the original intact, and
+// makes sure it has a service to change.
+func cloneParty(rp registrar.WalletRelyingParty) registrar.WalletRelyingParty {
+	var clone registrar.WalletRelyingParty
+	raw, _ := json.Marshal(rp)
+	_ = json.Unmarshal(raw, &clone)
+	if len(clone.Services) == 0 {
+		clone.Services = []registrar.WalletRelyingPartyService{{}}
+	}
+	return clone
 }
 
 // providedAttestations parses format:type values. The type of an SD-JWT VC is
@@ -381,12 +542,13 @@ with --json.`,
 
 func walletRegistrationCertCmd() *cobra.Command {
 	var req registrar.RegistrationCertificateRequest
-	var output string
-	var provider bool
+	var provider, renew, jwt bool
 	cmd := &cobra.Command{
 		Use:   "registration-cert",
-		Short: "Issue a registration certificate for an intended use or an issuer service",
-		Long: `Signs a registration certificate (ETSI TS 119 475, typ rc-wrp+jwt).
+		Short: "Print the registration certificate of an intended use or an issuer service",
+		Long: `Prints the current registration certificate (ETSI TS 119 475, typ rc-wrp+jwt).
+If there is none, or it has expired, the registrar issues one. --new issues a
+new certificate and revokes the current one.
 
 For a verifier it certifies an intended use and prints the certificate inside a
 verifier_info value (OpenID4VP 1.0 §5.1). A verifier puts that value in its
@@ -399,23 +561,17 @@ types (ARF RPRC_13) and prints an issuer_info value (ETSI TS 119 472-3
 §4.2.3). An issuer puts that value in its Credential Issuer Metadata. With --arf
 the wallet checks the value before requesting a credential.
 
-An intended use or a service has one valid certificate at a time. Issuing a new
-one revokes the previous one.
-
-Without --intended-use it certifies the relying party's only intended use, or
-its only provider service. --provider certifies the provider service of
---service-id. --print certificate prints the bare registration certificate
-instead, and --json prints both.`,
+Without --intended-use it uses the relying party's only intended use, or its
+only provider service. --provider selects the provider service of
+--service-id. --jwt prints the bare registration certificate instead, and
+--json prints both.`,
 		Example: `  eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B
-  eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --print certificate | eudi decode
+  eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --jwt | eudi decode
   eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --intended-use 3f2a9c1e7b6d4a50 --json
-  eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --service-id diplomas --provider`,
+  eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --service-id diplomas --provider --new`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if output != "info" && output != "certificate" {
-				return fmt.Errorf("--print takes info or certificate, not %q", output)
-			}
 			if provider && req.IntendedUseIdentifier != "" {
-				return fmt.Errorf("--provider certifies a service, so it takes no --intended-use")
+				return fmt.Errorf("--provider selects a service, so it takes no --intended-use")
 			}
 			svc, err := managedWallet()
 			if err != nil {
@@ -426,13 +582,23 @@ instead, and --json prints both.`,
 					return err
 				}
 			}
-			result, err := svc.RegistrationCertificate(req)
-			if err != nil {
-				return err
+			var result *registrar.RegistrationCertificateResult
+			if !renew {
+				if result, err = currentRegistrationCertificate(cmd, svc, req); err != nil {
+					return err
+				}
+				if result != nil && req.Validity != "" {
+					return fmt.Errorf("--validity applies to a new certificate, so add --new")
+				}
+			}
+			if result == nil {
+				if result, err = svc.RegistrationCertificate(req); err != nil {
+					return err
+				}
 			}
 			printResult(result, func() {
 				switch {
-				case output == "certificate":
+				case jwt:
 					fmt.Fprintln(cmd.OutOrStdout(), result.RegistrationCertificate)
 				case result.IssuerInfo != "":
 					fmt.Fprintln(cmd.OutOrStdout(), result.IssuerInfo)
@@ -445,13 +611,40 @@ instead, and --json prints both.`,
 	}
 	cmd.Flags().StringVar(&req.Identifier, "identifier", "", "Identifier of the registered relying party (required)")
 	cmd.Flags().StringVar(&req.ServiceIdentifier, "service-id", "", "Service of the relying party (default the service of the intended use)")
-	cmd.Flags().StringVar(&req.IntendedUseIdentifier, "intended-use", "", "Intended use to certify (default the only one)")
-	cmd.Flags().BoolVar(&provider, "provider", false, "Certify the attestation provider service instead of an intended use")
-	cmd.Flags().StringVar(&req.Validity, "validity", "", "Validity as a Go duration, at most 8760h (default 4320h)")
-	cmd.Flags().StringVar(&output, "print", "info", "What to print: info (verifier_info or issuer_info) or certificate (the bare JWT)")
-	_ = cmd.RegisterFlagCompletionFunc("print", staticCompletion("info", "certificate"))
+	cmd.Flags().StringVar(&req.IntendedUseIdentifier, "intended-use", "", "Intended use of the certificate (default the only one)")
+	cmd.Flags().BoolVar(&provider, "provider", false, "Use the attestation provider service instead of an intended use")
+	cmd.Flags().BoolVar(&renew, "new", false, "Issue a new certificate and revoke the current one")
+	cmd.Flags().BoolVar(&jwt, "jwt", false, "Print the bare registration certificate instead of verifier_info or issuer_info")
+	cmd.Flags().StringVar(&req.Validity, "validity", "", "Validity of a new certificate as a Go duration, at most 8760h (default 4320h)")
 	_ = cmd.MarkFlagRequired("identifier")
 	return cmd
+}
+
+// currentRegistrationCertificate returns the stored certificate of an intended
+// use or, without one, of the provider service. It returns nil when there is
+// no valid one.
+func currentRegistrationCertificate(cmd *cobra.Command, svc walletService, req registrar.RegistrationCertificateRequest) (*registrar.RegistrationCertificateResult, error) {
+	views, err := svc.RegistrationCertificateViews(req.Identifier)
+	if err != nil {
+		return nil, err
+	}
+	var found *registrar.RegistrationStatusView
+	for i, v := range views {
+		matches := v.IntendedUse == req.IntendedUseIdentifier
+		if req.IntendedUseIdentifier == "" {
+			matches = v.IntendedUse == "" && (req.ServiceIdentifier == "" || v.Service == req.ServiceIdentifier)
+		}
+		if matches && !v.Superseded && v.Certificate != "" && v.Expires > time.Now().Unix() {
+			found = &views[i]
+		}
+	}
+	if found == nil {
+		return nil, nil
+	}
+	if found.Revoked {
+		fmt.Fprintln(cmd.ErrOrStderr(), "The certificate is revoked. Run activate to make it valid again, or --new for a new one.")
+	}
+	return &registrar.RegistrationCertificateResult{RegistrationCertificate: found.Certificate, VerifierInfo: found.VerifierInfo, IssuerInfo: found.IssuerInfo}, nil
 }
 
 // onlyCertificateTarget returns the only intended use of the relying party, or

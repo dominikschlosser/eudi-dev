@@ -198,6 +198,24 @@ func (c *Client) RegisterRelyingParty(rp, out any) error {
 	return c.do(http.MethodPost, "/api/registrar/wrp", rp, out)
 }
 
+// UpdateRelyingParty replaces a registration (TS05 v1.5 PUT /wrp) and decodes
+// the stored record into out.
+func (c *Client) UpdateRelyingParty(rp, out any) error {
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := c.do(http.MethodPut, "/api/registrar/wrp", rp, &envelope); err != nil {
+		return err
+	}
+	return json.Unmarshal(envelope.Data, out)
+}
+
+// RegistrationCertificateViews lists the registration certificates of a
+// relying party with the value of each stored certificate.
+func (c *Client) RegistrationCertificateViews(identifier string, out any) error {
+	return c.do(http.MethodGet, "/api/registrar/registration-certificates?identifier="+url.QueryEscape(identifier), nil, out)
+}
+
 // SetRegistrationCertificateStatus revokes or reactivates the registration
 // certificates of a relying party or one of its intended uses and decodes the
 // count into out.

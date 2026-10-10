@@ -54,6 +54,8 @@ type walletService interface {
 	AccessCertificate(req registrar.AccessCertificateRequest) (*registrar.AccessCertificateResult, error)
 	RegisterRelyingParty(rp registrar.WalletRelyingParty) (registrar.WalletRelyingParty, error)
 	RegistrarRecords() ([]registrar.WalletRelyingParty, error)
+	UpdateRelyingParty(rp registrar.WalletRelyingParty) (registrar.WalletRelyingParty, error)
+	RegistrationCertificateViews(identifier string) ([]registrar.RegistrationStatusView, error)
 	SetRegistrationCertificatesRevoked(identifier string, scope registrar.RegistrationScope, revoked bool) (int, error)
 	DeleteRelyingParty(identifier string) error
 	CatalogAttestations() ([]registrar.CatalogAttestation, error)
@@ -174,6 +176,18 @@ func (r *remoteWallet) Certificate(kind, certFormat string, _ walletCertOptions)
 func (r *remoteWallet) RegisterRelyingParty(rp registrar.WalletRelyingParty) (registrar.WalletRelyingParty, error) {
 	var out registrar.WalletRelyingParty
 	err := r.c.RegisterRelyingParty(rp, &out)
+	return out, err
+}
+
+func (r *remoteWallet) UpdateRelyingParty(rp registrar.WalletRelyingParty) (registrar.WalletRelyingParty, error) {
+	var out registrar.WalletRelyingParty
+	err := r.c.UpdateRelyingParty(rp, &out)
+	return out, err
+}
+
+func (r *remoteWallet) RegistrationCertificateViews(identifier string) ([]registrar.RegistrationStatusView, error) {
+	var out []registrar.RegistrationStatusView
+	err := r.c.RegistrationCertificateViews(identifier, &out)
 	return out, err
 }
 
@@ -578,6 +592,29 @@ func (l *localWallet) change(apply func(*wallet.Wallet) error) error {
 		return fmt.Errorf("saving wallet: %w", err)
 	}
 	return nil
+}
+
+func (l *localWallet) UpdateRelyingParty(rp registrar.WalletRelyingParty) (registrar.WalletRelyingParty, error) {
+	w, store, err := l.load()
+	if err != nil {
+		return registrar.WalletRelyingParty{}, err
+	}
+	stored, err := w.Registrar().UpdateRelyingParty(rp)
+	if err != nil {
+		return registrar.WalletRelyingParty{}, err
+	}
+	if err := store.Save(w); err != nil {
+		return registrar.WalletRelyingParty{}, fmt.Errorf("saving wallet: %w", err)
+	}
+	return stored, nil
+}
+
+func (l *localWallet) RegistrationCertificateViews(identifier string) ([]registrar.RegistrationStatusView, error) {
+	w, _, err := l.load()
+	if err != nil {
+		return nil, err
+	}
+	return w.Registrar().RegistrationCertificateViews(identifier), nil
 }
 
 func (l *localWallet) RegistrarRecords() ([]registrar.WalletRelyingParty, error) {

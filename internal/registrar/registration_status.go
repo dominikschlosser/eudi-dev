@@ -206,6 +206,39 @@ func (r *Registrar) RegistrationCertificateStatuses(identifier string) []Registr
 	return statuses
 }
 
+// RegistrationStatusView adds the ready-to-use value of a stored certificate:
+// verifier_info for an intended use, issuer_info for a service.
+type RegistrationStatusView struct {
+	RegistrationStatus
+	VerifierInfo string `json:"verifierInfo,omitempty"`
+	IssuerInfo   string `json:"issuerInfo,omitempty"`
+}
+
+// RegistrationCertificateViews lists the status list entries like
+// RegistrationCertificateStatuses, with the value of each stored certificate.
+func (r *Registrar) RegistrationCertificateViews(identifier string) []RegistrationStatusView {
+	statuses := r.RegistrationCertificateStatuses(identifier)
+	views := make([]RegistrationStatusView, 0, len(statuses))
+	for _, s := range statuses {
+		view := RegistrationStatusView{RegistrationStatus: s}
+		switch {
+		case s.Certificate == "":
+		case s.IntendedUse != "":
+			view.VerifierInfo = VerifierInfoValue(s.Certificate)
+		default:
+			if rp, ok := r.RelyingParty(s.Identifier); ok {
+				for _, service := range rp.Services {
+					if service.ServiceIdentifier == s.Service {
+						view.IssuerInfo, _ = IssuerInfoValue(RegistrarDatasetFor(rp, service), s.Certificate)
+					}
+				}
+			}
+		}
+		views = append(views, view)
+	}
+	return views
+}
+
 // RegistrationStatusList is the one-bit status list of the issued registration
 // certificates. A set bit marks a revoked certificate.
 func (r *Registrar) RegistrationStatusList() []byte {

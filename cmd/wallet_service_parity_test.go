@@ -360,6 +360,29 @@ func parityCases() []parityCase {
 			}
 			return false
 		}},
+		{method: "UpdateRelyingParty", observe: func(t *testing.T, s walletService) any {
+			rp := registerParityRelyingParty(t, s)
+			rp.Services[0].ProvidesAttestations = []registrar.ProvidedAttestation{{Format: "dc+sd-jwt", Type: "urn:example:parity:1"}}
+			stored, err := s.UpdateRelyingParty(rp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return []any{len(stored.Services[0].IntendedUses), stored.Services[0].ProvidesAttestations[0].Type}
+		}},
+		{method: "RegistrationCertificateViews", observe: func(t *testing.T, s walletService) any {
+			rp := registerParityRelyingParty(t, s)
+			result, err := s.RegistrationCertificate(registrar.RegistrationCertificateRequest{
+				Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			views, err := s.RegistrationCertificateViews(rp.Identifier[0].Identifier)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return []any{len(views), views[0].VerifierInfo == result.VerifierInfo}
+		}},
 		{method: "RegistrationCertificate", observe: func(t *testing.T, s walletService) any {
 			rp := registerParityRelyingParty(t, s)
 			result, err := s.RegistrationCertificate(registrar.RegistrationCertificateRequest{

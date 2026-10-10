@@ -294,36 +294,8 @@ func (h *Server) handleSetRegistrationCertificateStatus(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, map[string]int{"changed": changed})
 }
 
-// registrationStatusView adds the ready-to-use value of a stored certificate:
-// verifier_info for an intended use, issuer_info for a service.
-type registrationStatusView struct {
-	RegistrationStatus
-	VerifierInfo string `json:"verifierInfo,omitempty"`
-	IssuerInfo   string `json:"issuerInfo,omitempty"`
-}
-
 func (h *Server) handleRegistrationCertificateStatuses(w http.ResponseWriter, r *http.Request) {
-	reg := h.Registrar()
-	statuses := reg.RegistrationCertificateStatuses(r.URL.Query().Get("identifier"))
-	views := make([]registrationStatusView, 0, len(statuses))
-	for _, s := range statuses {
-		view := registrationStatusView{RegistrationStatus: s}
-		switch {
-		case s.Certificate == "":
-		case s.IntendedUse != "":
-			view.VerifierInfo = VerifierInfoValue(s.Certificate)
-		default:
-			if rp, ok := reg.RelyingParty(s.Identifier); ok {
-				for _, service := range rp.Services {
-					if service.ServiceIdentifier == s.Service {
-						view.IssuerInfo, _ = IssuerInfoValue(RegistrarDatasetFor(rp, service), s.Certificate)
-					}
-				}
-			}
-		}
-		views = append(views, view)
-	}
-	writeJSON(w, http.StatusOK, views)
+	writeJSON(w, http.StatusOK, h.Registrar().RegistrationCertificateViews(r.URL.Query().Get("identifier")))
 }
 
 // handleRegistrationStatusList serves the status list of the registration

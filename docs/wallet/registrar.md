@@ -241,12 +241,15 @@ The CLI uses the same registrar. If a wallet is running, it calls the API. Other
 ```bash
 eudi wallet registrar verifiers add --name "Example Shop" --purpose "Age check" --dcql query.json
 eudi wallet registrar issuers add --name "Example University" --attestation dc+sd-jwt:urn:example:diploma:1
+eudi wallet registrar verifiers add --to NTRNL-1A2B3C4D5E6F7A8B --purpose "Identity check before issuance" --dcql pid.json
+eudi wallet registrar issuers add --to NTRNL-0F1E2D3C4B5A6978 --attestation dc+sd-jwt:urn:example:ticket:1
 eudi wallet registrar verifiers
 eudi wallet registrar issuers
 openssl ecparam -name prime256v1 -genkey -noout -out verifier.key
 openssl req -new -key verifier.key -subj "/" -out verifier.csr
 eudi wallet registrar access-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --csr verifier.csr --dns shop.example > verifier.pem
 eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B
+eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --new
 eudi wallet registrar revoke --identifier NTRNL-1A2B3C4D5E6F7A8B
 eudi wallet registrar activate --identifier NTRNL-1A2B3C4D5E6F7A8B
 eudi wallet registrar verifiers rm NTRNL-1A2B3C4D5E6F7A8B
@@ -257,15 +260,18 @@ eudi wallet catalog rm 3f1c3b0d-71ad-496b-9f94-68198503e761
 
 `verifiers` and `issuers` list the registered verifiers and issuers, and so do `verifiers list` and `issuers list`. `add` registers one and prints the assigned identifier, and `rm` deletes a registration and revokes its certificates. `verifiers add` takes the credentials and claims of a DCQL query, so requests with that query pass the over-asking check (ARF RPRC_21). `issuers add` takes the attestation types and optionally the categories of its entitlements.
 
+With `--to`, both add the other role to a registered relying party instead. `verifiers add --to` adds an intended use, so an issuer can ask for a PID before it issues. `issuers add --to` adds attestation types, so a verifier issues as well. Either way it stays one registration with both roles. The command issues the new registration certificate and prints its `verifier_info` or `issuer_info` value.
+
 `access-cert` prints the PEM certificate and writes the client identifiers to stderr: `x509_hash` for the certificate and `x509_san_dns` for each `--dns` name (OpenID4VP 1.0 §5.9.3). In the certificate, the name is the common name (ETSI TS 119 411-8 GEN-6.1.1-04, ARF RPRC_06), the legal name is the organization and the service identifier is the organizational unit. It also contains the identifier as `organizationIdentifier`, the country, the support URL in the subject alternative name and the certificate policy `0.4.0.194118.1.2` (ETSI TS 119 411-8 §5.3). The key must be P-256, because HAIP 1.0 requires ES256 for request objects.
 
-`registration-cert` prints the `verifier_info` value for an intended use, or the `issuer_info` value for an issuer service. Both contain the certificate. Without `--intended-use` it certifies the only intended use, or the only issuer service. A relying party with both needs `--intended-use`, or `--service-id` with `--provider`. `--print certificate` prints the bare certificate instead, for example to pipe it into `eudi decode`. `--json` prints the value and the bare certificate.
+`registration-cert` prints the current certificate in a `verifier_info` value for an intended use, or in an `issuer_info` value for an issuer service. If there is none, or it has expired, the registrar issues one. `--new` issues a new certificate and revokes the current one. Without `--intended-use` it uses the only intended use, or the only issuer service. A relying party with both needs `--intended-use`, or `--service-id` with `--provider`. `--jwt` prints the bare certificate instead, for example to pipe it into `eudi decode`. `--json` prints the value and the bare certificate.
 
 `catalog` and `catalog list` list the catalogue, `catalog add` adds an attestation type and prints its schema URIs, and `catalog rm` deletes one you added.
 
 | Command | Flag | Default | Description |
 |---------|------|---------|-------------|
-| `verifiers add`, `issuers add` | `--name` | None | Trade name (required) |
+| `verifiers add`, `issuers add` | `--name` | None | Trade name (required without `--to`) |
+| `verifiers add`, `issuers add` | `--to` | None | Identifier of a registered relying party to add the role to |
 | `verifiers add`, `issuers add` | `--identifier` | Assigned | `organizationIdentifier` |
 | `verifiers add`, `issuers add` | `--legal-name` | `--name` | Legal name |
 | `verifiers add`, `issuers add` | `--country` | The identifier's country (`NL` for an assigned identifier) | Country code |
@@ -283,10 +289,11 @@ eudi wallet catalog rm 3f1c3b0d-71ad-496b-9f94-68198503e761
 | `access-cert` | `--validity` | `8760h` | Validity as a Go duration, at most `8760h` |
 | `registration-cert` | `--identifier` | None | Registered identifier (required) |
 | `registration-cert` | `--service-id` | Any service | Service of the intended use, or the issuer service |
-| `registration-cert` | `--intended-use` | The only one | Intended use to certify |
-| `registration-cert` | `--provider` | `false` | Certify the issuer service instead of an intended use |
-| `registration-cert` | `--print` | `info` | `info` (`verifier_info` or `issuer_info`) or `certificate` (the bare JWT) |
-| `registration-cert` | `--validity` | `4320h` | Validity as a Go duration, at most `8760h` (ETSI TS 119 475 GEN-5.2.4-08) |
+| `registration-cert` | `--intended-use` | The only one | Intended use of the certificate |
+| `registration-cert` | `--provider` | `false` | Use the issuer service instead of an intended use |
+| `registration-cert` | `--new` | `false` | Issue a new certificate and revoke the current one |
+| `registration-cert` | `--jwt` | `false` | Print the bare certificate instead of `verifier_info` or `issuer_info` |
+| `registration-cert` | `--validity` | `4320h` | Validity of a new certificate as a Go duration, at most `8760h` (ETSI TS 119 475 GEN-5.2.4-08) |
 | `revoke`, `activate` | `--identifier` | None | Registered identifier (required) |
 | `revoke`, `activate` | `--intended-use` | All | Only change the certificates of this intended use |
 | `revoke`, `activate` | `--service-id` | All | Only change the certificates of this service |

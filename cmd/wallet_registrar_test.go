@@ -63,8 +63,12 @@ func TestWalletRegistrarRegistersAndCertifies(t *testing.T) {
 	if out := registrationCert(); json.Unmarshal([]byte(out), &verifierInfo) != nil || verifierInfo[0]["format"] != "registration_cert" {
 		t.Fatalf("output %q, want the verifier_info value alone", out)
 	}
-	if out := registrationCert("--print", "certificate"); strings.Count(out, ".") != 2 || strings.ContainsAny(out, "\n[") {
-		t.Fatalf("output %q, want the bare certificate", out)
+	first := registrationCert()
+	if out := registrationCert("--jwt"); strings.Count(out, ".") != 2 || strings.ContainsAny(out, "\n[") || !strings.Contains(first, out) {
+		t.Fatalf("output %q, want the bare current certificate", out)
+	}
+	if out := registrationCert("--new"); out == first {
+		t.Fatalf("--new printed the current certificate %q, want a new one", out)
 	}
 }
 
@@ -100,7 +104,7 @@ func TestRegistrarRegistersAnIssuer(t *testing.T) {
 		len(issuerInfo) != 2 || issuerInfo[0]["format"] != "registrar_dataset" || issuerInfo[1]["format"] != "registration_cert" {
 		t.Fatalf("output %q, want the issuer_info value", out)
 	}
-	if out := run("registration-cert", "--identifier", identifier[1], "--service-id", "diplomas", "--provider", "--print", "certificate"); strings.Count(out, ".") != 2 {
+	if out := run("registration-cert", "--identifier", identifier[1], "--service-id", "diplomas", "--provider", "--jwt"); strings.Count(out, ".") != 2 {
 		t.Fatalf("output %q, want the bare certificate", out)
 	}
 	if out := run("revoke", "--identifier", identifier[1], "--service-id", "diplomas"); !strings.Contains(out, "Revoked 1 registration certificate") {
@@ -140,5 +144,56 @@ func TestTheIssuerCommandChecksItsFlags(t *testing.T) {
 		if err := rootCmd.Execute(); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: got %v, want %q", tc.args, err, tc.want)
 		}
+	}
+}
+
+// One registration holds both roles (CIR (EU) 2025/848 Annex I). --to adds the
+// other role and issues its certificate, and registration-cert prints it again.
+func TestRegistrarAddsTheOtherRoleToARegistration(t *testing.T) {
+	resetRemoteTestState(t)
+	t.Cleanup(func() { resetFlags(rootCmd); rootCmd.SetOut(nil) })
+	dir := walletDir
+	dcql := filepath.Join(t.TempDir(), "query.json")
+	if err := os.WriteFile(dcql, []byte(`{"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["urn:eudi:pid:1"]},"claims":[{"path":["given_name"]}]}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) string {
+		t.Helper()
+		resetFlags(rootCmd)
+		walletDir = dir
+		buf := new(bytes.Buffer)
+		rootCmd.SetOut(buf)
+		var err error
+		out := captureStdout(t, func() {
+			rootCmd.SetArgs(append([]string{"wallet", "registrar"}, args...))
+			err = rootCmd.Execute()
+		})
+		if err != nil {
+			t.Fatalf("wallet registrar %v: %v", args, err)
+		}
+		return strings.TrimSpace(out + buf.String())
+	}
+	out := run("verifiers", "add", "--name", "Ticket Shop", "--purpose", "Ticket check", "--dcql", dcql)
+	identifier := regexp.MustCompile(`as (NTR[A-Z]{2}-[0-9A-F]+)`).FindStringSubmatch(out)[1]
+
+	var issuerInfo []map[string]any
+	issued := run("issuers", "add", "--to", identifier, "--attestation", "dc+sd-jwt:urn:example:ticket:1")
+	if json.Unmarshal([]byte(issued), &issuerInfo) != nil || len(issuerInfo) != 2 || issuerInfo[1]["format"] != "registration_cert" {
+		t.Fatalf("issuers add --to printed %q, want the issuer_info value", issued)
+	}
+	if current := run("registration-cert", "--identifier", identifier, "--provider"); current != issued {
+		t.Errorf("registration-cert printed %q, want the issued %q", current, issued)
+	}
+
+	var verifierInfo []map[string]string
+	added := run("verifiers", "add", "--to", identifier, "--purpose", "Identity check", "--dcql", dcql)
+	if json.Unmarshal([]byte(added), &verifierInfo) != nil || verifierInfo[0]["format"] != "registration_cert" {
+		t.Fatalf("verifiers add --to printed %q, want the verifier_info value", added)
+	}
+	if out := run("issuers"); !strings.Contains(out, identifier) {
+		t.Errorf("issuers %q, want the party", out)
+	}
+	if out := run("verifiers"); !strings.Contains(out, identifier) {
+		t.Errorf("verifiers %q, want the party", out)
 	}
 }
