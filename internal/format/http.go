@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/dominikschlosser/eudi-dev/v3/internal/netaddr"
 )
 
 type policyTransport struct {
@@ -56,7 +58,7 @@ func NewHTTPClient(verify func() bool, roots *x509.CertPool, proxy ProxyFunc) *h
 }
 
 func (t *policyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	local := isLocalFetchHost(req.URL.Hostname())
+	local := netaddr.IsLocal(req.URL.Hostname())
 	verify := !local
 	if t.verify != nil {
 		verify = t.verify()

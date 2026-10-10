@@ -539,7 +539,7 @@ eudi wallet serve --https-proxy http://proxy.corp:3128 --no-proxy .corp.example
 
 A flag overrides the matching variable. Lowercase variable names work too. Proxy URLs can use `http`, `https`, `socks5` or `socks5h`. A URL without a scheme, such as `proxy.corp:3128`, uses `http`.
 
-Requests to `localhost`, `127.0.0.1`, `::1` and `host.docker.internal` always bypass the proxy.
+Requests to local hosts always bypass the proxy. A local host is `localhost`, any address in `127.0.0.0/8`, `::1` or `host.docker.internal`, in any letter case.
 
 The wallet verifies the issuer or verifier certificate through the proxy too. If your proxy intercepts TLS traffic, add its CA with `--tls-ca` or disable verification with `--tls-verify=false`.
 

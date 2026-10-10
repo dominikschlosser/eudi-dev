@@ -15,11 +15,14 @@
 package format
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 )
 
 func TestNewProxyFunc(t *testing.T) {
@@ -93,6 +96,27 @@ func TestHTTPClientUsesProxyForRemoteHostsOnly(t *testing.T) {
 	}
 	if len(proxied) != 0 {
 		t.Fatal("local request went through the proxy")
+	}
+}
+
+func TestHTTPClientSendsEveryLocalHostDirect(t *testing.T) {
+	var proxied []string
+	proxy := func(r *http.Request) (*url.URL, error) {
+		proxied = append(proxied, r.URL.Host)
+		return nil, errors.New("proxy consulted")
+	}
+	client := NewHTTPClient(nil, nil, proxy)
+	defer client.CloseIdleConnections()
+	for _, host := range []string{"LOCALHOST:1", "127.0.0.2:1", "[::1]:1", "Host.Docker.Internal:1"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+"/", nil)
+		if resp, err := client.Do(req); err == nil {
+			resp.Body.Close()
+		}
+		cancel()
+	}
+	if len(proxied) != 0 {
+		t.Fatalf("local hosts went to the proxy: %v", proxied)
 	}
 }
 

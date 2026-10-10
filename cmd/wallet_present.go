@@ -31,6 +31,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/netaddr"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/output"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
@@ -307,14 +308,6 @@ func walletPortFromBaseURL(raw string) int {
 	return port
 }
 
-func isLocalWalletIssuerURL(raw string) bool {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return false
-	}
-	return u.Scheme == "https" && (u.Hostname() == "localhost" || u.Hostname() == "host.docker.internal")
-}
-
 // A Docker hostname may be intentional. Only realign localhost issuer URLs to the
 // registered listener.
 func isLocalhostIssuerURL(raw string) bool {
@@ -322,7 +315,7 @@ func isLocalhostIssuerURL(raw string) bool {
 	if err != nil {
 		return false
 	}
-	return u.Scheme == "https" && u.Hostname() == "localhost"
+	return u.Scheme == "https" && netaddr.IsLoopback(u.Hostname())
 }
 
 func effectivePresentationPort(port int) int {

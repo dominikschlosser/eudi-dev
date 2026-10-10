@@ -233,23 +233,29 @@ PORT="8091"
 	}
 }
 
+func TestLocalHostHelpersShareOneDefinition(t *testing.T) {
+	for _, hostport := range []string{"LOCALHOST:8085", "127.0.0.2:8085", "[::1]:8085", "host.docker.internal:8085"} {
+		if !isLocalTestHostPort(hostport) {
+			t.Errorf("isLocalTestHostPort(%q) = false, want true", hostport)
+		}
+	}
+	if isLocalTestHostPort("issuer.example:443") {
+		t.Error("a public host counts as local")
+	}
+	if !isLocalhostIssuerURL("https://LOCALHOST:8086") {
+		t.Error("an uppercase localhost issuer URL is not realigned")
+	}
+	if isLocalhostIssuerURL("https://host.docker.internal:8086") {
+		t.Error("a Docker host issuer URL is realigned")
+	}
+}
+
 func TestWalletPortFromBaseURL(t *testing.T) {
 	if got, want := walletPortFromBaseURL("http://host.docker.internal:8091/wallet"), 8091; got != want {
 		t.Fatalf("walletPortFromBaseURL() = %d, want %d", got, want)
 	}
 	if got := walletPortFromBaseURL("https://wallet-test.ngrok.dev"); got != 0 {
 		t.Fatalf("walletPortFromBaseURL(no port) = %d, want 0", got)
-	}
-}
-
-func TestIsLocalWalletIssuerURL(t *testing.T) {
-	for _, raw := range []string{"https://localhost:8092", "https://host.docker.internal:8092"} {
-		if !isLocalWalletIssuerURL(raw) {
-			t.Fatalf("isLocalWalletIssuerURL(%q) = false, want true", raw)
-		}
-	}
-	if isLocalWalletIssuerURL("https://wallet-test.ngrok.dev") {
-		t.Fatal("public issuer URL should not be considered local")
 	}
 }
 

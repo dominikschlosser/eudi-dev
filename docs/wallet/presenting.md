@@ -130,7 +130,7 @@ In `--mode strict` a non-compliant request is refused with HTTP 400. `POST /api/
 
 For **issuance**, HAIP §6.1.1 checks every received credential. That covers every issuance flow and every copy of a batch. An SD-JWT VC must include its issuer signing certificate and chain in `x5c`, without the trust anchor. The signing certificate must not be self-signed.
 
-The credential issuer must use HTTPS, with a loopback exception. Authorization code flows also require the authorization server to support that grant and offer PAR when using the authorization endpoint.
+The credential issuer must use HTTPS. Plain HTTP is allowed on a local host: `localhost`, any address in `127.0.0.0/8`, `::1` or `host.docker.internal`. Authorization code flows also require the authorization server to support that grant and offer PAR when using the authorization endpoint.
 
 PKCE and DPoP metadata is checked when present. A server advertising PKCE without `S256`, or DPoP without `ES256`, violates the profile. Omitted metadata is accepted because the referenced OAuth specifications make these fields optional and FAPI 2.0 constrains server behavior. Client authentication metadata is not checked.
 

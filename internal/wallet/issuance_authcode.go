@@ -32,6 +32,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/netaddr"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 )
 
@@ -1974,17 +1975,7 @@ func canUseInteractiveAuthorizationCallback(w *Wallet, redirectURI string) bool 
 }
 
 func sameLoopbackHost(a, b string) bool {
-	a = strings.TrimSpace(strings.ToLower(a))
-	b = strings.TrimSpace(strings.ToLower(b))
-	if a == b {
-		return true
-	}
-	loopback := map[string]bool{
-		"localhost": true,
-		"127.0.0.1": true,
-		"::1":       true,
-	}
-	return loopback[a] && loopback[b]
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b)) || netaddr.IsLoopback(a) && netaddr.IsLoopback(b)
 }
 
 func truncateBody(body string) string {

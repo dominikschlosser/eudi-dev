@@ -26,6 +26,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/v3/internal/netaddr"
 )
 
 // DefaultRemoteTimeout stops an unresponsive issuer or verifier from stalling a flow.
@@ -71,11 +73,9 @@ func newLocalPolicyTransport() *http.Transport {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: dialControl}
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		conn, err := dialer.DialContext(ctx, network, addr)
-		if err != nil {
-			if port, ok := strings.CutPrefix(addr, "host.docker.internal:"); ok {
-				if conn2, err2 := dialer.DialContext(ctx, network, "localhost:"+port); err2 == nil {
-					return conn2, nil
-				}
+		if host, port, splitErr := net.SplitHostPort(addr); err != nil && splitErr == nil && strings.EqualFold(host, netaddr.DockerHost) {
+			if conn2, err2 := dialer.DialContext(ctx, network, net.JoinHostPort("localhost", port)); err2 == nil {
+				return conn2, nil
 			}
 		}
 		return conn, err
@@ -90,15 +90,6 @@ func HTTPClientForURL(rawURL string, clients ...*http.Client) *http.Client {
 		return clients[0]
 	}
 	return httpClient
-}
-
-func isLocalFetchHost(host string) bool {
-	switch strings.ToLower(strings.TrimSpace(host)) {
-	case "localhost", "127.0.0.1", "::1", "host.docker.internal":
-		return true
-	default:
-		return false
-	}
 }
 
 func readStdin() (string, error) {

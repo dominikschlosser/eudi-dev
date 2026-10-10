@@ -35,6 +35,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/demorp"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/imprint"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/netaddr"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/news"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/serverlog"
@@ -302,11 +303,7 @@ func isLocalTestHostPort(hostport string) bool {
 	if h, _, err := net.SplitHostPort(hostport); err == nil {
 		host = h
 	}
-	switch host {
-	case "localhost", "127.0.0.1", "::1", "host.docker.internal":
-		return true
-	}
-	return false
+	return netaddr.IsLocal(host)
 }
 
 func runningInDocker() bool {

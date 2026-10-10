@@ -16,11 +16,11 @@ package wallet
 
 import (
 	"fmt"
-	"net/netip"
 	"net/url"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jsonutil"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/netaddr"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
@@ -310,25 +310,13 @@ func supportsAuthorizationCodeFlow(oauthMeta map[string]any) bool {
 }
 
 // secureIssuerOrigin reports whether an issuer URL is acceptable transport.
-// https always is. Plain http is allowed only on loopback, the way OAuth
-// treats a local development host.
+// https always is. Plain http is allowed only on a local development host.
 func secureIssuerOrigin(issuer string) bool {
 	parsed, err := url.Parse(issuer)
 	if err != nil {
 		return false
 	}
-	if parsed.Scheme == "https" {
-		return true
-	}
-	if parsed.Scheme != "http" {
-		return false
-	}
-	host := parsed.Hostname()
-	if host == "localhost" {
-		return true
-	}
-	addr, err := netip.ParseAddr(host)
-	return err == nil && addr.IsLoopback()
+	return parsed.Scheme == "https" || parsed.Scheme == "http" && netaddr.IsLocal(parsed.Hostname())
 }
 
 func metadataListContains(meta map[string]any, key, want string) bool {
