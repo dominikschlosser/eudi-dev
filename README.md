@@ -81,17 +81,17 @@ The Go module path is `github.com/dominikschlosser/eudi-dev/v3`. Each major vers
 
 ### Beta releases
 
-A new major version comes out as betas first, for example `v3.0.0-beta.1`. A beta is a prerelease on GitHub. You only get it when you ask for it:
+A beta, such as `v3.0.0-beta.1`, is a version for testing ahead of its release. It is a prerelease on GitHub. You only get it when you ask for it:
 
 | Method | Command |
 |---|---|
 | Online | <https://preview.eudi-test.dev> runs the newest beta |
 | Docker | `docker pull ghcr.io/dominikschlosser/eudi-dev:beta` gets the newest release, betas included. For repeatable runs, pin the exact tag, such as `:v3.0.0-beta.1` |
-| Go | `go install github.com/dominikschlosser/eudi-dev/v3@v3.0.0-beta.1`. Go treats `/v3` as its own module, so until 3.0.0 is out, `/v3@latest` installs the newest beta too |
+| Go | `go install github.com/dominikschlosser/eudi-dev/v3@v3.0.0-beta.1`. `@latest` installs a beta only while its major version has no stable release |
 | Binaries | Download them from the prerelease on [GitHub Releases](https://github.com/dominikschlosser/eudi-dev/releases). The binaries aren't signed, so macOS blocks one you downloaded in the browser. Run `xattr -d com.apple.quarantine eudi` to unblock it |
 | Java tests | [testcontainers-eudi](https://github.com/dominikschlosser/testcontainers-eudi) publishes a matching beta, such as `3.0.0-beta.1`. Maven only uses it when you set that version |
 
-Homebrew and the `latest` Docker tag stay on the newest stable release. If you installed with Homebrew, try a beta with Docker or `go install`. Once the final release is out, `beta` points to it, so beta testers end up on the stable version.
+Homebrew and the `latest` Docker tag stay on the newest stable release. If you installed with Homebrew, try a beta with Docker or `go install`. When a stable release is the newest version, `beta` points to it too.
 
 ## Commands
 

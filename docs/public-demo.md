@@ -222,20 +222,20 @@ The script pulls the image before switching, so an unpublished tag leaves the ru
 
 Use the preview host to try a release before deploying it to the main site. It runs a second wallet with its own volume and release, behind the same Caddy at a separate subdomain. Point the subdomain at the same host and add its URL to `deploy.env`.
 
-On eudi-test.dev the preview host is <https://preview.eudi-test.dev>. It runs the newest beta, so people can try the next major version before it is stable.
+On eudi-test.dev the preview host is <https://preview.eudi-test.dev>. It runs the Docker tag `beta`, the newest release including betas.
 
 ```bash
 # in deploy.env, alongside DEMO_HOST and DEMO_URL:
 PREVIEW_URL=https://preview.demo.example
 
-./deploy.sh preview          # run the newest beta on the preview host, main site untouched
+./deploy.sh preview          # run the newest release, betas included, on the preview host
 ./deploy.sh preview v2.1.0   # run a given release there instead
 ./deploy.sh verify           # checks the main site and the preview host
 ./deploy.sh promote          # move the main site to the release the preview runs
 ./deploy.sh logs preview     # follow the preview wallet log
 ```
 
-`preview` copies the stack, prepares a separate data volume and saves `PREVIEW_TAG` in the host's `.env`. It starts the preview wallet and reloads Caddy without stopping the main site. Without a tag, it uses `beta`. That image tag always points to the newest release, betas included. Run `./deploy.sh preview` again after a new beta to pull it.
+`preview` copies the stack, prepares a separate data volume and saves `PREVIEW_TAG` in the host's `.env`. It starts the preview wallet and reloads Caddy without stopping the main site. Without a tag, it uses `beta`. That image tag always points to the newest release, betas included. Run `./deploy.sh preview` again after a new release to pull it.
 
 `promote` reads the preview's reported version and deploys that exact image to the main site. It records the previous release for `rollback`.
 

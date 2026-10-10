@@ -72,7 +72,8 @@ services:
       - wallet-data:/home/app/.eudi-dev
       - ./imprint.html:/config/imprint.html:ro
 
-  # The preview host runs the newest beta with its own URL and data volume.
+  # The preview host runs the newest release, betas included, with its own URL
+  # and data volume.
   wallet-preview:
     image: ghcr.io/dominikschlosser/eudi-dev:${PREVIEW_TAG:-beta}
     restart: unless-stopped

@@ -96,4 +96,8 @@ A `v*` tag starts the release workflow. It builds the binaries and the Docker im
 | Older line, such as `v2.6.3` after 3.0.0 | regular | `v2.6.3` | unchanged |
 | Prerelease, such as `v3.0.0-beta.1` | prerelease | `v3.0.0-beta.1`, and `beta` while it is the newest version | unchanged |
 
-A major version lives on its own branch, such as `3.0.0`, until its betas are done. `main` keeps the stable line meanwhile.
+### Branches
+
+`main` holds the next version. After 3.0.0, `main` collects the changes for 3.1.0 until `v3.1.0` is tagged on it. Betas are tags on `main` too.
+
+A patch for a released version goes on a branch from its tag. For 3.0.1, branch `3.0.x` from `v3.0.0`, fix it there and tag `v3.0.1` on that branch. Then merge the fix back to `main`.
