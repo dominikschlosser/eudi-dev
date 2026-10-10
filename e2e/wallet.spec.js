@@ -2351,7 +2351,6 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-parties-link").click();
     await page.locator("#registrar-filter-issuers").check();
     await expect(page.locator(card + "-role-issuer")).toBeVisible();
-    await expect(page.locator(card + "-add-use")).toHaveCount(0);
     await expect(page.locator(service + "-entitlement")).toHaveText("QEAA provider");
     await expect(page.locator(service + "-attestation-0 .registrar-credential-type")).toHaveText("org.example.diploma.1");
     await expect(page.locator(service + "-attestation-0 .registrar-credential-meta")).toHaveText("mso_mdoc");
@@ -2367,6 +2366,40 @@ test.describe("Registrar", () => {
 
     await page.locator(card + "-delete").click();
     await expect(page.locator(card)).toHaveCount(0);
+  });
+
+  test("an issuer adds an intended use to ask for a PID before it issues", async ({ page }) => {
+    const { body } = await jsonPost(`${WALLET_URL}/api/registrar/wrp`, {
+      tradeName: "Checking University",
+      services: [{
+        serviceIdentifier: "diplomas",
+        entitlements: ["https://uri.etsi.org/19475/Entitlement/QEAA_Provider"],
+        providesAttestations: [{ format: "dc+sd-jwt", type: "urn:example:diploma:1" }],
+      }],
+    });
+    const identifier = body.identifier[0].identifier;
+    const card = "#registrar-party-" + identifier;
+
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await page.locator(card + "-add-use").click();
+    await expect(page.locator("#registrar-title")).toContainText("Checking University");
+    await page.locator("#registrar-purpose").fill("Checks who you are before a diploma is issued");
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-submit")).toHaveText("✓ Added");
+    await expect(page.locator("#registrar-verifier-info")).toHaveValue(/registration_cert/);
+
+    await page.locator("#registrar-close").click();
+    await expect(page.locator(card + "-role-issuer")).toBeVisible();
+    await expect(page.locator(card + "-role-verifier")).toBeVisible();
+    await expect(page.locator(card + ' [id^="' + card.slice(1) + '-use-"][id$="-purpose"]')).toHaveText("Checks who you are before a diploma is issued");
+    // One registration holds both roles (CIR (EU) 2025/848 Annex I).
+    const signed = await (await fetch(`${WALLET_URL}/api/registrar/wrp/${identifier}`)).text();
+    const stored = JSON.parse(Buffer.from(signed.split(".")[1], "base64url").toString()).data;
+    expect(stored.services).toHaveLength(1);
+    expect(stored.services[0].providesAttestations).toEqual([{ format: "dc+sd-jwt", type: "urn:example:diploma:1" }]);
+    expect(stored.services[0].entitlements).toContain("https://uri.etsi.org/19475/Entitlement/Service_Provider");
   });
 
   test("the attestation catalogue lists the PID types and adds an attestation", async ({ page }) => {

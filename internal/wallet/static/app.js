@@ -3583,7 +3583,7 @@
         '<div class="registrar-party-head" id="' + prefix + '-head">' +
           '<span class="registrar-party-name" id="' + prefix + '-name">' + escHtml(rp.tradeName || '') + '</span>' +
           '<span class="registrar-party-actions" id="' + prefix + '-actions">' +
-            (relyingPartyRoles(rp).includes('verifier') ? '<button type="button" class="btn btn-sm" id="' + prefix + '-add-use" title="Registers another purpose with its credentials and claims, and issues a registration certificate for it.">Add registration certificate</button>' : '') +
+            '<button type="button" class="btn btn-sm" id="' + prefix + '-add-use" title="Registers a purpose for requesting credentials, with its credentials and claims, and issues a registration certificate for it. An issuer uses it to ask for a PID before it issues.">Add registration certificate</button>' +
             '<button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button>' +
           '</span>' +
         '</div>' +

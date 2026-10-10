@@ -270,7 +270,7 @@ curl -s -X POST localhost:8085/api/registrar/wrp -H 'Content-Type: application/j
     "serviceIdentifier": "diplomas",
     "providesAttestations": [{ "format": "dc+sd-jwt", "type": "urn:example:diploma:1" }]
   }]
-}'
+}' > issuer-record.json
 ```
 
 The service in the answer:
@@ -296,8 +296,8 @@ ID=NTRNL-4D1BB6AFA1D92DE9
 openssl ecparam -name prime256v1 -genkey -noout -out issuer.key
 openssl req -new -key issuer.key -subj "/" -out issuer.csr
 jq -n --arg id "$ID" --rawfile csr issuer.csr '{identifier: $id, serviceIdentifier: "diplomas", csr: $csr}' |
-  curl -s -X POST localhost:8085/api/registrar/access-certificates -H 'Content-Type: application/json' -d @- |
-  jq -r .chain > issuer-chain.pem
+  curl -s -X POST localhost:8085/api/registrar/access-certificates -H 'Content-Type: application/json' -d @- > issuer-access.json
+jq -r .chain issuer-access.json > issuer-chain.pem
 
 curl -s -X POST localhost:8085/api/registrar/registration-certificates -H 'Content-Type: application/json' \
   -d "{\"identifier\": \"$ID\", \"serviceIdentifier\": \"diplomas\"}" > issuer-registration.json
@@ -377,6 +377,64 @@ In strict mode the wallet refuses the offer before it requests a token:
   "error": "the issuer does not authenticate as the ARF requires: ARF RPRC_23 and ISSU_34b: the issuer's registration certificate does not list urn:example:badge:1 in provides_attestations"
 }
 ```
+
+### 5. Ask for a PID before you issue
+
+An issuer that checks who you are before it issues also acts as a verifier. It stays one relying party. CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration. Add an intended use to the registration from step 1. `PUT /wrp` replaces the whole record, so send the stored record back with the new intended use.
+
+```bash
+jq '.services[0].intendedUses = [{
+  purpose: [{lang: "en", content: "Checks who you are before a diploma is issued"}],
+  credentials: [{format: "dc+sd-jwt", meta: {vct_values: ["urn:eudi:pid:1"]},
+    claims: [{path: ["given_name"]}, {path: ["family_name"]}]}]
+}]' issuer-record.json |
+  curl -s -X PUT localhost:8085/api/registrar/wrp -H 'Content-Type: application/json' -H 'Accept: application/json' -d @- > issuer-updated.json
+```
+
+The service keeps its provider entitlement and gets `Service_Provider`:
+
+```json
+{
+  "entitlements": [
+    "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider",
+    "https://uri.etsi.org/19475/Entitlement/Service_Provider"
+  ],
+  "intendedUses": [{
+    "intendedUseIdentifier": "8605a76b61c33a6c",
+    "purpose": [{ "lang": "en", "content": "Checks who you are before a diploma is issued" }],
+    ...
+  }]
+}
+```
+
+Request a registration certificate for the intended use. The certificate for the service stays valid.
+
+```bash
+USE=$(jq -r '.data.services[0].intendedUses[0].intendedUseIdentifier' issuer-updated.json)
+curl -s -X POST localhost:8085/api/registrar/registration-certificates -H 'Content-Type: application/json' \
+  -d "{\"identifier\": \"$ID\", \"intendedUseIdentifier\": \"$USE\"}" > identity-check.json
+```
+
+The answer has `verifierInfo` like a verifier's. Sign the request as in [step 4 of the verifier](#4-send-a-request-to-the-wallet), with the issuer's key and access certificate:
+
+```bash
+CLIENT_ID=$(jq -r '.clientIds[0]' issuer-access.json)
+HEADER='{"alg":"ES256","typ":"oauth-authz-req+jwt","x5c":['"$(x5c issuer-chain.pem)"']}'
+PAYLOAD=$(jq -cn --arg client_id "$CLIENT_ID" --argjson verifier_info "$(jq -r .verifierInfo identity-check.json)" '{
+  client_id: $client_id,
+  response_type: "vp_token",
+  response_mode: "direct_post",
+  response_uri: "https://university.example/response",
+  nonce: "n-0S6_WzA2Mj",
+  state: "af0ifjsldkj",
+  verifier_info: $verifier_info,
+  dcql_query: {credentials: [{id: "pid", format: "dc+sd-jwt",
+    meta: {vct_values: ["urn:eudi:pid:1"]}, claims: [{path: ["given_name"]}, {path: ["family_name"]}]}]}
+}')
+REQUEST=$(sign_es256 issuer.key "$HEADER" "$PAYLOAD")
+```
+
+The wallet checks it like any verifier's request. The access certificate and the registration certificate name the same relying party (RPRC_17a), so the wallet presents the PID.
 
 ## Certificates from another registrar
 

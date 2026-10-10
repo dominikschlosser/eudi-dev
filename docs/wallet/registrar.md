@@ -70,7 +70,7 @@ Each verifier shows its intended uses with their credentials and claims, and eac
 
 - **Issue certificate** issues a registration certificate for the intended use or the service and shows its `verifier_info` or `issuer_info` value. Once there is one, the button reads **Issue new certificate**. It issues a new certificate and revokes the old one.
 - **Revoke** revokes the certificate. **Activate** makes it valid again. If the registrar revoked a certificate itself, it shows **Revoked** and has no **Activate** button.
-- **Add registration certificate** registers another purpose for a verifier, with its credentials and claims. The registrar adds it as a new intended use and issues a certificate for it. The existing certificates stay valid.
+- **Add registration certificate** registers a purpose for requesting credentials, with its credentials and claims. The registrar adds it as a new intended use and issues a certificate for it. The existing certificates stay valid. An issuer uses it to ask for a PID before it issues, like the demo issuer. It stays one relying party with both roles. CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration. The registrar adds the `Service_Provider` entitlement. The issuer signs its request with its access certificate and sends the new certificate in `verifier_info`.
 - **Delete** removes the relying party and revokes all its certificates.
 
 ![Register a verifier](../assets/registrar-register.png)
