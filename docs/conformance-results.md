@@ -2,6 +2,23 @@
 
 Reproduce these runs with [Running OIDF Wallet Conformance](./conformance-run.md).
 
+## Run of 2026-10-10 (3.0.0-beta.3)
+
+The beta was checked against suite `release-v5.3.1` (revision `440eec8`) in strict mode. The full wallet matrix ran with file storage. The demo issuer and verifier ran all nine plans.
+
+| Target | Configurations | Modules | `PASSED` | `REVIEW` | `WARNING` | `FAILED` |
+|---|---:|---:|---:|---:|---:|---:|
+| Wallet, file | 78 | 744 | 530 | 188 | 26 | 0 |
+| Demo issuer and verifier | 9 | 111 | 67 | 36 | 8 | 0 |
+
+No module failed, and the counts match the beta.1 run. The 26 wallet warnings are the IACA path length advisory described for 2.5.0. The 8 demo warnings are the metadata warnings described for the run of 2026-10-08.
+
+The first demo run interrupted `oid4vci-1_0-issuer-happy-flow-multiple-clients`. Its two clients start their flows with the `issuer_state` of the same offer, and the demo issuer accepted it only once. OpenID4VCI 1.0 §4.1.1 defines `issuer_state` as a link to the issuer's context, not as a grant. The demo issuer now accepts it until the offer expires, and the run above used that build.
+
+The suite answered three wait requests with HTTP 504. The runner retried each one and the modules completed.
+
+The full Go suite and all 235 browser tests passed. Vet and lint also passed.
+
 ## Run of 2026-10-09 (3.0.0-beta.1)
 
 The beta was checked against suite `release-v5.3.1` (revision `440eec8`) in strict mode. The full wallet matrix ran with file storage. The demo issuer and verifier ran all nine plans.
