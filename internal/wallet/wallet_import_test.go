@@ -67,3 +67,17 @@ func TestImportPlainJWTStoresTheVCType(t *testing.T) {
 		t.Errorf("VCT = %q, want NFEmployeeCredential (the type, not the format)", cred.VCT)
 	}
 }
+
+// A credential stored by eudi-dev 2 keeps its client ID for refresh.
+func TestRehydrateMovesTheLegacyClientID(t *testing.T) {
+	var cred StoredCredential
+	if err := json.Unmarshal([]byte(`{"id":"x","renewal":{"issuer":"https://i.example","client_auth":{"method":"attestation","client_id":"wallet-client"}}}`), &cred); err != nil {
+		t.Fatal(err)
+	}
+	if err := cred.Rehydrate(); err != nil {
+		t.Fatal(err)
+	}
+	if cred.Renewal.ClientID != "wallet-client" || cred.Renewal.ClientAuth.LegacyClientID != "" {
+		t.Errorf("renewal = %+v, client auth = %+v", cred.Renewal, cred.Renewal.ClientAuth)
+	}
+}

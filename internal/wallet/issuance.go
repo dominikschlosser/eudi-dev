@@ -843,12 +843,7 @@ func (w *Wallet) checkAuthorizationServerGrant(authServer string, oauthMeta map[
 		"grant_type":            grantType,
 		"grant_types_supported": supported,
 	}
-	if w.Mode() == ValidationModeStrict {
-		w.addProtocolLog("issuance", "authorization_server_grant_unsupported", detail, false, details)
-		return errors.New(detail)
-	}
-	w.addProtocolWarning("issuance", "authorization_server_grant_unsupported", detail, details)
-	return nil
+	return w.reportDeviation(deviation{action: "issuance", event: "authorization_server_grant_unsupported", detail: detail, details: details})
 }
 
 func oauthMetadataFetch(issuer string) metadataFetch {
@@ -1282,20 +1277,12 @@ func credentialRequestEncryptionRequired(raw map[string]any) bool {
 
 // Group HAIP findings in one activity entry. Return an error only in strict mode.
 func (w *Wallet) reportHAIPViolations(subject, issuer string, violations []string) error {
-	detail := fmt.Sprintf("%s (%d findings, see details)", specCitedSummary(subject, violations), len(violations))
-	if len(violations) == 1 {
-		detail = violations[0]
-	}
-	details := map[string]any{"issuer": issuer, "findings": violations}
-	for _, v := range violations {
-		log.Printf("[VCI] WARNING: HAIP violation: %s", v)
-	}
-	if w.Mode() == ValidationModeStrict {
-		w.addProtocolLog("issuance", "haip_violation", detail, false, details)
-		return fmt.Errorf("%s: %s", strings.ToLower(subject), strings.Join(violations, ", "))
-	}
-	w.addProtocolWarning("issuance", "haip_violation", detail, details)
-	return nil
+	return w.reportDeviation(deviation{
+		action: "issuance", event: "haip_violation",
+		detail:  findingsSummary(specCitedSummary(subject, violations), violations),
+		details: map[string]any{"issuer": issuer, "findings": violations},
+		refusal: fmt.Errorf("%s: %s", strings.ToLower(subject), strings.Join(violations, ", ")),
+	})
 }
 
 // issuanceChallenge obtains the c_nonce for signing the key proofs. §8.2

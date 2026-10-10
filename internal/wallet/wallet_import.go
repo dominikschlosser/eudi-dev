@@ -214,11 +214,7 @@ func (w *Wallet) recordCredentialDeviations(spec string, deviations []string) {
 	if len(deviations) == 0 {
 		return
 	}
-	finding := "findings"
-	if len(deviations) == 1 {
-		finding = "finding"
-	}
-	detail := fmt.Sprintf("The credential deviates from %s (%d %s, see details)", spec, len(deviations), finding)
+	detail := findingsSummary("The credential deviates from "+spec, deviations)
 	w.addProtocolWarning("wallet", "credential_structure_deviation", detail,
 		map[string]any{"deviations": deviations})
 }
@@ -343,6 +339,10 @@ func (w *Wallet) ImportCredentialFromFile(path string) error {
 
 // Rehydrate rebuilds parsed fields from Raw because they are not serialized.
 func (c *StoredCredential) Rehydrate() error {
+	if r := c.Renewal; r != nil && r.ClientAuth != nil && r.ClientAuth.LegacyClientID != "" {
+		r.ClientID = firstNonEmpty(r.ClientID, r.ClientAuth.LegacyClientID)
+		r.ClientAuth.LegacyClientID = ""
+	}
 	if c.Raw == "" {
 		return nil
 	}

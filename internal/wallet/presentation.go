@@ -168,13 +168,7 @@ func (w *Wallet) checkPresentableKeyBinding(cred StoredCredential) error {
 	}
 	addStringDetail(details, "vct", cred.VCT)
 	addStringDetail(details, "doctype", cred.DocType)
-	if w.Mode() == ValidationModeStrict {
-		w.addProtocolLog("presentation", "key_binding_cannot_be_signed", detail, false, details)
-		return errors.New(detail)
-	}
-	w.addProtocolWarning("presentation", "key_binding_cannot_be_signed", detail, details)
-	log.Printf("[VP] WARNING: %s", detail)
-	return nil
+	return w.reportDeviation(deviation{action: "presentation", event: "key_binding_cannot_be_signed", detail: detail, details: details})
 }
 
 func sdJWTAudience(params PresentationParams) string {

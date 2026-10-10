@@ -17,7 +17,6 @@ package wallet
 import (
 	"crypto/x509"
 	"fmt"
-	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -291,20 +290,12 @@ func (w *Wallet) reportARFIssuanceFindings(issuer string, findings []string) err
 // reportARFFindings warns in debug mode. In strict mode it returns refusal
 // with the findings.
 func (w *Wallet) reportARFFindings(issuer string, findings []string, refusal string) error {
-	detail := findings[0]
-	if len(findings) > 1 {
-		detail = fmt.Sprintf("%s (%d ARF findings, see details)", findings[0], len(findings))
-	}
-	details := map[string]any{"issuer": issuer, "findings": findings}
-	for _, f := range findings {
-		log.Printf("[VCI] WARNING: %s", f)
-	}
-	if w.Mode() == ValidationModeStrict {
-		w.addProtocolLog("issuance", "arf_finding", detail, false, details)
-		return fmt.Errorf("%s: %s", refusal, strings.Join(findings, ", "))
-	}
-	w.addProtocolWarning("issuance", "arf_finding", detail, details)
-	return nil
+	return w.reportDeviation(deviation{
+		action: "issuance", event: "arf_finding",
+		detail:  findingsSummary("The issuer does not meet the ARF rules", findings),
+		details: map[string]any{"issuer": issuer, "findings": findings},
+		refusal: fmt.Errorf("%s: %s", refusal, strings.Join(findings, ", ")),
+	})
 }
 
 // issuerInfoShapeFindings checks the elements of issuer_info (ETSI TS 119

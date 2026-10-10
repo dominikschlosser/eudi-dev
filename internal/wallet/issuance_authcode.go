@@ -294,14 +294,7 @@ func (w *Wallet) noteDeclinedInteractiveAuthorization(oauthMeta map[string]any, 
 // reportServerDeviation warns in debug mode and returns an error in strict
 // mode.
 func (w *Wallet) reportServerDeviation(detail string) error {
-	details := map[string]any{"deviation": detail}
-	if w.Mode() == ValidationModeStrict {
-		w.addProtocolLog("issuance", "server_deviation", detail, false, details)
-		return fmt.Errorf("%s", detail)
-	}
-	w.addProtocolWarning("issuance", "server_deviation", detail, details)
-	log.Printf("[VCI] WARNING: %s", detail)
-	return nil
+	return w.reportDeviation(deviation{action: "issuance", event: "server_deviation", detail: detail, details: map[string]any{"deviation": detail}})
 }
 
 // detectTokenEndpointAuthMethod prefers attestation. It falls back to

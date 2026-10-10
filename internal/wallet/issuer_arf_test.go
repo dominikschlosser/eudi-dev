@@ -278,7 +278,7 @@ func TestDebugModeLogsTheIssuerFindingsAndGoesOn(t *testing.T) {
 	}
 	log := w.GetLog()
 	last := log[len(log)-1]
-	if last.Severity != "warning" || last.Details["event"] != "arf_finding" || !strings.Contains(last.Detail, "2 ARF findings") {
+	if last.Severity != "warning" || last.Details["event"] != "arf_finding" || !strings.Contains(last.Detail, "ARF rules (2 findings") {
 		t.Fatalf("log entry %+v", last)
 	}
 }

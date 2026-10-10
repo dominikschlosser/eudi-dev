@@ -21,6 +21,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
@@ -363,6 +364,9 @@ type ClientAuthentication struct {
 	// With dpop_combined, the DPoP proof also proves possession for the attestation.
 	// Send only OAuth-Client-Attestation (ABCA draft-10 §5.2).
 	CombinedPoP bool `json:"combined_pop,omitempty"`
+	// LegacyClientID is where eudi-dev 2 stored the client ID. Loading moves it
+	// to CredentialRenewal.ClientID.
+	LegacyClientID string `json:"client_id,omitempty"`
 }
 
 func (c StoredCredential) CanRenew() bool {
@@ -1050,8 +1054,39 @@ func (w *Wallet) warnFindings(action, summary string, findings []string) {
 	case 1:
 		w.AddWarning(action, findings[0], nil)
 	default:
-		w.AddWarning(action, fmt.Sprintf("%s (%d findings, see details)", summary, len(findings)), map[string]any{"findings": findings})
+		w.AddWarning(action, findingsSummary(summary, findings), map[string]any{"findings": findings})
 	}
+}
+
+// findingsSummary is the log line of several findings. One finding is its own
+// line.
+func findingsSummary(summary string, findings []string) string {
+	if len(findings) == 1 {
+		return findings[0]
+	}
+	return fmt.Sprintf("%s (%d findings, see details)", summary, len(findings))
+}
+
+// deviation is a failed check of the other party. Strict mode refuses the
+// flow with refusal, or with detail when refusal is nil. Debug mode records
+// a warning and goes on.
+type deviation struct {
+	action, event, detail string
+	details               map[string]any
+	refusal               error
+}
+
+func (w *Wallet) reportDeviation(d deviation) error {
+	if w.Mode() == ValidationModeStrict {
+		w.addProtocolLog(d.action, d.event, d.detail, false, d.details)
+		if d.refusal != nil {
+			return d.refusal
+		}
+		return errors.New(d.detail)
+	}
+	w.addProtocolWarning(d.action, d.event, d.detail, d.details)
+	log.Printf("[Wallet] WARNING: %s", d.detail)
+	return nil
 }
 
 // The log is bounded because every reload reads it. logTrimSlack lets the log

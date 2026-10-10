@@ -18,9 +18,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
-	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/fxamacker/cbor/v2"
@@ -45,13 +43,12 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 			"credential_id": cred.ID,
 			"doctype":       cred.DocType,
 		}
-		if w.Mode() == ValidationModeStrict {
-			refusal := fmt.Sprintf("strict mode does not present mdoc %s without an MSO deviceKey (ISO 18013-5 §9.1.2.4)", credentialLabel(cred))
-			w.addProtocolLog("presentation", "mdoc_names_no_device_key", refusal, false, details)
-			return VPTokenResult{}, errors.New(refusal)
+		if err := w.reportDeviation(deviation{
+			action: "presentation", event: "mdoc_names_no_device_key", detail: detail, details: details,
+			refusal: fmt.Errorf("strict mode does not present mdoc %s without an MSO deviceKey (ISO 18013-5 §9.1.2.4)", credentialLabel(cred)),
+		}); err != nil {
+			return VPTokenResult{}, err
 		}
-		w.addProtocolWarning("presentation", "mdoc_names_no_device_key", detail, details)
-		log.Printf("[VP] WARNING: %s", detail)
 	}
 
 	selected := make(map[string]bool, len(selectedKeys))
