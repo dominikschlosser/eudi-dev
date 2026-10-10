@@ -192,9 +192,7 @@ func (r *Registrar) SetRegistrationCertificatesRevoked(identifier string, scope 
 // registration certificates issued for a relying party, or for all of them
 // when identifier is empty.
 func (r *Registrar) RegistrationCertificateStatuses(identifier string) []RegistrationStatus {
-	if rp, ok := r.RelyingParty(identifier); ok {
-		identifier = rp.Identifier[0].Identifier
-	}
+	identifier = r.registeredIdentifier(identifier)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	statuses := []RegistrationStatus{}
@@ -305,6 +303,7 @@ func scopeFilter(rp WalletRelyingParty, scope RegistrationScope) (func(Registrat
 // CertificateCount is the number of unexpired registration certificates of
 // the relying party, superseded ones included.
 func (r *Registrar) CertificateCount(identifier string) int {
+	identifier = r.registeredIdentifier(identifier)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	now := time.Now().Unix()
@@ -315,4 +314,13 @@ func (r *Registrar) CertificateCount(identifier string) int {
 		}
 	}
 	return n
+}
+
+// registeredIdentifier resolves any identifier of a relying party to the one
+// its status entries carry. An unknown identifier stays as it is.
+func (r *Registrar) registeredIdentifier(identifier string) string {
+	if rp, ok := r.RelyingParty(identifier); ok {
+		return rp.Identifier[0].Identifier
+	}
+	return identifier
 }

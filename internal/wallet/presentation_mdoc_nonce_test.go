@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -143,5 +144,22 @@ func TestISOResponseSignsEveryMDocOverTheReportedNonce(t *testing.T) {
 		if err := mdoc.VerifyDeviceAuth(doc, transcript); err != nil {
 			t.Errorf("query %s: device auth does not verify against the reported mdoc nonce: %v", m.QueryID, err)
 		}
+	}
+}
+
+// A presentation's own transcript mode applies to it alone, and the wallet
+// keeps its setting.
+func TestAPresentationCanChooseItsSessionTranscript(t *testing.T) {
+	w := generateTestWallet(t)
+	w.SessionTranscript = SessionTranscriptOID4VP
+	if got := w.sessionTranscriptFor(PresentationParams{SessionTranscript: SessionTranscriptISO}); got != SessionTranscriptISO {
+		t.Errorf("transcript = %q, want the request's iso", got)
+	}
+	if got := w.sessionTranscriptFor(PresentationParams{}); got != SessionTranscriptOID4VP {
+		t.Errorf("transcript = %q, want the wallet's oid4vp", got)
+	}
+	srv := NewServer(w, 0, nil)
+	if rec := serverRequest(t, srv, "POST", "/api/presentations", `{"uri":"openid4vp://?x=1","session_transcript":"bogus"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("an invalid transcript = %d, want 400", rec.Code)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -93,14 +94,69 @@ func (d *DemoRP) clientAuthMode() ClientAuthMode {
 	return ClientAuthRequired
 }
 
-type authRequestState struct {
-	requestURI    string
+// authGrant is what an authorization flow carries from its start to the
+// token: the client, its PKCE challenge, where the code goes and what the
+// token issues. PAR, the browser sign-in and interactive authorization share
+// it, and the code takes it over whole.
+type authGrant struct {
 	clientID      string
-	redirectURI   string
-	state         string
-	scope         string
 	codeChallenge string
-	issuerState   string
+	// redirectURI and state go with a code delivered by redirect.
+	redirectURI string
+	state       string
+	// issuerState names the offer that the token redeems. A flow started by
+	// scope has none.
+	issuerState string
+	settings    offerSettings
+}
+
+// resolveAuthGrant resolves what an authorization flow issues: the settings
+// of the offer that issuer_state names, else the configurations that the
+// authorization_details and the scope name (OpenID4VCI 1.0 §5.1.1, §5.1.2).
+// A request that names none gets the ticket, the default scope of this
+// server (RFC 6749 §3.3). It returns the OAuth error of an unknown name.
+func (d *DemoRP) resolveAuthGrant(grant authGrant, scope, authorizationDetails string) (authGrant, map[string]string) {
+	if grant.issuerState != "" {
+		d.mu.Lock()
+		offer := d.offerLocked(grant.issuerState, issuerStateKey)
+		if offer != nil && !offer.redeemed {
+			grant.settings = offer.offerSettings
+		}
+		d.mu.Unlock()
+		if offer == nil || offer.redeemed {
+			return grant, oauthError("invalid_request", "unknown, used or expired issuer_state")
+		}
+		return grant, nil
+	}
+	ids := strings.Fields(scope)
+	if authorizationDetails != "" {
+		var details []struct {
+			Type                      string `json:"type"`
+			CredentialConfigurationID string `json:"credential_configuration_id"`
+		}
+		if err := json.Unmarshal([]byte(authorizationDetails), &details); err != nil {
+			return grant, oauthError("invalid_authorization_details", "authorization_details is not a JSON array: "+err.Error())
+		}
+		for _, detail := range details {
+			if detail.Type != "openid_credential" {
+				return grant, oauthError("invalid_authorization_details", fmt.Sprintf("authorization_details type %q is not openid_credential", detail.Type))
+			}
+			ids = append(ids, detail.CredentialConfigurationID)
+		}
+	}
+	configIDs, err := d.offerConfigurationIDs(ids)
+	if err != nil {
+		return grant, oauthError("invalid_scope", err.Error())
+	}
+	grant.settings = offerSettings{configIDs: configIDs, authorization: authorizationBrowser}
+	return grant, nil
+}
+
+func issuerStateKey(o *offerState) string { return o.issuerState }
+
+type authRequestState struct {
+	requestURI string
+	authGrant
 	// clientAttestation and clientAttestationPoP are the raw compact JWTs that
 	// the wallet sent to the PAR endpoint. The sign-in page shows them in its
 	// debug panel.
@@ -245,25 +301,27 @@ func (d *DemoRP) handlePushedAuthorizationRequest(w http.ResponseWriter, r *http
 		return
 	}
 
+	grant, errResp := d.resolveAuthGrant(authGrant{
+		clientID:      clientID,
+		codeChallenge: challenge,
+		redirectURI:   redirectURI,
+		state:         r.PostFormValue("state"),
+		issuerState:   r.PostFormValue("issuer_state"),
+	}, r.PostFormValue("scope"), r.PostFormValue("authorization_details"))
+	if errResp != nil {
+		writeJSON(w, http.StatusBadRequest, errResp)
+		return
+	}
 	request := &authRequestState{
 		requestURI:           requestURIPrefix + randToken(),
-		clientID:             clientID,
-		redirectURI:          redirectURI,
-		state:                r.PostFormValue("state"),
-		scope:                r.PostFormValue("scope"),
-		codeChallenge:        challenge,
-		issuerState:          r.PostFormValue("issuer_state"),
+		authGrant:            grant,
 		clientAttestation:    strings.TrimSpace(r.Header.Get("OAuth-Client-Attestation")),
 		clientAttestationPoP: strings.TrimSpace(r.Header.Get("OAuth-Client-Attestation-PoP")),
 		expires:              time.Now().Add(authRequestTTL),
 	}
 	d.mu.Lock()
 	d.pruneLocked()
-	if len(d.authRequests) >= maxEntries {
-		d.mu.Unlock()
-		writeJSON(w, http.StatusTooManyRequests, oauthError("temporarily_unavailable", "too many open authorization requests"))
-		return
-	}
+	makeRoom(d.authRequests, func(r *authRequestState) time.Time { return r.expires })
 	d.authRequests[request.requestURI] = request
 	d.mu.Unlock()
 
@@ -312,6 +370,7 @@ func (d *DemoRP) redirectWithCode(w http.ResponseWriter, r *http.Request, reques
 	d.mu.Lock()
 	request.code = code
 	request.subject = subject
+	makeRoom(d.codes, func(r *authRequestState) time.Time { return r.expires })
 	d.codes[code] = request
 	redirectURI, state := request.redirectURI, request.state
 	d.mu.Unlock()
@@ -386,49 +445,22 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	offer := &offerState{
-		id:           randToken(),
-		issuerState:  granted.issuerState,
-		subject:      granted.subject,
-		holderClaims: granted.holderClaims,
-		accessToken:  randToken(),
-		jkt:          jkt,
-		clientAuth:   &clientAuth,
-		expires:      time.Now().Add(entryTTL),
-	}
-	// issuer_state links the offer to the token state.
-	if src := d.offerByIssuerState(granted.issuerState); src != nil {
-		offer.withStatus = src.withStatus
-		offer.deferred = src.deferred
-		offer.batchSize = src.batchSize
-	}
-
 	d.mu.Lock()
-	d.tokens[offer.accessToken] = offer
-	d.mu.Unlock()
-
-	// OpenID4VCI 1.0 §6.2 defines no c_nonce in the token response. The wallet
-	// gets it from the Nonce Endpoint (§7).
-	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token": offer.accessToken,
-		"token_type":   "DPoP",
-		"expires_in":   int(entryTTL.Seconds()),
+	// The token redeems the offer, so an issuer_state grants one token.
+	if granted.issuerState != "" && d.redeemOfferLocked(granted.issuerState, issuerStateKey) == nil {
+		d.mu.Unlock()
+		writeJSON(w, http.StatusBadRequest, oauthError("invalid_grant", "the offer of this authorization is used or expired"))
+		return
+	}
+	token := d.issueTokenLocked(tokenState{
+		offerSettings: granted.settings,
+		subject:       granted.subject,
+		holderClaims:  granted.holderClaims,
+		jkt:           jkt,
+		clientAuth:    &clientAuth,
 	})
-}
-
-// offerByIssuerState finds the offer that issued issuerState.
-func (d *DemoRP) offerByIssuerState(issuerState string) *offerState {
-	if issuerState == "" {
-		return nil
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	for _, offer := range d.offers {
-		if offer.issuerState == issuerState {
-			return offer
-		}
-	}
-	return nil
+	d.mu.Unlock()
+	writeTokenResponse(w, token, jkt)
 }
 
 func (d *DemoRP) lookupAuthRequest(requestURI string) (*authRequestState, error) {
@@ -899,27 +931,27 @@ input { font:inherit; font-size:12px; width:100%; padding:8px; background:var(--
 </head>
 <body>
 <div class="card">
-  <h1>{{.Title}}</h1>
-  <p>{{.Explanation}}</p>
-  <details class="debug">
-    <summary>Client authentication (debug)</summary>
+  <h1 id="login-title">{{.Title}}</h1>
+  <p id="login-explanation">{{.Explanation}}</p>
+  <details class="debug" id="login-debug">
+    <summary id="login-debug-summary">Client authentication (debug)</summary>
     <div class="body">
-      <div class="field"><span>client_id</span><code>{{.ClientID}}</code></div>
-      {{if .Attestation}}<div class="field"><span>OAuth-Client-Attestation</span><code>{{.Attestation}}</code></div>{{end}}
-      {{if .AttestationPoP}}<div class="field"><span>OAuth-Client-Attestation-PoP</span><code>{{.AttestationPoP}}</code></div>{{end}}
-      {{if not .Attestation}}<p class="empty">The wallet sent no attestation (unauthenticated client).</p>{{end}}
+      <div class="field" id="login-debug-client-id"><span id="login-debug-client-id-name">client_id</span><code id="login-debug-client-id-value">{{.ClientID}}</code></div>
+      {{if .Attestation}}<div class="field" id="login-debug-attestation"><span id="login-debug-attestation-name">OAuth-Client-Attestation</span><code id="login-debug-attestation-value">{{.Attestation}}</code></div>{{end}}
+      {{if .AttestationPoP}}<div class="field" id="login-debug-attestation-pop"><span id="login-debug-attestation-pop-name">OAuth-Client-Attestation-PoP</span><code id="login-debug-attestation-pop-value">{{.AttestationPoP}}</code></div>{{end}}
+      {{if not .Attestation}}<p class="empty" id="login-debug-empty">The wallet sent no attestation (unauthenticated client).</p>{{end}}
     </div>
   </details>
-  <form method="POST" action="{{.Action}}">
-    {{if .RequestURI}}<input type="hidden" name="request_uri" value="{{.RequestURI}}">{{end}}
-    <label for="username">Username</label>
+  <form id="login-form" method="POST" action="{{.Action}}">
+    {{if .RequestURI}}<input type="hidden" id="login-request-uri" name="request_uri" value="{{.RequestURI}}">{{end}}
+    <label for="username" id="username-label">Username</label>
     <input id="username" name="username" value="alice" autocomplete="off">
-    <label for="password">Password</label>
+    <label for="password" id="password-label">Password</label>
     <input id="password" name="password" type="password" value="alice" autocomplete="off">
-    <button class="btn" type="submit">Sign in</button>
+    <button class="btn" id="login-submit" type="submit">Sign in</button>
   </form>
-  {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
-  <div class="note">
+  {{if .Error}}<div class="error" id="login-error">{{.Error}}</div>{{end}}
+  <div class="note" id="login-note">
     Demo only. One hardcoded account, alice / alice. No user data is stored, everything issued here is test data.
   </div>
 </div>

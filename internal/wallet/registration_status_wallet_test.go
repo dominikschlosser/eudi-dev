@@ -174,39 +174,6 @@ func TestTheWalletReadsItsOwnStatusListInProcess(t *testing.T) {
 	}
 }
 
-// A presentation runs on a copy of the wallet. The copy keeps the relying
-// party CAs, so --relying-party-ca applies to every request.
-func TestThePresentationCopyKeepsTheRelyingPartyCAs(t *testing.T) {
-	w := generateTestWallet(t)
-	w.RequireARF = true
-	w.RelyingPartyCAPEM = []byte("-----BEGIN CERTIFICATE-----\n")
-	clone, err := cloneWalletForPresentation(w, presentationRequestOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(clone.RelyingPartyCAPEM) != string(w.RelyingPartyCAPEM) || !clone.ARFChecks() {
-		t.Error("the presentation copy dropped the ARF settings")
-	}
-}
-
-// An auto-accepted presentation runs on a copy of the wallet. The copy answers
-// the registrar's status list in process, so it sees revocations.
-func TestThePresentationCopySeesRevokedRegistrationCertificates(t *testing.T) {
-	w := generateTestWallet(t)
-	rp := registerTestRelyingParty(t, w)
-	cert := issuedCertificate(t, w, rp)
-	if _, err := w.Registrar().SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, registrar.RegistrationScope{}, true); err != nil {
-		t.Fatal(err)
-	}
-	clone, err := cloneWalletForPresentation(w, presentationRequestOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := registrationStatusFindings(cert, clone.RegistrationStatusClient(), nil, "ARF RPRC_17"); len(got) != 1 || !strings.Contains(got[0], "revoked") {
-		t.Errorf("status findings %v, want the revocation", got)
-	}
-}
-
 // A new certificate replaces the old one, so an intended use has one valid
 // certificate at a time. Activate doesn't bring a replaced one back.
 func TestANewCertificateReplacesTheOldOne(t *testing.T) {

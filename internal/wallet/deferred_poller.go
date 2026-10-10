@@ -40,13 +40,16 @@ func (s *Server) backgroundTasks() []backgroundTask {
 		{name: "deferred credentials", every: backgroundTick, run: s.collectDueDeferredCredentials},
 		{name: "credential renewal", every: renewalCheckInterval, run: s.renewExpiringCredentials},
 		{name: "signing certificate", every: certificateCheckInterval, run: s.renewSigningCertificate},
-		{name: "demo registrations", every: certificateCheckInterval, run: func(time.Time) error { return s.syncDemoRegistrations() }},
 	}
 }
 
-// syncDemoRegistrations keeps the demo issuer and verifier registered for the
-// wallet's templates with a current certificate, and saves a change.
+// syncDemoRegistrations keeps the demo issuer and verifier of a public demo
+// registered for the wallet's templates and catalogue. Visitors can't change
+// them. A local wallet registers them once and leaves them to the user.
 func (s *Server) syncDemoRegistrations() error {
+	if s.demo == nil {
+		return nil
+	}
 	var err error
 	s.saveMutation(func() bool {
 		var changed bool
@@ -56,8 +59,24 @@ func (s *Server) syncDemoRegistrations() error {
 	return err
 }
 
+// registerDemoParties registers the demo issuer and verifier at startup. A
+// local wallet keeps a registration that is already there, with the user's
+// changes.
+func (s *Server) registerDemoParties() error {
+	if s.demo != nil {
+		return s.syncDemoRegistrations()
+	}
+	var err error
+	s.saveMutation(func() bool {
+		var changed bool
+		changed, err = s.wallet.RegisterMissingDemoParties()
+		return changed
+	})
+	return err
+}
+
 func (s *Server) StartBackgroundTasks() func() {
-	if err := s.syncDemoRegistrations(); err != nil {
+	if err := s.registerDemoParties(); err != nil {
 		s.log("  WARNING: registering the demo issuer and verifier: %v", err)
 	}
 	done := make(chan struct{})

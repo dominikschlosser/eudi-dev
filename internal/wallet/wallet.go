@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -130,6 +131,8 @@ type Wallet struct {
 	// demoRegistrationMu serializes the demo registrations. Concurrent
 	// requests then share one certificate instead of replacing each other's.
 	demoRegistrationMu sync.Mutex
+	// capacity bounds what a shared wallet stores. Zero means no bound.
+	capacity walletCapacity
 	// saveRegistrarChange runs a registrar change outside a request to the
 	// registrar and saves it. A server sets it to its saveMutation, which
 	// takes the store lock. Never call it while holding that lock.
@@ -1009,13 +1012,16 @@ func (w *Wallet) warnFindings(action, summary string, findings []string) {
 }
 
 // The log is bounded because every reload reads it. logTrimSlack lets the log
-// grow a little so trimming copies once per batch of entries.
+// grow a little so trimming copies once per batch of entries. An entry is
+// bounded too, because a remote party controls the bodies it records.
 const (
-	maxLogEntries = 1000
-	logTrimSlack  = 256
+	maxLogEntries    = 1000
+	logTrimSlack     = 256
+	maxLogEntryBytes = 64 << 10
 )
 
 func (w *Wallet) appendLogEntry(entry LogEntry) {
+	entry = boundedLogEntry(entry)
 	w.mu.Lock()
 	w.Log = append(w.Log, entry)
 	if len(w.Log) >= maxLogEntries+logTrimSlack {
@@ -1029,6 +1035,41 @@ func (w *Wallet) appendLogEntry(entry LogEntry) {
 	if sink != nil {
 		sink(entry)
 	}
+}
+
+// boundedLogEntry truncates the detail and the payload of an entry larger
+// than maxLogEntryBytes. The truncated values say how long they were.
+func boundedLogEntry(entry LogEntry) LogEntry {
+	if raw, err := json.Marshal(entry); err == nil && len(raw) <= maxLogEntryBytes {
+		return entry
+	}
+	limit := maxLogEntryBytes / 4
+	entry.Detail = truncatedLogValue(entry.Detail, limit).(string)
+	if entry.Payload != nil {
+		payload := *entry.Payload
+		payload.Body = truncatedLogValue(payload.Body, limit)
+		payload.Wire = truncatedLogValue(payload.Wire, limit)
+		entry.Payload = &payload
+	}
+	return entry
+}
+
+func truncatedLogValue(value any, limit int) any {
+	text, ok := value.(string)
+	if !ok {
+		if value == nil {
+			return nil
+		}
+		raw, err := json.Marshal(value)
+		if err != nil || len(raw) <= limit {
+			return value
+		}
+		text = string(raw)
+	}
+	if len(text) <= limit {
+		return value
+	}
+	return fmt.Sprintf("%s… (truncated, %d bytes)", strings.ToValidUTF8(text[:limit], ""), len(text))
 }
 
 func cloneLogDetails(details map[string]any) map[string]any {
@@ -1308,5 +1349,35 @@ func (w *Wallet) PutCredential(cred StoredCredential) {
 			return
 		}
 	}
+	w.makeCredentialRoomLocked()
 	w.Credentials = append(w.Credentials, cred)
+}
+
+// walletCapacity bounds a wallet that visitors share, such as a public demo.
+type walletCapacity struct {
+	credentials, deferred int
+}
+
+// SetCapacity bounds the credentials and deferred issuances a shared wallet
+// stores. When one is full, the oldest entry makes room, so a flood doesn't
+// lock out other visitors.
+func (w *Wallet) SetCapacity(credentials, deferred int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.capacity = walletCapacity{credentials: credentials, deferred: deferred}
+}
+
+// makeCredentialRoomLocked removes the oldest credentials that aren't
+// protected until one more fits.
+func (w *Wallet) makeCredentialRoomLocked() {
+	if w.capacity.credentials <= 0 {
+		return
+	}
+	for len(w.Credentials) >= w.capacity.credentials {
+		i := slices.IndexFunc(w.Credentials, func(c StoredCredential) bool { return !c.Protected })
+		if i < 0 {
+			return
+		}
+		w.Credentials = slices.Delete(w.Credentials, i, i+1)
+	}
 }

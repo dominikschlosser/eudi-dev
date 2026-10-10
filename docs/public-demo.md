@@ -38,7 +38,7 @@ Use `--mode strict` to reject violations, or `--haip=false` and `--arf=false` to
 
 Resets run every hour by default. `--demo-reset` accepts an interval such as `24h`, a daily time such as `00:00`, or a time with a zone such as `"00:00 Europe/Berlin"`. `0` disables resets. Daily schedules follow local time, including daylight saving changes, and retain their schedule across restarts.
 
-A reset removes visitor credentials, registered relying parties and the providers and lists added to the trusted lists, regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The credential signing certificate is renewed.
+A reset removes visitor credentials, registered relying parties and the providers and lists added to the trusted lists. It regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The credential signing certificate is renewed.
 
 ## Browser hardening
 
@@ -86,7 +86,7 @@ To include a ticket, set `ticket` in the same request:
 
 All four baseline credentials are protected. The UI, the API and the CLI refuse to delete or revoke them. Visitor credentials can be deleted. Removing baseline protection requires direct access to `wallet.json`.
 
-All visitors share credentials, registered relying parties, trusted lists and the activity log. Anyone can issue credentials, delete unprotected credentials, register, revoke and delete relying parties, and read the log. Anyone can also put providers and external lists on the wallet's [trusted lists](wallet/serve.md#trusted-lists). These entries then anchor the `--arf` checks for every visitor. The demo holds at most 20 added providers and 5 added lists. Use test data only.
+All visitors share credentials, registered relying parties, trusted lists and the activity log. Anyone can issue credentials, delete unprotected credentials, register, revoke and delete relying parties, and read the log. Anyone can also put providers and external lists on the wallet's [trusted lists](wallet/serve.md#trusted-lists). These entries then anchor the `--arf` checks for every visitor. The demo holds at most 20 added providers and 5 added lists. It keeps the newest 500 credentials and 100 pending issuances, besides the protected PIDs. Errors of a flow that no browser started are not shown. Use test data only.
 
 ## Rate limits
 
@@ -188,7 +188,7 @@ Pass `--news-file` with an HTML snippet. The wallet opens it on a visitor's firs
 
 An image next to the snippet, such as `<img src="overview.png">`, is embedded in the page, because the wallet loads images only from itself. Images can be PNG, JPEG, GIF, WebP or SVG, up to 2 MiB each. A paragraph with `class="lead"` stands out as the summary.
 
-The example stack mounts the `news` folder, and `./deploy.sh push` copies it to the host. `3.0.0-beta.source.html` is the page the overview image is rendered from.
+The example stack mounts the `news` folder, and `./deploy.sh push` copies it to the host. The overview image is rendered from `3.0.0-beta.source.html`.
 
 The demo uses the `eudi_session` cookie to associate consent requests with a browser. It is an opaque session value with `HttpOnly`, `SameSite=Lax` and, for HTTPS connections, `Secure`. The activity log remains shared.
 

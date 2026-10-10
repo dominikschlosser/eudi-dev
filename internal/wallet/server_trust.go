@@ -127,6 +127,10 @@ func (s *Server) handleAddTrustedList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
+	if s.demo != nil && s.wallet.addedTrustedListCount(strings.TrimSpace(body.URL)) >= maxDemoTrustedLists {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("the public demo holds at most %d added lists. Remove one first", maxDemoTrustedLists)})
+		return
+	}
 	// The wallet reads the list before it takes the store lock.
 	added, err := s.wallet.CheckTrustedList(body.URL)
 	if err != nil {

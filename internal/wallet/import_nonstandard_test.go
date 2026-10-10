@@ -38,7 +38,7 @@ func TestImportSDJWT_NonStandardCredential(t *testing.T) {
 	t.Run("debug keeps it", func(t *testing.T) {
 		w := generateTestWallet(t)
 		w.ValidationMode = ValidationModeDebug
-		cred, err := w.importSDJWT(raw, "", "")
+		cred, err := w.parseSDJWTEntry(raw, "", "")
 		if err != nil {
 			t.Fatalf("debug import refused the credential: %v", err)
 		}
@@ -50,7 +50,7 @@ func TestImportSDJWT_NonStandardCredential(t *testing.T) {
 	t.Run("strict refuses it", func(t *testing.T) {
 		w := generateTestWallet(t)
 		w.ValidationMode = ValidationModeStrict
-		if _, err := w.importSDJWT(raw, "", ""); err == nil {
+		if _, err := w.parseSDJWTEntry(raw, "", ""); err == nil {
 			t.Fatal("strict import accepted a credential that breaks RFC 9901")
 		}
 	})

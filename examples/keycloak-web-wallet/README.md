@@ -41,7 +41,7 @@ The default host ports (Keycloak `9080`, wallet `9085`, demo UI `9090`) avoid th
 KEYCLOAK_PORT=18080 WALLET_PORT=18085 APP_PORT=18090 ./start.sh
 ```
 
-## How It Works
+## Networking
 
 Services share Keycloak's network namespace through `network_mode: service:keycloak`. Published host ports match the ports used inside it, so browser links and container requests can use the same `localhost` URLs. Set port overrides together to preserve this mapping.
 

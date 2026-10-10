@@ -18,6 +18,8 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"net/url"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -164,54 +166,42 @@ func (s *Server) RefreshCredential(id string) (*StoredCredential, error) {
 	return renewed, nil
 }
 
+// ReplaceCredential puts a renewed credential in place of the one with id.
+// The renewal replaces the credential's content. The wallet's bookkeeping of
+// it (protection, display, batch, use count) stays, and so does its place.
 func (w *Wallet) ReplaceCredential(id, raw string, renewal *CredentialRenewal) (*StoredCredential, error) {
-	// Importing parses the credential. The new entry then replaces the old one
-	// under the old ID.
-	imported, err := w.ImportCredential(raw)
+	fresh, err := w.parseDetectedFormat(strings.TrimSpace(raw), "", "")
 	if err != nil {
 		return nil, fmt.Errorf("parsing the renewed credential: %w", err)
 	}
-	appendedID := imported.ID
 
 	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	var fresh StoredCredential
-	kept := w.Credentials[:0]
-	for _, c := range w.Credentials {
-		if c.ID == appendedID {
-			fresh = c
-			continue
-		}
-		kept = append(kept, c)
+	i := slices.IndexFunc(w.Credentials, func(c StoredCredential) bool { return c.ID == id })
+	if i < 0 {
+		w.mu.Unlock()
+		return nil, fmt.Errorf("credential %s not found", id)
 	}
-	w.Credentials = kept
+	old := w.Credentials[i]
+	fresh.ID = id
+	fresh.Protected = old.Protected
+	fresh.Renewal = renewal
+	fresh.Display = old.Display
+	// Batch membership stays, so listing, presentation, deletion and
+	// revocation still see one credential. The renewal is bound to the
+	// wallet holder key, so no per-copy key carries over.
+	fresh.BatchGroup = old.BatchGroup
+	fresh.Uses = old.Uses
+	fresh.LastPresentedAt = old.LastPresentedAt
+	w.Credentials[i] = fresh
+	renewed := w.Credentials[i]
+	w.mu.Unlock()
 
-	// A status entry from the import is keyed by the temporary ID, so it
-	// moves to the kept ID.
-	if entry, ok := w.StatusEntries[appendedID]; ok {
-		delete(w.StatusEntries, appendedID)
-		w.StatusEntries[id] = entry
+	// The renewed credential's entry on the wallet's own list replaces the
+	// old one.
+	if ref := w.ownStatusRef(renewed); ref != nil {
+		w.registerStatusEntry(id, ref.Idx)
 	}
-
-	for i := range w.Credentials {
-		if w.Credentials[i].ID != id {
-			continue
-		}
-		fresh.ID = id
-		fresh.Protected = w.Credentials[i].Protected
-		fresh.Renewal = renewal
-		fresh.Display = w.Credentials[i].Display
-		// Batch membership stays, so listing, presentation, deletion and
-		// revocation still see one credential. The renewal is bound to the
-		// wallet holder key, so no per-copy key carries over.
-		fresh.BatchGroup = w.Credentials[i].BatchGroup
-		fresh.Uses = w.Credentials[i].Uses
-		fresh.LastPresentedAt = w.Credentials[i].LastPresentedAt
-		w.Credentials[i] = fresh
-		return &w.Credentials[i], nil
-	}
-	return nil, fmt.Errorf("credential %s not found", id)
+	return &renewed, nil
 }
 
 // renewalCheckInterval has to be shorter than renewalMargin, so a credential

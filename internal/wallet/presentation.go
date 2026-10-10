@@ -43,6 +43,18 @@ type PresentationParams struct {
 	// called by the wallet. The presentation is bound to it (OpenID4VCI 1.1
 	// §6.2.1.1). Other flows leave it empty.
 	InteractiveAuthorizationEndpoint string
+	// SessionTranscript overrides the wallet's transcript mode for this
+	// presentation.
+	SessionTranscript SessionTranscriptMode
+}
+
+// sessionTranscriptFor is the transcript mode of a presentation: its own, or
+// the wallet's.
+func (w *Wallet) sessionTranscriptFor(params PresentationParams) SessionTranscriptMode {
+	if params.SessionTranscript != "" {
+		return params.SessionTranscript
+	}
+	return w.SessionTranscript
 }
 
 // isInteractiveAuthorizationResponseMode reports whether a response mode is
@@ -285,7 +297,7 @@ func (w *Wallet) CreateVPTokenMap(matches []CredentialMatch, params Presentation
 	// ISO 18013-7 Annex B uses one mdoc nonce per response in apu. Share it across
 	// documents so every session transcript matches the encrypted response.
 	var mdocNonce string
-	if w.SessionTranscript == SessionTranscriptISO {
+	if w.sessionTranscriptFor(params) == SessionTranscriptISO {
 		var err error
 		if mdocNonce, err = newMDocGeneratedNonce(); err != nil {
 			return nil, err

@@ -40,7 +40,7 @@ func TestWalletRegistrarRegistersAndCertifies(t *testing.T) {
 			t.Fatalf("wallet registrar verifiers add: %v", err)
 		}
 	})
-	identifier := regexp.MustCompile(`as (NTR[A-Z]{2}-[0-9A-F]+)`).FindStringSubmatch(out)
+	identifier := regexp.MustCompile(`as ([A-Z]{2}TEST\.[0-9A-F]+)`).FindStringSubmatch(out)
 	if identifier == nil || !strings.Contains(out, "Intended use: ") {
 		t.Fatalf("output %q, want the assigned identifier and intended use", out)
 	}
@@ -93,7 +93,7 @@ func TestRegistrarRegistersAnIssuer(t *testing.T) {
 		return strings.TrimSpace(out + buf.String())
 	}
 	out := run("issuers", "add", "--name", "Example University", "--service-id", "diplomas", "--attestation", "dc+sd-jwt:urn:example:diploma:1")
-	identifier := regexp.MustCompile(`as (NTR[A-Z]{2}-[0-9A-F]+)`).FindStringSubmatch(out)
+	identifier := regexp.MustCompile(`as ([A-Z]{2}TEST\.[0-9A-F]+)`).FindStringSubmatch(out)
 	if identifier == nil || !strings.Contains(out, "Attestation: dc+sd-jwt urn:example:diploma:1") {
 		t.Fatalf("output %q, want the identifier and the attestation", out)
 	}
@@ -174,7 +174,7 @@ func TestRegistrarAddsTheOtherRoleToARegistration(t *testing.T) {
 		return strings.TrimSpace(out + buf.String())
 	}
 	out := run("verifiers", "add", "--name", "Ticket Shop", "--purpose", "Ticket check", "--dcql", dcql)
-	identifier := regexp.MustCompile(`as (NTR[A-Z]{2}-[0-9A-F]+)`).FindStringSubmatch(out)[1]
+	identifier := regexp.MustCompile(`as ([A-Z]{2}TEST\.[0-9A-F]+)`).FindStringSubmatch(out)[1]
 
 	var issuerInfo []map[string]any
 	issued := run("issuers", "add", "--to", identifier, "--attestation", "dc+sd-jwt:urn:example:ticket:1")

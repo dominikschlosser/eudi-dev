@@ -55,7 +55,7 @@ type partyFlags struct {
 
 func (f *partyFlags) add(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.rp.TradeName, "name", "", "Trade name (required)")
-	cmd.Flags().StringVar(&f.identifier, "identifier", "", "organizationIdentifier, such as LEIXG-5299000ABCDEF12345 (default: assigned)")
+	cmd.Flags().StringVar(&f.identifier, "identifier", "", "Identifier: an EUID, or the organizationIdentifier of a certificate such as LEIXG-529900T8BM49AURSDO55 (default: an assigned EUID)")
 	cmd.Flags().StringVar(&f.legalName, "legal-name", "", "Legal name (default --name)")
 	cmd.Flags().StringVar(&f.rp.Country, "country", "", "Country code (default the identifier's country)")
 	cmd.Flags().StringVar(&f.supportURI, "support-uri", "", "Support contact URL (default a placeholder page on the wallet)")
@@ -86,7 +86,7 @@ func registeredParty(svc walletService, identifier string) (registrar.WalletRely
 		return registrar.WalletRelyingParty{}, err
 	}
 	for _, rp := range records {
-		if slices.ContainsFunc(rp.Identifier, func(id registrar.Identifier) bool { return id.Identifier == strings.TrimSpace(identifier) }) {
+		if registrar.HasIdentifier(rp, identifier) {
 			return rp, nil
 		}
 	}
@@ -228,7 +228,7 @@ both roles.`,
 				return err
 			}
 			i := slices.IndexFunc(records, func(rp registrar.WalletRelyingParty) bool {
-				return slices.ContainsFunc(rp.Identifier, func(id registrar.Identifier) bool { return id.Identifier == args[0] })
+				return registrar.HasIdentifier(rp, args[0])
 			})
 			if i < 0 || !hasRole(records[i], role) {
 				return fmt.Errorf("%s is not a registered %s", args[0], singular)
@@ -262,7 +262,7 @@ issuer that asks for a PID before it issues. It stays one registration with
 both roles. The command issues the verifier registration certificate and
 prints its verifier_info.`,
 		Example: `  eudi wallet registrar verifiers add --name "Example Shop" --purpose "Age check" --dcql query.json
-  eudi wallet registrar verifiers add --to NTRNL-1A2B3C4D5E6F7A8B --purpose "Identity check before issuance" --dcql pid.json`,
+  eudi wallet registrar verifiers add --to NLTEST.1A2B3C4D5E6F7A8B --purpose "Identity check before issuance" --dcql pid.json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := party.check(cmd, to); err != nil {
@@ -324,7 +324,7 @@ issuer_info.`,
 		Example: `  eudi wallet registrar issuers add --name "Example University" --attestation dc+sd-jwt:urn:example:diploma:1
   eudi wallet registrar issuers add --name "Example PID Provider" --attestation dc+sd-jwt:urn:eudi:pid:1 --attestation mso_mdoc:eu.europa.ec.eudi.pid.1
   eudi wallet registrar issuers add --name "Example Bank" --category qeaa --attestation dc+sd-jwt:urn:example:account:1
-  eudi wallet registrar issuers add --to NTRNL-1A2B3C4D5E6F7A8B --attestation dc+sd-jwt:urn:example:ticket:1`,
+  eudi wallet registrar issuers add --to NLTEST.1A2B3C4D5E6F7A8B --attestation dc+sd-jwt:urn:example:ticket:1`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := party.check(cmd, to); err != nil {
@@ -529,7 +529,7 @@ x509_san_dns for every --dns name) go to stderr, or into the JSON output
 with --json.`,
 		Example: `  openssl ecparam -name prime256v1 -genkey -noout -out verifier.key
   openssl req -new -key verifier.key -subj "/" -out verifier.csr
-  eudi wallet registrar access-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --csr verifier.csr > verifier.pem`,
+  eudi wallet registrar access-cert --identifier NLTEST.1A2B3C4D5E6F7A8B --csr verifier.csr > verifier.pem`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pemData, err := format.ReadInput(csrPath)
 			if err != nil {
@@ -589,10 +589,10 @@ Without --intended-use it uses the relying party's only intended use, or its
 only provider service. --provider selects the provider service of
 --service-id. --jwt prints the bare registration certificate instead, and
 --json prints both.`,
-		Example: `  eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B
-  eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --jwt | eudi decode
-  eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --intended-use 3f2a9c1e7b6d4a50 --json
-  eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --service-id diplomas --provider --new`,
+		Example: `  eudi wallet registrar registration-cert --identifier NLTEST.1A2B3C4D5E6F7A8B
+  eudi wallet registrar registration-cert --identifier NLTEST.1A2B3C4D5E6F7A8B --jwt | eudi decode
+  eudi wallet registrar registration-cert --identifier NLTEST.1A2B3C4D5E6F7A8B --intended-use 3f2a9c1e7b6d4a50 --json
+  eudi wallet registrar registration-cert --identifier NLTEST.1A2B3C4D5E6F7A8B --service-id diplomas --provider --new`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if provider && req.IntendedUseIdentifier != "" {
 				return fmt.Errorf("--provider selects a service, so it takes no --intended-use")
@@ -679,7 +679,7 @@ func onlyCertificateTarget(svc walletService, identifier, serviceIdentifier stri
 		return "", err
 	}
 	i := slices.IndexFunc(records, func(rp registrar.WalletRelyingParty) bool {
-		return slices.ContainsFunc(rp.Identifier, func(id registrar.Identifier) bool { return id.Identifier == strings.TrimSpace(identifier) })
+		return registrar.HasIdentifier(rp, identifier)
 	})
 	if i < 0 {
 		return "", fmt.Errorf("relying party %s is not registered", identifier)
@@ -732,7 +732,7 @@ itself is kept.
 Certificates revoked by the registrar itself stay revoked. That happens when a
 newer certificate replaces one, or when an update changes or removes what it
 certifies.`,
-		Example: "  eudi wallet registrar " + use + " --identifier NTRNL-1A2B3C4D5E6F7A8B\n  eudi wallet registrar " + use + " --identifier NTRNL-1A2B3C4D5E6F7A8B --intended-use 3f2a9c1e7b6d4a50\n  eudi wallet registrar " + use + " --identifier NTRNL-1A2B3C4D5E6F7A8B --service-id diplomas",
+		Example: "  eudi wallet registrar " + use + " --identifier NLTEST.1A2B3C4D5E6F7A8B\n  eudi wallet registrar " + use + " --identifier NLTEST.1A2B3C4D5E6F7A8B --intended-use 3f2a9c1e7b6d4a50\n  eudi wallet registrar " + use + " --identifier NLTEST.1A2B3C4D5E6F7A8B --service-id diplomas",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := managedWallet()

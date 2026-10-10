@@ -15,13 +15,11 @@
 package wallet
 
 import (
-	"bytes"
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -1145,17 +1143,10 @@ func fetchOAuthMetadata(client *http.Client, authServer string, payloads ...*Log
 		}
 		return nil, fmt.Errorf("no OAuth metadata found at %s: HTTP %d", authServer, resp.StatusCode)
 	}
-	var captured bytes.Buffer
-	var reader io.Reader = resp.Body
-	if payload != nil {
-		reader = io.TeeReader(resp.Body, &captured)
-	}
 	var meta map[string]any
-	decodeErr := json.NewDecoder(reader).Decode(&meta)
+	body, decodeErr := format.DecodeRemoteJSON(resp.Body, "OAuth metadata", &meta)
 	if payload != nil {
-		// Logging must not change the streaming decoder's result.
-		_, _ = io.Copy(&captured, resp.Body)
-		payload.Body = captured.String()
+		payload.Body = string(body)
 	}
 	if decodeErr != nil {
 		return nil, fmt.Errorf("parsing OAuth metadata from %s: %w", authServer, decodeErr)

@@ -151,8 +151,6 @@ type RegisteredClaim struct {
 	Path []any `json:"path"`
 }
 
-const euidIdentifierType = "http://data.europa.eu/eudi/id/EUID"
-
 var (
 	errRelyingPartyNotFound = errors.New("relying party not registered")
 	errRelyingPartyExists   = errors.New("relying party already registered")
@@ -177,10 +175,8 @@ func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty) (WalletRelyingPa
 	if len(r.state.RelyingParties) >= MaxRelyingParties {
 		return WalletRelyingParty{}, errRegistrarFull
 	}
-	for _, id := range rp.Identifier {
-		if relyingPartyIndex(r.state.RelyingParties, id.Identifier) >= 0 {
-			return WalletRelyingParty{}, fmt.Errorf("%w: %s", errRelyingPartyExists, id.Identifier)
-		}
+	if err := r.checkIdentifiersFreeLocked(rp, -1); err != nil {
+		return WalletRelyingParty{}, err
 	}
 	r.state.RelyingParties = append(r.state.RelyingParties, rp)
 	return cloneRelyingParty(rp)
@@ -218,13 +214,11 @@ func (r *Registrar) UpdateRelyingParty(rp WalletRelyingParty) (WalletRelyingPart
 	// The first identifier never changes, because the issued certificates and
 	// their status entries contain it.
 	stored := r.state.RelyingParties[i].Identifier[0]
-	rp.Identifier = append([]Identifier{stored}, slices.DeleteFunc(rp.Identifier, func(id Identifier) bool { return id.Identifier == stored.Identifier })...)
-	for _, id := range rp.Identifier[1:] {
-		if j := relyingPartyIndex(r.state.RelyingParties, id.Identifier); j >= 0 && j != i {
-			return WalletRelyingParty{}, fmt.Errorf("%w: %s", errRelyingPartyExists, id.Identifier)
-		}
-	}
+	rp.Identifier = append([]Identifier{stored}, rp.Identifier...)
 	if err := normalizeRelyingParty(&rp, base, &r.state.RelyingParties[i], categories); err != nil {
+		return WalletRelyingParty{}, err
+	}
+	if err := r.checkIdentifiersFreeLocked(rp, i); err != nil {
 		return WalletRelyingParty{}, err
 	}
 	// A certificate certifies the content of its intended use. When an update
@@ -266,6 +260,12 @@ func (r *Registrar) EnsureRelyingParty(rp WalletRelyingParty) (WalletRelyingPart
 	}
 	updated, err := r.UpdateRelyingParty(rp)
 	return updated, err == nil, err
+}
+
+// IsNotRegistered reports whether err says that a relying party or its
+// intended use is not registered.
+func IsNotRegistered(err error) bool {
+	return errors.Is(err, errRelyingPartyNotFound)
 }
 
 func (r *Registrar) DeleteRelyingParty(identifier string) error {
@@ -320,12 +320,31 @@ func cloneRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {
 }
 
 func relyingPartyIndex(parties []WalletRelyingParty, identifier string) int {
-	return slices.IndexFunc(parties, func(rp WalletRelyingParty) bool { return hasIdentifier(rp, identifier) })
+	return slices.IndexFunc(parties, func(rp WalletRelyingParty) bool { return HasIdentifier(rp, identifier) })
 }
 
-func hasIdentifier(rp WalletRelyingParty, identifier string) bool {
+// checkIdentifiersFreeLocked refuses a registration whose identifiers name
+// another party. Identifiers compare by their semantics identifier. skip is
+// the index of the party itself on an update, or -1. Callers hold r.mu.
+func (r *Registrar) checkIdentifiersFreeLocked(rp WalletRelyingParty, skip int) error {
+	for _, key := range identifierKeys(rp) {
+		for j, other := range r.state.RelyingParties {
+			if j != skip && slices.Contains(identifierKeys(other), key) {
+				return fmt.Errorf("%w: %s", errRelyingPartyExists, key)
+			}
+		}
+	}
+	return nil
+}
+
+// HasIdentifier matches a registered identifier and the semantics identifier
+// of the relying party's certificates. Every identifier lookup goes through it.
+func HasIdentifier(rp WalletRelyingParty, identifier string) bool {
 	identifier = strings.TrimSpace(identifier)
-	return slices.ContainsFunc(rp.Identifier, func(id Identifier) bool { return id.Identifier == identifier })
+	if identifier == "" {
+		return false
+	}
+	return slices.Contains(identifierKeys(rp), identifier) || slices.ContainsFunc(rp.Identifier, func(id Identifier) bool { return id.Identifier == identifier })
 }
 
 // attestationCategories returns the catalogue category of each attestation
@@ -356,23 +375,44 @@ func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRe
 		return fmt.Errorf("country %q is not a two-letter country code", rp.Country)
 	}
 	if len(rp.Identifier) == 0 || strings.TrimSpace(rp.Identifier[0].Identifier) == "" {
-		rp.Identifier = []Identifier{{Identifier: newOrganizationIdentifier(firstNonEmpty(rp.Country, mock.DefaultCertificateCountry)), Type: euidIdentifierType}}
+		rp.Identifier = []Identifier{{Identifier: NewEUID(firstNonEmpty(rp.Country, mock.DefaultCertificateCountry)), Type: EUIDIdentifierType}}
 	}
-	identifier := strings.TrimSpace(rp.Identifier[0].Identifier)
-	if !organizationIdentifierPattern.MatchString(identifier) {
-		return fmt.Errorf("identifier %q is not an organizationIdentifier such as LEIXG-5299000ABCDEF12345 (type LEI, NTR, VAT, EOR or EXC, country code, dash, value)", identifier)
+	for i, id := range rp.Identifier {
+		id.Identifier, id.Type = strings.TrimSpace(id.Identifier), strings.TrimSpace(id.Type)
+		if id.Type == "" {
+			id = typedIdentifier(id.Identifier)
+		}
+		rp.Identifier[i] = id
 	}
-	rp.Identifier[0].Identifier = identifier
+	semantic, err := SemanticIdentifier(rp.Identifier[0], rp.Country)
+	if err != nil {
+		return err
+	}
 	if rp.Country == "" {
-		rp.Country = identifier[3:5]
+		rp.Country = semantic[3:5]
 	}
+	// Every identifier maps to a semantics identifier, and one that names the
+	// same party as an earlier one is dropped.
+	seen := map[string]bool{}
+	identifiers := rp.Identifier[:0]
+	for _, id := range rp.Identifier {
+		key, err := SemanticIdentifier(id, rp.Country)
+		if err != nil {
+			return err
+		}
+		if !seen[key] {
+			seen[key] = true
+			identifiers = append(identifiers, id)
+		}
+	}
+	rp.Identifier = identifiers
 	if len(rp.LegalPerson.LegalName) == 0 || strings.TrimSpace(rp.LegalPerson.LegalName[0]) == "" {
 		rp.LegalPerson.LegalName = []string{rp.TradeName}
 	}
 	if err := normalizeSupervisoryAuthority(&rp.SupervisoryAuthority, rp.Country, base); err != nil {
 		return err
 	}
-	rp.RegistryURI = base + "/api/registrar/wrp/" + identifier
+	rp.RegistryURI = base + "/api/registrar/wrp/" + rp.Identifier[0].Identifier
 	if len(rp.Services) == 0 {
 		rp.Services = []WalletRelyingPartyService{{}}
 	}
@@ -603,12 +643,6 @@ func findService(rp WalletRelyingParty, serviceIdentifier string) (WalletRelying
 	return WalletRelyingPartyService{}, false
 }
 
-// newOrganizationIdentifier assigns an EUID in the organizationIdentifier form
-// of ETSI EN 319 412-1 §5.1.4 (prefix NTR).
-func newOrganizationIdentifier(country string) string {
-	return "NTR" + strings.ToUpper(country) + "-" + strings.ToUpper(newRegistrarID())
-}
-
 func newRegistrarID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
@@ -630,7 +664,7 @@ func matchesWRPQuery(rp WalletRelyingParty, q url.Values) bool {
 		return anyUse(func(u IntendedUse) bool { return slices.ContainsFunc(u.Credentials, match) })
 	}
 	contains := func(text, part string) bool { return strings.Contains(strings.ToLower(text), strings.ToLower(part)) }
-	return has("identifier", func(v string) bool { return hasIdentifier(rp, v) }) &&
+	return has("identifier", func(v string) bool { return HasIdentifier(rp, v) }) &&
 		has("serviceidentifier", func(v string) bool {
 			return anyService(func(s WalletRelyingPartyService) bool { return s.ServiceIdentifier == v })
 		}) &&

@@ -596,15 +596,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 	handle := func(result ConsentResult) ([]CredentialMatch, bool, error) {
 		if result.Approved {
 			matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
-			if result.SelectedClaims != nil {
-				for i, match := range matches {
-					if selected, ok := result.SelectedClaims[match.CredentialID]; ok {
-						matches[i].SelectedKeys = selected
-						cred, _ := w.GetCredential(match.CredentialID)
-						matches[i].Claims = filterClaims(cred, selected)
-					}
-				}
-			}
+			matches = w.applySelectedClaims(matches, result.SelectedClaims)
 		}
 		consentReq.SubmissionCh <- SubmissionResult{StatusCode: 200}
 		return matches, result.Approved, nil

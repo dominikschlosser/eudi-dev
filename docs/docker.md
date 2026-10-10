@@ -74,7 +74,7 @@ The database stores private keys unencrypted, like the file backend (see [SECURI
 
 Set `-e EUDI_DEV_LOG_FORMAT=json` to write one JSON record per line for a log collector (see [JSON logs](wallet/serve.md#json-logs)).
 
-## How it works
+## Flow
 
 1. The container starts with `--pid` (two preloaded EUDI PID credentials, one SD-JWT and one mdoc) and `--auto-accept` (presents matching credentials without user consent)
 2. Your verifier sends an OID4VP authorization request to the wallet's `/authorize` endpoint

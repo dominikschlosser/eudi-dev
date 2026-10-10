@@ -27,6 +27,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
 
 // Commands accept unambiguous prefixes of these IDs. Generation panics only if system
@@ -57,10 +58,11 @@ func (w *Wallet) importBatchCopy(raw, group, bindingKeyPEM string) (*StoredCrede
 }
 
 func (w *Wallet) importCredential(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
-	cred, err := w.importDetectedFormat(strings.TrimSpace(raw), group, bindingKeyPEM)
+	parsed, err := w.parseDetectedFormat(strings.TrimSpace(raw), group, bindingKeyPEM)
 	if err != nil {
 		return nil, err
 	}
+	cred := w.appendCredential(parsed)
 	w.adoptOwnStatusEntry(cred)
 	w.noteUnheldKeyBinding(cred)
 	w.noteDIDIssuerKey(cred)
@@ -109,11 +111,13 @@ func (w *Wallet) noteDIDIssuerKey(cred *StoredCredential) {
 
 // Set the batch group and binding key before appending because clones forward
 // credentials at that point.
-func (w *Wallet) importDetectedFormat(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
+// parseDetectedFormat parses a credential into a new wallet entry without
+// storing it.
+func (w *Wallet) parseDetectedFormat(raw, group, bindingKeyPEM string) (StoredCredential, error) {
 	if strings.Contains(raw, "~") {
-		cred, err := w.importSDJWT(raw, group, bindingKeyPEM)
+		cred, err := w.parseSDJWTEntry(raw, group, bindingKeyPEM)
 		if err != nil {
-			return nil, err
+			return StoredCredential{}, err
 		}
 		log.Printf("[Wallet] Imported SD-JWT credential: vct=%s claims=%d disclosures=%d", cred.VCT, len(cred.Claims), len(cred.Disclosures))
 		return cred, nil
@@ -121,24 +125,24 @@ func (w *Wallet) importDetectedFormat(raw, group, bindingKeyPEM string) (*Stored
 
 	detected := format.Detect(raw)
 	if detected == format.FormatMDOC {
-		cred, err := w.importMDoc(raw, group, bindingKeyPEM)
+		cred, err := w.parseMDocEntry(raw, group, bindingKeyPEM)
 		if err != nil {
-			return nil, err
+			return StoredCredential{}, err
 		}
 		log.Printf("[Wallet] Imported mdoc credential: docType=%s claims=%d", cred.DocType, len(cred.Claims))
 		return cred, nil
 	}
 
 	if strings.Count(raw, ".") == 2 {
-		cred, err := w.importPlainJWT(raw, group, bindingKeyPEM)
+		cred, err := w.parsePlainJWTEntry(raw, group, bindingKeyPEM)
 		if err != nil {
-			return nil, err
+			return StoredCredential{}, err
 		}
 		log.Printf("[Wallet] Imported plain JWT credential: vct=%s claims=%d", cred.VCT, len(cred.Claims))
 		return cred, nil
 	}
 
-	return nil, fmt.Errorf("unable to detect credential format (expected SD-JWT or mdoc)")
+	return StoredCredential{}, fmt.Errorf("unable to detect credential format (expected SD-JWT or mdoc)")
 }
 
 // Adopt imported status entries that reference this wallet's own list. The demo issuer
@@ -147,12 +151,8 @@ func (w *Wallet) adoptOwnStatusEntry(cred *StoredCredential) {
 	if w == nil || cred == nil {
 		return
 	}
-	own := strings.TrimSpace(w.StatusListURL())
-	if own == "" {
-		return
-	}
-	ref := CredentialStatusRef(*cred)
-	if ref == nil || ref.URI != own {
+	ref := w.ownStatusRef(*cred)
+	if ref == nil {
 		return
 	}
 	if _, exists := w.StatusEntryFor(cred.ID); exists {
@@ -161,8 +161,20 @@ func (w *Wallet) adoptOwnStatusEntry(cred *StoredCredential) {
 	w.registerStatusEntry(cred.ID, ref.Idx)
 }
 
+// ownStatusRef is the credential's status reference if it points at the
+// wallet's own status list.
+func (w *Wallet) ownStatusRef(cred StoredCredential) *statuslist.StatusRef {
+	own := strings.TrimSpace(w.StatusListURL())
+	ref := CredentialStatusRef(cred)
+	if own == "" || ref == nil || ref.URI != own {
+		return nil
+	}
+	return ref
+}
+
 func (w *Wallet) appendCredential(cred StoredCredential) *StoredCredential {
 	w.mu.Lock()
+	w.makeCredentialRoomLocked()
 	w.Credentials = append(w.Credentials, cred)
 	sink := w.credentialSink
 	w.mu.Unlock()
@@ -211,10 +223,10 @@ func (w *Wallet) recordCredentialDeviations(spec string, deviations []string) {
 		map[string]any{"deviations": deviations})
 }
 
-func (w *Wallet) importSDJWT(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
+func (w *Wallet) parseSDJWTEntry(raw, group, bindingKeyPEM string) (StoredCredential, error) {
 	token, err := w.parseCredentialSDJWT(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing SD-JWT: %w", err)
+		return StoredCredential{}, fmt.Errorf("parsing SD-JWT: %w", err)
 	}
 
 	cred := StoredCredential{
@@ -232,13 +244,13 @@ func (w *Wallet) importSDJWT(raw, group, bindingKeyPEM string) (*StoredCredentia
 		cred.VCT = vct
 	}
 
-	return w.appendCredential(cred), nil
+	return cred, nil
 }
 
-func (w *Wallet) importPlainJWT(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
+func (w *Wallet) parsePlainJWTEntry(raw, group, bindingKeyPEM string) (StoredCredential, error) {
 	_, payload, _, err := format.ParseJWTParts(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing JWT: %w", err)
+		return StoredCredential{}, fmt.Errorf("parsing JWT: %w", err)
 	}
 
 	cred := StoredCredential{
@@ -257,7 +269,7 @@ func (w *Wallet) importPlainJWT(raw, group, bindingKeyPEM string) (*StoredCreden
 		cred.VCT = jwtVCType(payload)
 	}
 
-	return w.appendCredential(cred), nil
+	return cred, nil
 }
 
 // VC Data Model 1.1 puts the type array inside vc. Some issuers put it at the payload
@@ -284,16 +296,16 @@ func jwtVCType(payload map[string]any) string {
 	return ""
 }
 
-func (w *Wallet) importMDoc(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
+func (w *Wallet) parseMDocEntry(raw, group, bindingKeyPEM string) (StoredCredential, error) {
 	doc, err := mdoc.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing mdoc: %w", err)
+		return StoredCredential{}, fmt.Errorf("parsing mdoc: %w", err)
 	}
 	// Strict mode rejects credentials that required dropping invalid content. Debug
 	// mode keeps them.
 	if len(doc.Deviations) > 0 {
 		if w.Mode() == ValidationModeStrict {
-			return nil, fmt.Errorf("%s", strings.Join(doc.Deviations, ". "))
+			return StoredCredential{}, fmt.Errorf("%s", strings.Join(doc.Deviations, ". "))
 		}
 		w.recordCredentialDeviations("ISO/IEC 18013-5", doc.Deviations)
 	}
@@ -317,7 +329,7 @@ func (w *Wallet) importMDoc(raw, group, bindingKeyPEM string) (*StoredCredential
 	}
 	cred.issuedAt = mdocSignedAt(doc)
 
-	return w.appendCredential(cred), nil
+	return cred, nil
 }
 
 func (w *Wallet) ImportCredentialFromFile(path string) error {

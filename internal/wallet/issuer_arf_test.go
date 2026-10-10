@@ -173,6 +173,9 @@ func TestARFAcceptsTheWalletsOwnIssuer(t *testing.T) {
 		{Format: "mso_mdoc", DocType: mock.PIDNamespace},
 		{Format: "dc+sd-jwt", VCT: testDiplomaVCT, Category: credtemplate.CategoryEAA},
 	}
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
+	}
 	metadata, err := buildOpenIDCredentialIssuerMetadata(w, w.IssuerURL)
 	if err != nil {
 		t.Fatal(err)
@@ -207,6 +210,22 @@ func TestStrictARFRefusesAnUnregisteredIssuer(t *testing.T) {
 	w.ValidationMode = ValidationModeDebug
 	if err := w.reportARFIssuanceFindings("https://issuer.example", []string{"ARF RPRC_22a: no certificate"}); err != nil {
 		t.Fatalf("debug mode refused: %v", err)
+	}
+}
+
+// Missing issuer_info is an ARF finding: refused in strict mode, a warning in
+// debug mode, and not checked without --arf.
+func TestMissingIssuerInfoCountsOnlyWithARF(t *testing.T) {
+	w := generateTestWallet(t)
+	rp := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)
+	key, chain := issueTestAccessCertificate(t, w, rp.Identifier[0].Identifier)
+	metadata, signer := signedTestIssuerMetadata(t, key, chain, "dc+sd-jwt", testDiplomaVCT, "")
+	if got := w.issuerARFCheck(metadata, signer, []string{"offered"}); got != nil {
+		t.Errorf("findings without --arf: %v", got)
+	}
+	w.RequireARF = true
+	if got := strings.Join(w.issuerARFCheck(metadata, signer, []string{"offered"}), "\n"); !strings.Contains(got, "issuer_info") {
+		t.Errorf("findings with --arf: %q, want the missing issuer_info", got)
 	}
 }
 

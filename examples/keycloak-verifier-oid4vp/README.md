@@ -2,7 +2,7 @@
 
 This example runs a local same-device OpenID4VP login against Keycloak using `eudi-dev` as the wallet.
 
-## How It Works
+## Flow
 
 1. `./scripts/download-extension.sh` downloads `keycloak-extension-oid4vp` `0.11.1` into `providers/`.
 2. `./scripts/generate-wallet.sh` prepares the standard `eudi-dev` wallet with PID credentials and a trusted list endpoint reachable from Docker as `http://host.docker.internal:8085`.

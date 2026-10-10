@@ -1095,6 +1095,12 @@ test.describe("Credential Issuing via UI", () => {
   });
 
   test("trust dialog adds a provider CA and an external list in popups and shows them under their lists", async ({ page, request }) => {
+    // A retry starts without the entries of an earlier attempt.
+    const state = await (await request.get(`${WALLET_URL}/api/trust`)).json();
+    for (const e of state.entities || []) {
+      if (e.name === "E2E provider") await request.delete(`${WALLET_URL}/api/trust/entities/${encodeURIComponent(e.id)}`);
+    }
+    await request.delete(`${WALLET_URL}/api/trust/lists?url=${encodeURIComponent(`${WALLET_URL}/api/trustlists/pid`)}`);
     const ca = await (await request.get(`${WALLET_URL}/api/certificates/ca`)).text();
     await page.goto(WALLET_URL);
     await page.locator("#trust-link").click();
@@ -2032,22 +2038,27 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-overlay")).toBeVisible();
   }
 
+  // The list derives its element ids from the identifier like the UI does.
+  const domID = (id) => id.replace(/[^A-Za-z0-9_-]/g, "_");
+
   function publicKeyOf(dir, file, command) {
     return execSync(`openssl ${command} -in ${file} -pubout 2>/dev/null`, { cwd: dir }).toString();
   }
 
-  test("the demo verifier can't be edited, but its certificate can be revoked", async ({ page }) => {
+  // A local wallet leaves the demo registrations to the user.
+  test("the demo verifier can be changed like any registration", async ({ page }) => {
     await page.goto(WALLET_URL);
     await page.locator("#registrar-menu-toggle").click();
     await page.locator("#registrar-parties-link").click();
     await page.locator("#registrar-search").fill("EUDI Dev Demo Verifier");
-    const card = "#registrar-party-NTRNL-00000001";
-    await expect(page.locator(card + "-protected")).toHaveText("Pre-registered");
-    await expect(page.locator(card + "-delete")).toHaveCount(0);
-    await expect(page.locator(card + "-add-use")).toHaveCount(0);
-    await expect(page.locator(card + ' [id$="-summary-delete"]')).toHaveCount(0);
+    const card = "#registrar-party-NLTEST_00000001";
+    await expect(page.locator(card + "-identifier")).toHaveText("NLTEST.00000001");
+    await expect(page.locator(card + "-protected")).toHaveCount(0);
+    await expect(page.locator(card + "-delete")).toBeVisible();
+    await expect(page.locator(card + "-add-use")).toBeVisible();
+    await expect(page.locator(card + ' [id$="-summary-delete"]')).toBeVisible();
     await page.locator(card + ' [id$="-details"]').first().click();
-    await expect(page.locator('#registrar-cert-body [id$="-delete"]')).toHaveCount(0);
+    await expect(page.locator('#registrar-cert-body [id$="-delete"]')).toBeVisible();
     await expect(page.locator('#registrar-cert-body [id$="-revoke"]')).toBeVisible();
   });
 
@@ -2055,7 +2066,7 @@ test.describe("Registrar", () => {
     await openRegisterDialog(page);
     await page.locator("#registrar-submit").click();
     await expect(page.locator("#registrar-result")).toBeVisible();
-    await expect(page.locator("#registrar-result-identifier")).toHaveText(/^NTRNL-[0-9a-f]{16}$/i);
+    await expect(page.locator("#registrar-result-identifier")).toHaveText(/^NLTEST\.[0-9A-F]{16}$/);
     await expect(page.locator("#registrar-client-id-0")).toContainText("x509_hash:");
     await expect(page.locator("#registrar-client-id-1")).toHaveText("x509_san_dns:verifier.example");
 
@@ -2169,7 +2180,7 @@ test.describe("Registrar", () => {
       }] }],
     });
     expect(status).toBe(201);
-    const card = "#registrar-party-" + body.identifier[0].identifier;
+    const card = "#registrar-party-" + domID(body.identifier[0].identifier);
     const use = card + "-use-" + body.services[0].intendedUses[0].intendedUseIdentifier;
 
     await page.goto(WALLET_URL);
@@ -2185,7 +2196,7 @@ test.describe("Registrar", () => {
     });
     await page.locator("#registrar-filter-issuers").check();
     await expect(page.locator(card)).toHaveCount(0);
-    await expect(page.locator("#registrar-party-" + provider.replace(/[^A-Za-z0-9_-]/g, "_") + "-role-issuer")).toBeVisible();
+    await expect(page.locator("#registrar-party-" + domID(provider) + "-role-issuer")).toBeVisible();
     await page.locator("#registrar-filter-verifiers").check();
 
     // The list shows one line for each certificate. Details opens the rest.
@@ -2227,7 +2238,7 @@ test.describe("Registrar", () => {
       }] }],
     });
     const identifier = body.identifier[0].identifier;
-    const use = "#registrar-party-" + identifier + "-use-" + body.services[0].intendedUses[0].intendedUseIdentifier;
+    const use = "#registrar-party-" + domID(identifier) + "-use-" + body.services[0].intendedUses[0].intendedUseIdentifier;
     await jsonPost(`${WALLET_URL}/api/registrar/registration-certificates`, { identifier, intendedUseIdentifier: body.services[0].intendedUses[0].intendedUseIdentifier });
     body.services[0].intendedUses[0].purpose = [{ lang: "en", content: "Marketing" }];
     await page.goto(WALLET_URL);
@@ -2251,7 +2262,6 @@ test.describe("Registrar", () => {
       const resp = await fetch("api/registrar/wrp?tradename=" + encodeURIComponent(name), { headers: { Accept: "application/json" } });
       return (await resp.json()).data[0].identifier[0].identifier;
     }, name);
-    const domID = (id) => id.replace(/[^A-Za-z0-9_-]/g, "_");
     const issuer = "#registrar-party-" + domID(await identifierOf("EUDI Dev Demo Issuer")) + "-service-issuance";
     const verifier = "#registrar-party-" + domID(await identifierOf("EUDI Dev Demo Verifier")) + "-use-demo-requests";
     await page.locator("#registrar-menu-toggle").click();
@@ -2321,7 +2331,7 @@ test.describe("Registrar", () => {
         credentials: [{ format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["given_name"] }] }],
       }] }],
     });
-    const card = "#registrar-party-" + body.identifier[0].identifier;
+    const card = "#registrar-party-" + domID(body.identifier[0].identifier);
 
     await page.goto(WALLET_URL);
     await page.locator("#registrar-menu-toggle").click();
@@ -2401,7 +2411,7 @@ test.describe("Registrar", () => {
       }],
     });
     expect(status).toBe(201);
-    const card = "#registrar-party-" + body.identifier[0].identifier;
+    const card = "#registrar-party-" + domID(body.identifier[0].identifier);
     const service = card + "-service-diplomas";
 
     await page.goto(WALLET_URL);
@@ -2438,7 +2448,7 @@ test.describe("Registrar", () => {
       }] }],
     });
     const identifier = body.identifier[0].identifier;
-    const card = "#registrar-party-" + identifier;
+    const card = "#registrar-party-" + domID(identifier);
 
     await page.goto(WALLET_URL);
     await page.locator("#registrar-menu-toggle").click();
@@ -2482,6 +2492,7 @@ test.describe("Registrar", () => {
     expect(edited[0].data.providesAttestations.map((a) => a.type)).toEqual(["urn:example:ticket:1", "urn:example:ticket:2"]);
     await page.locator("#registrar-close").click();
     await expect(page.locator(card + "-service-default-summary-status")).toHaveText("Active");
+    await fetch(`${WALLET_URL}/api/registrar/wrp/${encodeURIComponent(body.identifier[0].identifier)}`, { method: "DELETE" });
   });
 
   test("deleting a registration certificate removes it from the registration and revokes it", async ({ page }) => {
@@ -2500,7 +2511,7 @@ test.describe("Registrar", () => {
     const useID = body.services[0].intendedUses[0].intendedUseIdentifier;
     await jsonPost(`${WALLET_URL}/api/registrar/registration-certificates`, { identifier, intendedUseIdentifier: useID });
     await jsonPost(`${WALLET_URL}/api/registrar/registration-certificates`, { identifier, serviceIdentifier: "diplomas" });
-    const card = "#registrar-party-" + identifier;
+    const card = "#registrar-party-" + domID(identifier);
     const statuses = async () => (await jsonGet(`${WALLET_URL}/api/registrar/registration-certificates?identifier=${identifier}`)).body;
 
     await page.goto(WALLET_URL);
@@ -2531,7 +2542,7 @@ test.describe("Registrar", () => {
       }],
     });
     const identifier = body.identifier[0].identifier;
-    const card = "#registrar-party-" + identifier;
+    const card = "#registrar-party-" + domID(identifier);
 
     await page.goto(WALLET_URL);
     await page.locator("#registrar-menu-toggle").click();
@@ -2542,7 +2553,7 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-title")).toHaveText("Add a verifier registration certificate to Checking University");
     await expect(page.locator("#registrar-target-hint")).toContainText("request credentials from a wallet");
     await expect(page.locator("#registrar-purpose")).toHaveValue("Identity check before issuance");
-    await expect(page.locator("#registrar-credential-1-claims, #registrar-credentials [data-field=\"claims\"]").first()).toHaveValue("given_name, family_name");
+    await expect(page.locator("#registrar-credentials [data-field=\"claims\"]").first()).toHaveValue("given_name, family_name");
     await page.locator("#registrar-purpose").fill("Checks who you are before a diploma is issued");
     await page.locator("#registrar-submit").click();
     await expect(page.locator("#registrar-submit")).toHaveText("✓ Added");

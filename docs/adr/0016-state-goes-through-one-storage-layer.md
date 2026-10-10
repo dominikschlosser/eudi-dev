@@ -6,7 +6,7 @@ Three backends implement `Store`: `file` uses the existing wallet directory layo
 
 Choose the backend with `--storage` or `EUDI_DEV_STORAGE`. Commands and tests that open a store without an explicit backend use the environment variable. The CLI defaults to `file`. The container image sets `memory`. Persistent deployments use `file` with a volume or a Postgres URL. `auto` selects `file` when a state directory is set explicitly, is empty, or contains wallet state. It selects `memory` when the directory is absent or contains only `instances/` and `remote.json`.
 
-## What stays outside the layer
+## State outside the layer
 
 The instance registry (`instances/*.json`), active remote target and detached server log stay in local files. The CLI uses them to find processes on this machine. It identifies a running wallet by its directory on every backend. `/api/config` reports that directory.
 

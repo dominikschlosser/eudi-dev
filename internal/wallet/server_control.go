@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/news"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 // Hash the running executable once at startup. Comparing it with the file on disk
@@ -52,21 +53,14 @@ func (s *Server) SetImprint(page []byte) {
 	s.imprintHTML = page
 }
 
-// builtInRelyingParty reports whether a registration is one of the demo
-// issuer and verifier, which the wallet derives from its templates.
-func builtInRelyingParty(identifier string) bool {
-	return identifier == demoIssuerIdentity.Identifier || identifier == demoVerifierIdentity.Identifier
-}
-
 // protectedRelyingParty reports whether visitors of the public demo may not
-// change a registration or its certificates. They share the demo issuer and
-// verifier.
-func (s *Server) protectedRelyingParty(identifier string) bool {
-	return s.demo != nil && builtInRelyingParty(identifier)
+// change a registration. They share the demo issuer and verifier.
+func (s *Server) protectedRelyingParty(rp registrar.WalletRelyingParty) bool {
+	return s.demo != nil && (registrar.HasIdentifier(rp, demoIssuerIdentity.Identifier) || registrar.HasIdentifier(rp, demoVerifierIdentity.Identifier))
 }
 
 // protectedRelyingParties names the registrations the UI shows without
-// certificate actions.
+// actions.
 func (s *Server) protectedRelyingParties() []string {
 	if s.demo == nil {
 		return []string{}
@@ -176,11 +170,22 @@ func (s *Server) handleClearLog(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// showsError reports whether a browser sees an error. The flow's browser sees
+// its own errors. An error of a flow without an owner is shown to everyone,
+// except on a public demo, where its text could come from anyone.
+func (s *Server) showsError(owners []string, err WalletError) bool {
+	if err.Owner == "" {
+		return s.demo == nil
+	}
+	return ownedBy(owners, err.Owner)
+}
+
 func (s *Server) handleLastError(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, private")
 	w.Header().Set("Vary", "Cookie, "+OwnerHeader)
-	err := s.wallet.PeekLastError(callerOwners(r))
-	if err == nil {
+	owners := callerOwners(r)
+	err := s.wallet.PeekLastError(owners)
+	if err == nil || !s.showsError(owners, *err) {
 		writeJSON(w, http.StatusOK, nil)
 		return
 	}
@@ -210,7 +215,6 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"seeded_keys":               seeded,
 		"version":                   s.version,
 		"imprint":                   len(s.imprintHTML) > 0,
-		"built_in_relying_parties":  []string{demoIssuerIdentity.Identifier, demoVerifierIdentity.Identifier},
 		"protected_relying_parties": s.protectedRelyingParties(),
 		"news_id":                   s.newsID(),
 		"base_url":                  s.wallet.BaseURL,

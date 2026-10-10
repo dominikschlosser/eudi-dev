@@ -50,7 +50,7 @@ func TestAnAccessCertificateFromACSRSignsARequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	identifier, legalName, country := registrar.AccessCertificateSubject(leaf)
-	if identifier != rp.Identifier[0].Identifier || legalName != "Example Shop" || country != rp.Country || leaf.Subject.CommonName != "Example Shop" {
+	if identifier != semanticIdentifier(t, rp) || legalName != "Example Shop" || country != rp.Country || leaf.Subject.CommonName != "Example Shop" {
 		t.Errorf("subject %v, want the registration's identifier, names and country", leaf.Subject)
 	}
 	if strings.Count(result.Chain, "BEGIN CERTIFICATE") != 2 {

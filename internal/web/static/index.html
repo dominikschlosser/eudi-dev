@@ -12,13 +12,13 @@
   <header>
     <div class="header-left">
       <div class="header-brand">
-        <img src="logo.svg" alt="" class="header-logo">
-        <h1>EUDI Dev Decoder</h1>
+        <img src="logo.svg" alt="" class="header-logo" id="header-logo">
+        <h1 id="header-title">EUDI Dev Decoder</h1>
       </div>
-      <span class="header-links">
+      <span class="header-links" id="header-links">
         <a href="../" id="wallet-link" hidden>Wallet</a>
         <a href="#" id="get-cli-link">Get the CLI</a>
-        <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/dominikschlosser/eudi-dev" id="github-link" target="_blank" rel="noopener">GitHub</a>
       </span>
     </div>
     <div class="header-right">
@@ -30,7 +30,7 @@
   <main>
     <div class="pane input-pane">
       <div class="pane-header">
-        <span>Input</span>
+        <span id="input-title">Input</span>
         <span id="format-badge" class="badge hidden"></span>
         <span id="demo-note" hidden>Input is sent to the server for decoding. Do not paste real personal data.</span>
       </div>
@@ -40,16 +40,16 @@
       </div>
     </div>
     <div class="pane output-pane">
-      <div class="pane-header"><span>Decoded</span></div>
+      <div class="pane-header"><span id="output-title">Decoded</span></div>
       <div id="output" class="output-content">
-        <div class="placeholder">Paste a credential to see decoded output</div>
+        <div class="placeholder" id="output-placeholder">Paste a credential to see decoded output</div>
       </div>
     </div>
   </main>
   <footer class="shortcut-hint">
     <div class="sponsor-info" id="sponsor-info" hidden>
-      <span>Enjoying eudi-dev?</span>
-      <a href="https://github.com/sponsors/dominikschlosser" target="_blank" rel="noopener">
+      <span id="sponsor-text">Enjoying eudi-dev?</span>
+      <a href="https://github.com/sponsors/dominikschlosser" id="sponsor-link" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>
         Support its development
       </a>
@@ -58,23 +58,23 @@
       <span id="footer-version"></span>
       <a href="#" id="imprint-link" hidden>Imprint</a>
     </div>
-    <div class="footer-disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
+    <div class="footer-disclaimer" id="footer-disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </footer>
   <div class="consent-overlay" id="cli-overlay">
     <div class="consent-dialog">
-      <div class="consent-title">Get the CLI</div>
-      <p class="dialog-hint">The <code>eudi</code> CLI from <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">eudi-dev</a> decodes, issues and presents credentials. It also runs a local wallet and proxies wallet traffic.</p>
+      <div class="consent-title" id="cli-title">Get the CLI</div>
+      <p class="dialog-hint" id="cli-intro">The <code>eudi</code> CLI from <a href="https://github.com/dominikschlosser/eudi-dev" id="cli-repo-link" target="_blank" rel="noopener">eudi-dev</a> decodes, issues and presents credentials. It also runs a local wallet and proxies wallet traffic.</p>
       <div class="cli-install">
-        <div class="cli-install-label">Homebrew</div>
-        <pre>brew install dominikschlosser/tap/eudi-dev</pre>
-        <div class="cli-install-label">Go</div>
-        <pre>go install github.com/dominikschlosser/eudi-dev/v3@latest</pre>
-        <div class="cli-install-label">Docker</div>
-        <pre>docker pull ghcr.io/dominikschlosser/eudi-dev</pre>
-        <div class="cli-install-label">Binaries</div>
-        <p class="dialog-hint"><a href="https://github.com/dominikschlosser/eudi-dev/releases" target="_blank" rel="noopener">GitHub Releases</a></p>
+        <div class="cli-install-label" id="cli-homebrew-label">Homebrew</div>
+        <pre id="cli-homebrew">brew install dominikschlosser/tap/eudi-dev</pre>
+        <div class="cli-install-label" id="cli-go-label">Go</div>
+        <pre id="cli-go">go install github.com/dominikschlosser/eudi-dev/v3@latest</pre>
+        <div class="cli-install-label" id="cli-docker-label">Docker</div>
+        <pre id="cli-docker">docker pull ghcr.io/dominikschlosser/eudi-dev</pre>
+        <div class="cli-install-label" id="cli-binaries-label">Binaries</div>
+        <p class="dialog-hint" id="cli-binaries"><a href="https://github.com/dominikschlosser/eudi-dev/releases" id="cli-releases-link" target="_blank" rel="noopener">GitHub Releases</a></p>
       </div>
-      <p class="dialog-hint">Independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</p>
+      <p class="dialog-hint" id="cli-disclaimer">Independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</p>
       <div class="consent-buttons">
         <button class="btn" id="cli-close">Close</button>
       </div>

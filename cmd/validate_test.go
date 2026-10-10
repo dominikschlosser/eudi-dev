@@ -420,7 +420,7 @@ func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
 				"idx": 0,
 			},
 		},
-	}, statuslist.FormatJWT, nil, nil)
+	}, statuslist.FormatJWT, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected revoked status list to fail validation")
 	}
@@ -642,7 +642,7 @@ func TestValidateHAIPFindingsInJSON(t *testing.T) {
 // validate reads the catalogue of an existing wallet and creates none.
 func TestValidateCreatesNoWallet(t *testing.T) {
 	resetRemoteTestState(t)
-	reportCatalogueTrust("eyJhbGciOiJFUzI1NiJ9.e30.sig~", nil)
+	catalogueAnchoring("eyJhbGciOiJFUzI1NiJ9.e30.sig~")
 	store, err := openStore()
 	if err != nil {
 		t.Fatal(err)

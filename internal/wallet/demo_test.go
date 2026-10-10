@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 func newDemoTestServer(t *testing.T) *Server {
@@ -37,6 +38,10 @@ func newDemoTestServer(t *testing.T) *Server {
 	srv := newTestServer(t, true)
 	srv.wallet.Templates = credtemplate.FileLocation(t.TempDir())
 	srv.SetDemo(DemoOptions{ResetInterval: time.Hour})
+	// A running server registers the demo parties at startup.
+	if err := srv.registerDemoParties(); err != nil {
+		t.Fatal(err)
+	}
 	return srv
 }
 
@@ -720,22 +725,26 @@ func TestDemoCapsAddedTrustedLists(t *testing.T) {
 // change or delete their registrations.
 func TestDemoProtectsTheDemoRegistrations(t *testing.T) {
 	srv := newDemoTestServer(t)
-	if w := serverRequest(t, srv, "DELETE", "/api/registrar/wrp/"+demoVerifierIdentity.Identifier, ""); w.Code != http.StatusForbidden {
-		t.Errorf("delete = %d, want 403", w.Code)
-	}
-	body := `{"identifier":[{"identifier":"` + demoIssuerIdentity.Identifier + `","type":"http://data.europa.eu/eudi/id/EORI-No"}],"tradeName":"Mine"}`
-	if w := serverRequest(t, srv, "PUT", "/api/registrar/wrp", body); w.Code != http.StatusForbidden {
-		t.Errorf("update = %d, want 403", w.Code)
-	}
-	// An access certificate for the demo verifier's identifier would let a
-	// visitor sign requests as the demo verifier.
-	for path, body := range map[string]string{
-		"/api/registrar/access-certificates":              `{"identifier":"` + demoVerifierIdentity.Identifier + `","csr":"x"}`,
-		"/api/registrar/registration-certificates":        `{"identifier":"` + demoVerifierIdentity.Identifier + `"}`,
-		"/api/registrar/registration-certificates/status": `{"identifier":"` + demoIssuerIdentity.Identifier + `","revoked":true}`,
-	} {
-		if w := serverRequest(t, srv, "POST", path, body); w.Code != http.StatusForbidden {
-			t.Errorf("POST %s = %d, want 403", path, w.Code)
+	// The protection holds for the registered EUID and for the semantics
+	// identifier the certificates carry.
+	for _, identity := range []string{demoVerifierIdentity.Identifier, "NTRNL-" + demoVerifierIdentity.Identifier} {
+		if w := serverRequest(t, srv, "DELETE", "/api/registrar/wrp/"+identity, ""); w.Code != http.StatusForbidden {
+			t.Errorf("delete %s = %d, want 403", identity, w.Code)
+		}
+		body := `{"identifier":[{"identifier":"` + identity + `"}],"tradeName":"Mine"}`
+		if w := serverRequest(t, srv, "PUT", "/api/registrar/wrp", body); w.Code != http.StatusForbidden {
+			t.Errorf("update %s = %d, want 403", identity, w.Code)
+		}
+		// An access certificate for the demo verifier's identifier would let a
+		// visitor sign requests as the demo verifier.
+		for path, body := range map[string]string{
+			"/api/registrar/access-certificates":              `{"identifier":"` + identity + `","csr":"x"}`,
+			"/api/registrar/registration-certificates":        `{"identifier":"` + identity + `"}`,
+			"/api/registrar/registration-certificates/status": `{"identifier":"` + identity + `","revoked":true}`,
+		} {
+			if w := serverRequest(t, srv, "POST", path, body); w.Code != http.StatusForbidden {
+				t.Errorf("POST %s for %s = %d, want 403", path, identity, w.Code)
+			}
 		}
 	}
 	// Visitors share the catalogue entries of the predefined templates.
@@ -752,29 +761,213 @@ func TestDemoProtectsTheDemoRegistrations(t *testing.T) {
 	}
 }
 
-func TestTheWalletKeepsTheDemoRegistrationsButLetsYouRevokeTheirCertificates(t *testing.T) {
+func providesAttestation(rp registrar.WalletRelyingParty, typ string) bool {
+	for _, service := range rp.Services {
+		for _, a := range service.ProvidesAttestations {
+			if a.Type == typ {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// A local wallet registers the demo issuer and verifier once. After that they
+// are the user's to change, like any other registration.
+func TestALocalWalletKeepsYourChangesToTheDemoRegistrations(t *testing.T) {
 	srv := newTestServer(t, true)
-	if err := srv.syncDemoRegistrations(); err != nil {
+	srv.wallet.IssuerURL = "https://localhost:8443"
+	if err := srv.registerDemoParties(); err != nil {
 		t.Fatal(err)
 	}
-	if w := serverRequest(t, srv, "DELETE", "/api/registrar/wrp/"+demoVerifierIdentity.Identifier, ""); w.Code != http.StatusForbidden {
-		t.Errorf("delete = %d, want 403", w.Code)
+	issuer, ok := srv.wallet.Registrar().RelyingParty(demoIssuerIdentity.Identifier)
+	if !ok {
+		t.Fatal("the demo issuer is not registered at startup")
 	}
-	body := `{"identifier":[{"identifier":"` + demoVerifierIdentity.Identifier + `","type":"http://data.europa.eu/eudi/id/EUID"}],"tradeName":"Mine"}`
-	if w := serverRequest(t, srv, "PUT", "/api/registrar/wrp", body); w.Code != http.StatusForbidden {
-		t.Errorf("update = %d, want 403", w.Code)
-	}
-	if w := serverRequest(t, srv, "POST", "/api/registrar/registration-certificates/status", `{"identifier":"`+demoVerifierIdentity.Identifier+`","revoked":true}`); w.Code != http.StatusOK {
-		t.Errorf("revoke = %d, want 200: %s", w.Code, w.Body)
-	}
-	var config map[string]any
-	if err := json.Unmarshal(serverRequest(t, srv, "GET", "/api/config", "").Body.Bytes(), &config); err != nil {
+	issuer.TradeName = "My demo issuer"
+	edited, err := json.Marshal(issuer)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if builtIn, _ := config["built_in_relying_parties"].([]any); len(builtIn) != 2 {
-		t.Errorf("built_in_relying_parties = %v, want the demo issuer and verifier", config["built_in_relying_parties"])
+	if w := serverRequest(t, srv, "PUT", "/api/registrar/wrp", string(edited)); w.Code != http.StatusOK {
+		t.Fatalf("update = %d: %s", w.Code, w.Body)
 	}
-	if protected, _ := config["protected_relying_parties"].([]any); len(protected) != 0 {
-		t.Errorf("protected_relying_parties = %v, want none outside the demo", config["protected_relying_parties"])
+	if w := serverRequest(t, srv, "DELETE", "/api/registrar/wrp/"+demoVerifierIdentity.Identifier, ""); w.Code != http.StatusNoContent {
+		t.Fatalf("delete = %d: %s", w.Code, w.Body)
+	}
+
+	// Saving a template and serving the issuer metadata leave both changes.
+	if w := serverRequest(t, srv, "PUT", "/api/templates/badge", `{"format":"sdjwt","vct":"urn:example:badge:1","claims":{}}`); w.Code != http.StatusOK {
+		t.Fatalf("saving a template = %d: %s", w.Code, w.Body)
+	}
+	if w := serverRequest(t, srv, "GET", "/.well-known/openid-credential-issuer", ""); w.Code != http.StatusOK {
+		t.Fatalf("issuer metadata = %d: %s", w.Code, w.Body)
+	}
+	if info, err := srv.wallet.DemoVerifierInfo(); info != nil || err != nil {
+		t.Errorf("DemoVerifierInfo after the delete = %v, %v, want none", info, err)
+	}
+	issuer, _ = srv.wallet.Registrar().RelyingParty(demoIssuerIdentity.Identifier)
+	if issuer.TradeName != "My demo issuer" || providesAttestation(issuer, "urn:example:badge:1") {
+		t.Errorf("demo issuer = %q providing the badge %t, want the edit kept and no new type", issuer.TradeName, providesAttestation(issuer, "urn:example:badge:1"))
+	}
+
+	// A restart registers the deleted verifier again and keeps the edit.
+	if err := srv.registerDemoParties(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.wallet.DemoVerifierInfo(); err != nil {
+		t.Errorf("DemoVerifierInfo after a restart: %v", err)
+	}
+	if issuer, _ = srv.wallet.Registrar().RelyingParty(demoIssuerIdentity.Identifier); issuer.TradeName != "My demo issuer" {
+		t.Errorf("demo issuer after a restart = %q, want the edit kept", issuer.TradeName)
+	}
+}
+
+// Without its registration the demo issuer's metadata has no issuer_info, so
+// a wallet with --arf has something to report.
+func TestTheIssuerMetadataGoesOutWithoutADeletedRegistration(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.IssuerURL = "https://localhost:8443"
+	if err := srv.registerDemoParties(); err != nil {
+		t.Fatal(err)
+	}
+	if w := serverRequest(t, srv, "DELETE", "/api/registrar/wrp/"+demoIssuerIdentity.Identifier, ""); w.Code != http.StatusNoContent {
+		t.Fatalf("delete = %d: %s", w.Code, w.Body)
+	}
+	resp := serverRequest(t, srv, "GET", "/.well-known/openid-credential-issuer", "")
+	var metadata map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &metadata); err != nil || resp.Code != http.StatusOK {
+		t.Fatalf("issuer metadata = %d: %s", resp.Code, resp.Body)
+	}
+	if metadata["credential_issuer"] == nil || metadata["issuer_info"] != nil {
+		t.Errorf("metadata = %v, want it without issuer_info", metadata)
+	}
+}
+
+// A wallet that restarts on another URL moves the kept demo registrations
+// there, with the user's changes.
+func TestADemoRegistrationMovesToTheWalletsNewURL(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://localhost:8086"
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
+	}
+	issuer, _ := w.Registrar().RelyingParty(demoIssuerIdentity.Identifier)
+	issuer.TradeName = "My demo issuer"
+	if _, err := w.Registrar().UpdateRelyingParty(issuer); err != nil {
+		t.Fatal(err)
+	}
+	w.IssuerURL = "https://localhost:9443"
+	if changed, err := w.RegisterMissingDemoParties(); err != nil || !changed {
+		t.Fatalf("restart on the new URL: changed %v, %v", changed, err)
+	}
+	issuer, _ = w.Registrar().RelyingParty(demoIssuerIdentity.Identifier)
+	raw, _ := json.Marshal(issuer)
+	if strings.Contains(string(raw), "localhost:8086") || issuer.RegistryURI != w.RegistrarBase()+"/api/registrar/wrp/"+demoIssuerIdentity.Identifier {
+		t.Errorf("demo issuer after the move = %s, want only the new URL", raw)
+	}
+	if issuer.TradeName != "My demo issuer" {
+		t.Errorf("trade name = %q, want the edit kept", issuer.TradeName)
+	}
+}
+
+// On a public demo the demo issuer follows the templates, because visitors
+// can't change it.
+func TestTheDemoIssuerOfAPublicDemoFollowsTheTemplates(t *testing.T) {
+	srv := newDemoTestServer(t)
+	if w := serverRequest(t, srv, "PUT", "/api/templates/visitor-card", `{"format":"sdjwt","vct":"urn:example:visitor:1","claims":{}}`); w.Code != http.StatusOK {
+		t.Fatalf("saving a template = %d: %s", w.Code, w.Body)
+	}
+	issuer, _ := srv.wallet.Registrar().RelyingParty(demoIssuerIdentity.Identifier)
+	if !providesAttestation(issuer, "urn:example:visitor:1") {
+		t.Errorf("demo issuer provides %v, want the visitor template", issuer.Services)
+	}
+}
+
+// A remote party controls the bodies the log records, so an entry is bounded.
+func TestALogEntryIsBounded(t *testing.T) {
+	w := generateTestWallet(t)
+	body := strings.Repeat("x", 1<<20)
+	w.addProtocolLog("issuance", "test", "detail", true, nil, &LogPayload{Label: "response", Body: body})
+	log := w.GetLog()
+	raw, err := json.Marshal(log[len(log)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > maxLogEntryBytes || !strings.Contains(string(raw), "truncated, 1048576 bytes") {
+		t.Errorf("entry has %d bytes, want at most %d with a truncation note", len(raw), maxLogEntryBytes)
+	}
+}
+
+// Anyone can start a flow without an owner, so a public demo shows its errors
+// to nobody. A local wallet shows them to its browser.
+func TestTheDemoShowsNobodyTheErrorsOfUnownedFlows(t *testing.T) {
+	for _, demo := range []bool{true, false} {
+		srv := newTestServer(t, true)
+		if demo {
+			srv = newDemoTestServer(t)
+		}
+		srv.wallet.NotifyError(WalletError{Message: "Pay at example.com to continue"})
+		body := serverRequest(t, srv, "GET", "/api/error", "").Body.String()
+		if shown := strings.Contains(body, "example.com"); shown == demo {
+			t.Errorf("demo %t: error shown %t: %s", demo, shown, body)
+		}
+	}
+}
+
+// A shared wallet keeps its protected credentials, and the oldest other one
+// makes room for a new one.
+func TestASharedWalletMakesRoomForANewCredential(t *testing.T) {
+	w := generateTestWallet(t)
+	w.Credentials = nil
+	w.SetCapacity(3, 1)
+	w.PutCredential(StoredCredential{ID: "protected", Protected: true})
+	for _, id := range []string{"a", "b", "c"} {
+		w.PutCredential(StoredCredential{ID: id})
+	}
+	var ids []string
+	for _, c := range w.GetCredentials() {
+		ids = append(ids, c.ID)
+	}
+	if strings.Join(ids, ",") != "protected,b,c" {
+		t.Errorf("credentials %v, want the protected one and the two newest", ids)
+	}
+	w.AddDeferredIssuance(&DeferredIssuance{ID: "first"})
+	w.AddDeferredIssuance(&DeferredIssuance{ID: "second"})
+	if list := w.DeferredIssuanceList(); len(list) != 1 || list[0].ID != "second" {
+		t.Errorf("deferred %v, want only the newest", list)
+	}
+}
+
+// The issue API names templates of the wallet's store, so a path never reads
+// a file of the server.
+func TestTheIssueAPITakesTemplateNamesOnly(t *testing.T) {
+	srv := newDemoTestServer(t)
+	for _, field := range []string{"template", "display_template", "save_as_template"} {
+		body := `{"format":"sdjwt","` + field + `":"/etc/passwd"}`
+		if w := serverRequest(t, srv, "POST", "/api/issue", body); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid template name") {
+			t.Errorf("%s = %d %s, want 400", field, w.Code, w.Body)
+		}
+	}
+}
+
+// A renewal replaces a credential in place, so a full shared wallet keeps it.
+func TestARenewalKeepsItsCredentialInAFullWallet(t *testing.T) {
+	w := generateTestWallet(t)
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	creds := w.GetCredentials()
+	for i := range w.Credentials {
+		w.Credentials[i].Protected = false
+	}
+	w.SetCapacity(len(creds), 0)
+	oldest := creds[0]
+	if _, err := w.ReplaceCredential(oldest.ID, oldest.Raw, nil); err != nil {
+		t.Fatal(err)
+	}
+	after := w.GetCredentials()
+	if len(after) != len(creds) || after[0].ID != oldest.ID {
+		t.Errorf("credentials after the renewal: %d, first %s, want %d with %s first", len(after), after[0].ID, len(creds), oldest.ID)
 	}
 }

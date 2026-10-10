@@ -17,6 +17,9 @@ import (
 func TestIssuerProfileMetadata(t *testing.T) {
 	d, w, _ := newDemoRP(t)
 	w.IssuerURL = "https://demo.example"
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
+	}
 	code, unsigned := doJSON(t, d.IssuerHandler(), "GET", "/.well-known/openid-credential-issuer", "", nil)
 	if code != http.StatusOK {
 		t.Fatal(code)
@@ -50,7 +53,7 @@ func TestIssuerProfileMetadata(t *testing.T) {
 	if err := json.Unmarshal(registeredPayload, &registered); err != nil {
 		t.Fatal(err)
 	}
-	if registered["sub"] != "NTRNL-00000000" || registered["provides_attestations"] == nil {
+	if registered["sub"] != "NTRNL-NLTEST.00000000" || registered["provides_attestations"] == nil {
 		t.Fatal("registration certificate does not identify the provider and its credentials")
 	}
 	configs := unsigned["credential_configurations_supported"].(map[string]any)
@@ -123,6 +126,9 @@ func TestDemoRegistrationMatchesAccessCertificate(t *testing.T) {
 	// The registrar publishes under the issuer URL, which differs from the
 	// base URL without --base-url.
 	w.IssuerURL = "https://localhost:9999"
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
+	}
 	_, chain, err := w.AccessSigningMaterial()
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +161,25 @@ func TestDemoRegistrationMatchesAccessCertificate(t *testing.T) {
 	if claims.Sub != identifier || claims.Country != chain[0].Subject.Country[0] || claims.Name != chain[0].Subject.CommonName {
 		t.Errorf("registered identity %+v, want the access certificate subject %v", claims, chain[0].Subject)
 	}
-	if claims.RegistryURI != w.RegistrarBase()+"/api/registrar/wrp/"+identifier || claims.Status.StatusList.URI != w.Registrar().RegistrationStatusListURL() {
+	rp, ok := w.Registrar().RelyingParty(identifier)
+	if !ok {
+		t.Fatalf("no registration for the access certificate's %s", identifier)
+	}
+	if claims.RegistryURI != w.RegistrarBase()+"/api/registrar/wrp/"+rp.Identifier[0].Identifier || claims.Status.StatusList.URI != w.Registrar().RegistrationStatusListURL() {
 		t.Errorf("registry URI %q and status list %q, want the wallet's registrar", claims.RegistryURI, claims.Status.StatusList.URI)
+	}
+}
+
+// A local wallet lets the user delete the demo issuer's registration. Its
+// metadata then goes out without issuer_info.
+func TestTheDemoIssuerMetadataGoesOutWithoutARegistration(t *testing.T) {
+	d, w, _ := newDemoRP(t)
+	w.IssuerURL = "https://demo.example"
+	code, metadata := doJSON(t, d.IssuerHandler(), "GET", "/.well-known/openid-credential-issuer", "", nil)
+	if code != http.StatusOK || metadata["credential_issuer"] == nil {
+		t.Fatalf("issuer metadata = %d: %v", code, metadata)
+	}
+	if metadata["issuer_info"] != nil {
+		t.Errorf("issuer_info = %v, want none", metadata["issuer_info"])
 	}
 }

@@ -139,13 +139,17 @@ func redirectBrowser(w http.ResponseWriter, redirectURI string) {
 type AuthorizationRequestParams struct {
 	// Findings are the checks that failed in debug mode. The consent dialog
 	// and the API response list them.
-	Findings      []string
-	ClientID      string
-	ResponseType  string
-	ResponseMode  string
-	Nonce         string
-	State         string
-	RequestOrigin string
+	Findings []string
+	// AutoAccept and SessionTranscript override the wallet's settings for
+	// this request (POST /api/presentations).
+	AutoAccept        bool
+	SessionTranscript SessionTranscriptMode
+	ClientID          string
+	ResponseType      string
+	ResponseMode      string
+	Nonce             string
+	State             string
+	RequestOrigin     string
 	// Session identifies the browser that owns the consent request. Empty for requests
 	// without a browser session.
 	Session          string
@@ -266,7 +270,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 	// Debug mode lets the user answer with a credential that does not match. An
 	// API submission or auto-accept has no one to pick it.
-	interactive := !s.wallet.AutoAccept && authReq.Source != "api"
+	interactive := !s.wallet.AutoAccept && !authReq.AutoAccept && authReq.Source != "api"
 	if requiresVP && len(matches) == 0 && credentialOptions != nil && interactive {
 		s.log("  Result:        no matching credentials, debug mode offers the others")
 	} else if requiresVP && len(matches) == 0 {
@@ -297,7 +301,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 	// An API submission provides the caller's consent. Interactive URLs and scheme
 	// handlers still show the consent dialog unless auto-accept is enabled.
-	if s.wallet.AutoAccept || authReq.Source == "api" {
+	if s.wallet.AutoAccept || authReq.AutoAccept || authReq.Source == "api" {
 		s.log("  Mode:          auto-accept")
 		s.autoAcceptPresentation(w, authReq, matches)
 		return
@@ -358,16 +362,7 @@ func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *Author
 		// credential.
 		matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
 
-		if result.SelectedClaims != nil {
-			for i, m := range matches {
-				if selectedKeys, ok := result.SelectedClaims[m.CredentialID]; ok {
-					matches[i].SelectedKeys = selectedKeys
-					cred, _ := s.wallet.GetCredential(m.CredentialID)
-					matches[i].Claims = filterClaims(cred, selectedKeys)
-					s.log("    - %s: disclosing %v", shortID(m.CredentialID), selectedKeys)
-				}
-			}
-		}
+		matches = s.wallet.applySelectedClaims(matches, result.SelectedClaims)
 
 		s.submitPresentationWithNotify(w, authReq, matches, consentReq.SubmissionCh)
 	}
@@ -428,14 +423,15 @@ func (s *Server) preparePresentation(authReq *AuthorizationRequestParams, matche
 	}
 
 	params := PresentationParams{
-		Nonce:          authReq.Nonce,
-		ClientID:       authReq.ClientID,
-		RequestOrigin:  authReq.RequestOrigin,
-		ResponseURI:    responseURI,
-		RedirectURI:    authReq.RedirectURI,
-		ResponseMode:   authReq.ResponseMode,
-		ClientMetadata: authReq.ClientMetadata,
-		RequestObject:  authReq.RequestObject,
+		Nonce:             authReq.Nonce,
+		ClientID:          authReq.ClientID,
+		RequestOrigin:     authReq.RequestOrigin,
+		ResponseURI:       responseURI,
+		RedirectURI:       authReq.RedirectURI,
+		ResponseMode:      authReq.ResponseMode,
+		ClientMetadata:    authReq.ClientMetadata,
+		RequestObject:     authReq.RequestObject,
+		SessionTranscript: authReq.SessionTranscript,
 	}
 
 	prepared := &preparedPresentation{
@@ -487,14 +483,15 @@ func (s *Server) buildBrowserPresentationResult(authReq *AuthorizationRequestPar
 
 func (s *Server) buildBrowserAuthorizationErrorResult(authReq *AuthorizationRequestParams, protocol, errorCode, errorDescription string) (*BrowserAPIResult, error) {
 	params := PresentationParams{
-		Nonce:          authReq.Nonce,
-		ClientID:       authReq.ClientID,
-		RequestOrigin:  authReq.RequestOrigin,
-		ResponseURI:    authReq.ResponseURI,
-		RedirectURI:    authReq.RedirectURI,
-		ResponseMode:   authReq.ResponseMode,
-		ClientMetadata: authReq.ClientMetadata,
-		RequestObject:  authReq.RequestObject,
+		Nonce:             authReq.Nonce,
+		ClientID:          authReq.ClientID,
+		RequestOrigin:     authReq.RequestOrigin,
+		ResponseURI:       authReq.ResponseURI,
+		RedirectURI:       authReq.RedirectURI,
+		ResponseMode:      authReq.ResponseMode,
+		ClientMetadata:    authReq.ClientMetadata,
+		RequestObject:     authReq.RequestObject,
+		SessionTranscript: authReq.SessionTranscript,
 	}
 	response, err := s.wallet.BuildAuthorizationErrorResponse(errorCode, errorDescription, authReq.State, params)
 	if err != nil {
@@ -527,14 +524,15 @@ func (s *Server) deliverAuthorizationError(authReq *AuthorizationRequestParams, 
 	}
 
 	params := PresentationParams{
-		Nonce:          authReq.Nonce,
-		ClientID:       authReq.ClientID,
-		RequestOrigin:  authReq.RequestOrigin,
-		ResponseURI:    responseURI,
-		RedirectURI:    authReq.RedirectURI,
-		ResponseMode:   authReq.ResponseMode,
-		ClientMetadata: authReq.ClientMetadata,
-		RequestObject:  authReq.RequestObject,
+		Nonce:             authReq.Nonce,
+		ClientID:          authReq.ClientID,
+		RequestOrigin:     authReq.RequestOrigin,
+		ResponseURI:       responseURI,
+		RedirectURI:       authReq.RedirectURI,
+		ResponseMode:      authReq.ResponseMode,
+		ClientMetadata:    authReq.ClientMetadata,
+		RequestObject:     authReq.RequestObject,
+		SessionTranscript: authReq.SessionTranscript,
 	}
 
 	errorDetails := presentationRequestLogDetails(authReq)

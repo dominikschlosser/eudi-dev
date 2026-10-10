@@ -109,20 +109,20 @@
 <body>
   <div class="card">
     <div class="page-header">
-      <img src="../logo.svg" alt="" class="page-logo">
+      <img src="../logo.svg" alt="" class="page-logo" id="header-logo">
       <div>
-        <h1>EUDI Test Demo Issuer</h1>
-        <div class="subtitle" style="margin-bottom:0">A minimal OpenID4VCI issuer for demo purposes</div>
+        <h1 id="header-title">EUDI Test Demo Issuer</h1>
+        <div class="subtitle" id="header-subtitle" style="margin-bottom:0">A minimal OpenID4VCI issuer for demo purposes</div>
       </div>
     </div>
-    <p>
+    <p id="intro">
       This issuer hands out a signed <strong>Demo Event Ticket</strong> (SD-JWT VC)
       over OpenID4VCI, and any credential template this wallet knows. Create an
       offer and open it in the wallet on this host, or copy the offer URI into any
       wallet that can reach this server.
     </p>
     <div class="grant-row" id="credential-row">
-      <label class="grant-label" for="credential-select">Credential</label>
+      <label class="grant-label" id="credential-label" for="credential-select">Credential</label>
       <select id="credential-select" aria-label="Credential configuration to offer">
         <option value="" selected>Demo Event Ticket</option>
       </select>
@@ -132,53 +132,53 @@
       (the built-in EUDI and German PID among them), signed under the trust profile
       its type belongs to.
     </p>
-    <div class="grant-row">
-      <span class="grant-label">Grant</span>
+    <div class="grant-row" id="grant-row">
+      <span class="grant-label" id="grant-label">Grant</span>
       <div class="toggle" id="grant-toggle" role="radiogroup" aria-label="Grant type">
-        <button type="button" class="toggle-option selected" data-grant="" role="radio" aria-checked="true">Pre-authorized code</button>
-        <button type="button" class="toggle-option" data-grant="authorization_code" role="radio" aria-checked="false">Authorization code</button>
+        <button type="button" class="toggle-option selected" id="grant-pre-authorized-code" data-grant="" role="radio" aria-checked="true">Pre-authorized code</button>
+        <button type="button" class="toggle-option" id="grant-authorization-code" data-grant="authorization_code" role="radio" aria-checked="false">Authorization code</button>
       </div>
     </div>
     <p class="grant-hint" id="grant-hint">
       The offer carries the code, so the wallet redeems it without any sign-in.
     </p>
     <div class="grant-row" id="authorization-row" hidden>
-      <span class="grant-label">Authorization</span>
+      <span class="grant-label" id="authorization-label">Authorization</span>
       <div class="toggle" id="authorization-toggle" role="radiogroup" aria-label="How the user authorizes the issuance">
-        <button type="button" class="toggle-option selected" data-authorization="browser" role="radio" aria-checked="true">Browser sign-in</button>
-        <button type="button" class="toggle-option" data-authorization="presentation" role="radio" aria-checked="false">Presentation during issuance</button>
+        <button type="button" class="toggle-option selected" id="authorization-browser" data-authorization="browser" role="radio" aria-checked="true">Browser sign-in</button>
+        <button type="button" class="toggle-option" id="authorization-presentation" data-authorization="presentation" role="radio" aria-checked="false">Presentation during issuance</button>
       </div>
     </div>
     <p class="grant-hint" id="authorization-hint" hidden>
       You sign in here (alice / alice) while the wallet redeems the offer.
     </p>
     <div class="grant-row" id="status-row" hidden>
-      <span class="grant-label">Status list</span>
+      <span class="grant-label" id="status-label">Status list</span>
       <div class="toggle" id="status-toggle" role="radiogroup" aria-label="Status list reference">
-        <button type="button" class="toggle-option selected" data-status="" role="radio" aria-checked="true">Without</button>
-        <button type="button" class="toggle-option" data-status="true" role="radio" aria-checked="false">With</button>
+        <button type="button" class="toggle-option selected" id="status-without" data-status="" role="radio" aria-checked="true">Without</button>
+        <button type="button" class="toggle-option" id="status-with" data-status="true" role="radio" aria-checked="false">With</button>
       </div>
     </div>
     <p class="grant-hint" id="status-hint" hidden>
       The ticket carries no status reference, so nothing can revoke it.
     </p>
     <div class="grant-row" id="deferred-row">
-      <span class="grant-label">Issuance</span>
+      <span class="grant-label" id="deferred-label">Issuance</span>
       <div class="toggle" id="deferred-toggle" role="radiogroup" aria-label="Deferred issuance">
-        <button type="button" class="toggle-option selected" data-deferred="" role="radio" aria-checked="true">Immediate</button>
-        <button type="button" class="toggle-option" data-deferred="true" role="radio" aria-checked="false">Deferred</button>
+        <button type="button" class="toggle-option selected" id="deferred-immediate" data-deferred="" role="radio" aria-checked="true">Immediate</button>
+        <button type="button" class="toggle-option" id="deferred-deferred" data-deferred="true" role="radio" aria-checked="false">Deferred</button>
       </div>
     </div>
     <p class="grant-hint" id="deferred-hint">
       The credential is issued at once.
     </p>
     <div class="grant-row" id="batch-row">
-      <span class="grant-label">Copies</span>
+      <span class="grant-label" id="batch-label">Copies</span>
       <div class="toggle" id="batch-toggle" role="radiogroup" aria-label="Batch size">
-        <button type="button" class="toggle-option selected" data-batch="" role="radio" aria-checked="true">Single</button>
-        <button type="button" class="toggle-option" data-batch="2" role="radio" aria-checked="false">2</button>
-        <button type="button" class="toggle-option" data-batch="3" role="radio" aria-checked="false">3</button>
-        <button type="button" class="toggle-option" data-batch="5" role="radio" aria-checked="false">5</button>
+        <button type="button" class="toggle-option selected" id="batch-single" data-batch="" role="radio" aria-checked="true">Single</button>
+        <button type="button" class="toggle-option" id="batch-2" data-batch="2" role="radio" aria-checked="false">2</button>
+        <button type="button" class="toggle-option" id="batch-3" data-batch="3" role="radio" aria-checked="false">3</button>
+        <button type="button" class="toggle-option" id="batch-5" data-batch="5" role="radio" aria-checked="false">5</button>
       </div>
     </div>
     <p class="grant-hint" id="batch-hint">
@@ -186,31 +186,31 @@
     </p>
     <button class="btn primary" id="create-btn">Create offer</button>
     <div class="result" id="result">
-      <div class="label">Open in the wallet on this host</div>
+      <div class="label" id="wallet-link-label">Open in the wallet on this host</div>
       <pre><a href="#" id="wallet-link">…</a></pre>
-      <div class="label">Credential offer (custom scheme, for any wallet)</div>
+      <div class="label" id="scheme-uri-label">Credential offer (custom scheme, for any wallet)</div>
       <pre><a href="#" id="scheme-uri">…</a></pre>
-      <div class="label">Offer URI (by reference)</div>
+      <div class="label" id="offer-uri-label">Offer URI (by reference)</div>
       <pre id="offer-uri">…</pre>
-      <p>After importing, present it at the <a href="../verifier/">demo verifier</a>.</p>
+      <p id="result-hint">After importing, present it at the <a href="../verifier/" id="result-verifier-link">demo verifier</a>.</p>
     </div>
     <div class="error" id="error" hidden></div>
     <div class="links">
-      <a href="../">Wallet UI</a>
-      <a href="../verifier/">Demo Verifier</a>
-      <a href="../decoder/">Decoder</a>
+      <a href="../" id="wallet-ui-link">Wallet UI</a>
+      <a href="../verifier/" id="verifier-link">Demo Verifier</a>
+      <a href="../decoder/" id="decoder-link">Decoder</a>
       <a href="../imprint" id="imprint-link" hidden>Imprint</a>
     </div>
     <footer>
       <div class="sponsor-info" id="sponsor-info" hidden>
-        <span>Enjoying eudi-dev?</span>
-        <a href="https://github.com/sponsors/dominikschlosser" target="_blank" rel="noopener">
+        <span id="sponsor-text">Enjoying eudi-dev?</span>
+        <a href="https://github.com/sponsors/dominikschlosser" id="sponsor-link" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>
           Support its development
         </a>
       </div>
     </footer>
-    <div class="disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
+    <div class="disclaimer" id="disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </div>
   <script src="issuer.js"></script>
 </body>

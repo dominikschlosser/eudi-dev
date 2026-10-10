@@ -63,7 +63,7 @@ The registrar answers `201` with the stored registration. It assigned the identi
 ```json
 {
   "identifier": [
-    { "identifier": "NTRNL-79AA013C47925C7B", "type": "http://data.europa.eu/eudi/id/EUID" }
+    { "identifier": "NLTEST.79AA013C47925C7B", "type": "http://data.europa.eu/eudi/id/EUID" }
   ],
   "legalPerson": { "legalName": ["Example Shop B.V."] },
   "country": "NL",
@@ -75,7 +75,7 @@ The registrar answers `201` with the stored registration. It assigned the identi
     "email": ["dpa@eudi-test.dev"],
     "formURI": ["https://localhost:8086/supervisory-authority"]
   },
-  "registryURI": "https://localhost:8086/api/registrar/wrp/NTRNL-79AA013C47925C7B",
+  "registryURI": "https://localhost:8086/api/registrar/wrp/NLTEST.79AA013C47925C7B",
   "services": [{
     "serviceTradeName": "Example Shop",
     "serviceIdentifier": "checkout",
@@ -106,7 +106,7 @@ The registrar answers `201` with the stored registration. It assigned the identi
 Create a P-256 key and a certificate signing request. You keep the private key.
 
 ```bash
-ID=NTRNL-79AA013C47925C7B
+ID=NLTEST.79AA013C47925C7B
 openssl ecparam -name prime256v1 -genkey -noout -out verifier.key
 openssl req -new -key verifier.key -subj "/" -out verifier.csr
 
@@ -130,7 +130,7 @@ jq -r .chain access.json > verifier-chain.pem
 The chain holds the access certificate and the relying party access CA. The certificate carries the registered identity:
 
 ```text
-subject=C=NL, O=Example Shop B.V., OU=checkout, CN=Example Shop, organizationIdentifier=NTRNL-79AA013C47925C7B
+subject=C=NL, O=Example Shop B.V., OU=checkout, CN=Example Shop, organizationIdentifier=NTRNL-NLTEST.79AA013C47925C7B
 issuer=C=NL, O=EUDI Dev Test CA, CN=EUDI Dev Test Relying Party Access CA
 X509v3 Subject Alternative Name: DNS:shop.example, URI:https://localhost:8086/support
 X509v3 Certificate Policies: Policy: 0.4.0.194118.1.2
@@ -156,7 +156,7 @@ curl -s -X POST localhost:8085/api/registrar/registration-certificates -H 'Conte
 
 ```json
 {
-  "sub": "NTRNL-79AA013C47925C7B",
+  "sub": "NTRNL-NLTEST.79AA013C47925C7B",
   "sub_ln": "Example Shop B.V.",
   "name": "Example Shop",
   "country": "NL",
@@ -177,7 +177,7 @@ curl -s -X POST localhost:8085/api/registrar/registration-certificates -H 'Conte
     "email": "dpa@eudi-test.dev",
     "uri": "https://localhost:8086/supervisory-authority"
   },
-  "registry_uri": "https://localhost:8086/api/registrar/wrp/NTRNL-79AA013C47925C7B",
+  "registry_uri": "https://localhost:8086/api/registrar/wrp/NLTEST.79AA013C47925C7B",
   "policy_id": ["0.4.0.19475.3.1"],
   "certificate_policy": "https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md",
   "status": { "status_list": { "idx": 47187, "uri": "https://localhost:8086/api/registrar/status-list" } },
@@ -294,7 +294,7 @@ The service in the answer:
 The access certificate request works as for a verifier. The registration certificate request names the service instead of an intended use:
 
 ```bash
-ID=NTRNL-4D1BB6AFA1D92DE9
+ID=NLTEST.4D1BB6AFA1D92DE9
 openssl ecparam -name prime256v1 -genkey -noout -out issuer.key
 openssl req -new -key issuer.key -subj "/" -out issuer.csr
 jq -n --arg id "$ID" --rawfile csr issuer.csr '{identifier: $id, serviceIdentifier: "diplomas", csr: $csr}' |
@@ -312,9 +312,9 @@ The answer has `registrationCertificate` and `issuerInfo`. `issuerInfo` is a JSO
   {
     "format": "registrar_dataset",
     "data": {
-      "identifier": [{ "identifier": "NTRNL-4D1BB6AFA1D92DE9", "type": "http://data.europa.eu/eudi/id/EUID" }],
+      "identifier": [{ "identifier": "NLTEST.4D1BB6AFA1D92DE9", "type": "http://data.europa.eu/eudi/id/EUID" }],
       "srvDescription": [{ "lang": "en", "content": "Example University" }],
-      "registryURI": "https://localhost:8086/api/registrar/wrp/NTRNL-4D1BB6AFA1D92DE9",
+      "registryURI": "https://localhost:8086/api/registrar/wrp/NLTEST.4D1BB6AFA1D92DE9",
       "providesAttestations": [{ "format": "dc+sd-jwt", "type": "urn:example:diploma:1" }]
     }
   },
@@ -326,7 +326,7 @@ The certificate has `entitlements` and `provides_attestations` instead of an int
 
 ```json
 {
-  "sub": "NTRNL-4D1BB6AFA1D92DE9",
+  "sub": "NTRNL-NLTEST.4D1BB6AFA1D92DE9",
   "name": "Example University",
   "entitlements": ["https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider"],
   "provides_attestations": [{ "format": "dc+sd-jwt", "meta": { "vct_values": ["urn:example:diploma:1"] } }]

@@ -61,8 +61,8 @@ func mustJSON(t *testing.T, v any) string {
 	return string(encoded)
 }
 
-// ownProviderIdentifier is the identifier of the wallet's own provider
-// registration: the organizationIdentifier of its access certificate.
+// ownProviderIdentifier is the registered identifier of the wallet's own
+// provider, found through the organizationIdentifier of its access certificate.
 func ownProviderIdentifier(t *testing.T, w *Wallet) string {
 	t.Helper()
 	_, access, err := w.AccessSigningMaterial()
@@ -70,7 +70,21 @@ func ownProviderIdentifier(t *testing.T, w *Wallet) string {
 		t.Fatal(err)
 	}
 	identifier, _, _ := registrar.AccessCertificateSubject(access[0])
+	if rp, ok := w.Registrar().RelyingParty(identifier); ok {
+		return rp.Identifier[0].Identifier
+	}
 	return identifier
+}
+
+// semanticIdentifier is the identifier the certificates of a registration
+// carry (ETSI TS 119 475 V1.2.1 GEN-5.1.3).
+func semanticIdentifier(t *testing.T, rp registrar.WalletRelyingParty) string {
+	t.Helper()
+	semantic, err := registrar.SemanticIdentifier(rp.Identifier[0], rp.Country)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return semantic
 }
 func pidQueryForRegistration() map[string]any {
 	return map[string]any{"credentials": []any{map[string]any{

@@ -196,11 +196,12 @@ type customCredentialTO struct {
 }
 
 type customEntry struct {
-	queryID  string
-	format   string
-	vct      string
-	docType  string
-	want     []string
+	queryID string
+	format  string
+	vct     string
+	docType string
+	// paths are the requested DCQL claims paths.
+	paths    [][]any
 	multiple bool
 }
 
@@ -500,11 +501,7 @@ func (d *DemoRP) finalizeRequest(w http.ResponseWriter, req *requestState, dcql 
 
 	d.mu.Lock()
 	d.pruneLocked()
-	if len(d.requests) >= maxEntries {
-		d.mu.Unlock()
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open requests, try again later"})
-		return
-	}
+	makeRoom(d.requests, func(r *requestState) time.Time { return r.expires })
 	d.requests[req.id] = req
 	d.mu.Unlock()
 
@@ -584,24 +581,13 @@ func (d *DemoRP) createCustomRequest(w http.ResponseWriter, body createRequestBo
 		}
 
 		dcqlClaims := make([]map[string]any, 0, len(c.Claims))
-		seen := map[string]bool{}
-		var want []string
-		addWant := func(name string) {
-			if name != "" && !seen[name] {
-				seen[name] = true
-				want = append(want, name)
-			}
-		}
+		var paths [][]any
 		for _, path := range c.Claims {
 			if len(path) == 0 {
 				continue
 			}
 			dcqlClaims = append(dcqlClaims, map[string]any{"path": path})
-			if format == "mso_mdoc" {
-				addWant(lastStringComponent(path))
-			} else if name, ok := path[0].(string); ok {
-				addWant(name)
-			}
+			paths = append(paths, path)
 		}
 
 		id := fmt.Sprintf("cred_%d", i)
@@ -613,7 +599,7 @@ func (d *DemoRP) createCustomRequest(w http.ResponseWriter, body createRequestBo
 			q["claims"] = dcqlClaims
 		}
 		credentials = append(credentials, q)
-		req.custom = append(req.custom, customEntry{queryID: id, format: format, vct: c.VCT, docType: c.DocType, want: want, multiple: c.Multiple})
+		req.custom = append(req.custom, customEntry{queryID: id, format: format, vct: c.VCT, docType: c.DocType, paths: paths, multiple: c.Multiple})
 	}
 
 	dcql := map[string]any{"credentials": credentials}
@@ -677,11 +663,7 @@ func (d *DemoRP) deliverUnsignedRequest(w http.ResponseWriter, req *requestState
 
 	d.mu.Lock()
 	d.pruneLocked()
-	if len(d.requests) >= maxEntries {
-		d.mu.Unlock()
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open requests, try again later"})
-		return
-	}
+	makeRoom(d.requests, func(r *requestState) time.Time { return r.expires })
 	d.requests[req.id] = req
 	d.mu.Unlock()
 
@@ -747,14 +729,58 @@ func parseSigningKeyBundle(pemBundle string) (*ecdsa.PrivateKey, []*x509.Certifi
 	return key, chain, nil
 }
 
-func lastStringComponent(path []any) string {
-	name := ""
-	for _, p := range path {
-		if s, ok := p.(string); ok {
-			name = s
+// claimPathPresent reports whether a DCQL claims path points at a value
+// (OpenID4VP 1.0 §7.1): a string selects an object key, an integer an array
+// element and null every element of an array, one of which must match.
+func claimPathPresent(value any, path []any) bool {
+	if len(path) == 0 {
+		return value != nil
+	}
+	switch step := path[0].(type) {
+	case string:
+		object, ok := value.(map[string]any)
+		if !ok {
+			return false
+		}
+		next, ok := object[step]
+		return ok && claimPathPresent(next, path[1:])
+	case nil:
+		array, _ := value.([]any)
+		return slices.ContainsFunc(array, func(element any) bool { return claimPathPresent(element, path[1:]) })
+	case float64, int:
+		array, ok := value.([]any)
+		index, _ := step.(int)
+		if f, isFloat := step.(float64); isFloat {
+			index = int(f)
+		}
+		return ok && index >= 0 && index < len(array) && claimPathPresent(array[index], path[1:])
+	}
+	return false
+}
+
+// missingClaimPaths lists the requested paths without a value.
+func missingClaimPaths(claims map[string]any, paths [][]any) []string {
+	var missing []string
+	for _, path := range paths {
+		if !claimPathPresent(claims, path) {
+			missing = append(missing, fmt.Sprint(path))
 		}
 	}
-	return name
+	return missing
+}
+
+// namePaths turns claim names into DCQL claims paths, prefixed with an mdoc
+// namespace if one is given.
+func namePaths(namespace string, names []string) [][]any {
+	paths := make([][]any, 0, len(names))
+	for _, name := range names {
+		if namespace != "" {
+			paths = append(paths, []any{namespace, name})
+		} else {
+			paths = append(paths, []any{name})
+		}
+	}
+	return paths
 }
 
 // checkPresentationAudience expects the OpenID4VP client ID or the
@@ -1023,9 +1049,9 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		var claims map[string]any
 		var err error
 		if answeredMDOC {
-			claims, _, err = d.verifyMDOCPresentation(req, presentation, log)
+			claims, _, err = d.verifyMDOCPresentation(req, presentation, req.docType, namePaths(req.docType, req.wantMDOC), log)
 		} else {
-			claims, err = d.verifySDJWTEntry(req, presentation, req.vct, req.want, label, log)
+			claims, err = d.verifySDJWTEntry(req, presentation, req.vct, namePaths("", req.want), label, log)
 		}
 		if err != nil {
 			d.recordPresentation(req, presentation)
@@ -1060,7 +1086,7 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 				if req.multiple {
 					label = fmt.Sprintf("ticket[%d]: ", i)
 				}
-				ticketClaims, err := d.verifySDJWTEntry(req, presentation, TicketVCT, req.ticketWant, label, log)
+				ticketClaims, err := d.verifySDJWTEntry(req, presentation, TicketVCT, namePaths("", req.ticketWant), label, log)
 				if err != nil {
 					// The decoder shows the failed ticket.
 					d.recordPresentation(req, presentation)
@@ -1115,10 +1141,9 @@ func (d *DemoRP) verifyCustomPresentation(req *requestState, tokenDoc map[string
 			var claims map[string]any
 			var err error
 			if entry.format == "mso_mdoc" {
-				req.docType, req.wantMDOC = entry.docType, entry.want
-				claims, _, err = d.verifyMDOCPresentation(req, presentation, log)
+				claims, _, err = d.verifyMDOCPresentation(req, presentation, entry.docType, entry.paths, log)
 			} else {
-				claims, err = d.verifySDJWTEntry(req, presentation, entry.vct, entry.want, itemLabel, log)
+				claims, err = d.verifySDJWTEntry(req, presentation, entry.vct, entry.paths, itemLabel, log)
 			}
 			if err != nil {
 				// Failed presentations stay available in the decoder.
@@ -1142,7 +1167,7 @@ func (d *DemoRP) verifyCustomPresentation(req *requestState, tokenDoc map[string
 
 // verifySDJWTEntry checks type, issuer trust, revocation and key binding. The
 // label prefix tells ticket checks apart from PID checks.
-func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT string, want []string, label string, log *checklist) (map[string]any, error) {
+func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT string, paths [][]any, label string, log *checklist) (map[string]any, error) {
 	check := func(name string, err error) error {
 		return log.record(label+name, err)
 	}
@@ -1201,7 +1226,7 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 		errIf(result.Expired || result.NotYetValid, "credential is expired or not yet valid")); err != nil {
 		return nil, err
 	}
-	if err = d.checkRevocation(token, check); err != nil {
+	if err = d.checkRevocation(token.ResolvedClaims, statuslist.FormatJWT, check); err != nil {
 		return nil, err
 	}
 
@@ -1266,12 +1291,7 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 	}
 
 	disclosed := disclosedClaims(token)
-	var missing []string
-	for _, name := range want {
-		if _, ok := disclosed[name]; !ok {
-			missing = append(missing, name)
-		}
-	}
+	missing := missingClaimPaths(disclosed, paths)
 	if err = check("requested claims were disclosed",
 		errIf(len(missing) > 0, "missing: %s", strings.Join(missing, ", "))); err != nil {
 		return nil, err
@@ -1303,14 +1323,17 @@ func checkDisclosuresReferenced(token *sdjwt.Token) error {
 	return nil
 }
 
-func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) error) error {
-	ref := statuslist.ExtractStatusRef(token.ResolvedClaims)
+// checkRevocation checks the status list entry of a presented credential.
+// Both formats carry the reference in the same claim shape.
+func (d *DemoRP) checkRevocation(statusClaims map[string]any, prefer string, check func(string, error) error) error {
+	ref := statuslist.ExtractStatusRef(statusClaims)
 	if ref == nil {
 		return check("revocation status (credential references no status list)", nil)
 	}
 
-	// The status list JWT must chain to a service on the wallet's credential
-	// provider lists. A forged list could otherwise un-revoke a credential.
+	// The status list JWT must chain to a revocation service on the wallet's
+	// credential provider lists (ETSI TS 119 602 V1.1.1 Table D.3). A forged
+	// list could otherwise un-revoke a credential.
 	anchors := d.trustedStatusCerts()
 	if len(anchors) == 0 {
 		return check("credential is not revoked", fmt.Errorf("this verifier has no CA certificate"))
@@ -1320,14 +1343,11 @@ func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) e
 		trustCerts = append(trustCerts, statuslist.TrustCert{Raw: anchor.Raw})
 	}
 	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{
-		Prefer:         statuslist.FormatJWT,
+		Prefer:         prefer,
 		TrustListCerts: trustCerts,
 	})
 	if err != nil {
 		return check("credential is not revoked", fmt.Errorf("checking the status list: %w", err))
-	}
-	if result.SignatureValid != nil && !*result.SignatureValid {
-		return check("credential is not revoked", fmt.Errorf("the status list signature did not verify: %s", result.SignatureInfo))
 	}
 	return check("credential is not revoked", errIf(result.Status != 0, "the issuer's status list marks this credential as revoked"))
 }
@@ -1336,27 +1356,14 @@ func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) e
 // issuance services on the wallet's credential provider lists and the anchors
 // from SetVerifierTrustAnchors. A credential on no list fails.
 func (d *DemoRP) trustedIssuerCerts() []trustlist.CertInfo {
-	return certInfos(append(d.wallet.CredentialProviderAnchors(wallet.IssuanceServices), d.verifierTrustAnchors...))
+	return trustlist.CertInfos(append(d.wallet.CredentialProviderAnchors(wallet.IssuanceServices), d.verifierTrustAnchors...))
 }
 
-// trustedStatusCerts returns the trust anchors for status lists: the issuance
-// and revocation services on the same lists, because an issuer may sign its
-// status list itself, and the anchors from SetVerifierTrustAnchors.
+// trustedStatusCerts returns the trust anchors for status lists: the
+// revocation services of the credential provider lists (ETSI TS 119 602 V1.1.1
+// Table D.3), and the anchors from SetVerifierTrustAnchors.
 func (d *DemoRP) trustedStatusCerts() []trustlist.CertInfo {
-	anchors := append(d.wallet.CredentialProviderAnchors(wallet.IssuanceServices), d.wallet.CredentialProviderAnchors(wallet.RevocationServices)...)
-	return certInfos(append(anchors, d.verifierTrustAnchors...))
-}
-
-func certInfos(anchors []*x509.Certificate) []trustlist.CertInfo {
-	certs := make([]trustlist.CertInfo, 0, len(anchors))
-	for _, anchor := range anchors {
-		certs = append(certs, trustlist.CertInfo{
-			Subject:   anchor.Subject.String(),
-			PublicKey: anchor.PublicKey,
-			Raw:       anchor.Raw,
-		})
-	}
-	return certs
+	return trustlist.CertInfos(append(d.wallet.CredentialProviderAnchors(wallet.RevocationServices), d.verifierTrustAnchors...))
 }
 
 func errIf(cond bool, format string, args ...any) error {
@@ -1385,7 +1392,7 @@ func disclosedClaims(token *sdjwt.Token) map[string]any {
 // verifyMDOCPresentation validates an mdoc DeviceResponse. It checks the
 // doctype, the issuer signature and element digests, the holder signature
 // over the session transcript and the validity period.
-func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, log *checklist) (map[string]any, []map[string]any, error) {
+func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation, docType string, paths [][]any, log *checklist) (map[string]any, []map[string]any, error) {
 	check := log.record
 	doc, err := mdoc.Parse(presentation)
 	if err = check("presentation parses as an mdoc DeviceResponse", err); err != nil {
@@ -1394,7 +1401,7 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 
 	// The wallet chose the credential, so check the doctype.
 	if err = check("credential type matches the request",
-		errIf(doc.DocType != req.docType, "doctype is %q, requested %q", doc.DocType, req.docType)); err != nil {
+		errIf(doc.DocType != docType, "doctype is %q, requested %q", doc.DocType, docType)); err != nil {
 		return nil, log.entries, err
 	}
 
@@ -1432,6 +1439,9 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 	if err = check("disclosed elements match the digests the issuer signed", mdoc.VerifyValueDigests(doc)); err != nil {
 		return nil, log.entries, err
 	}
+	if err = d.checkRevocation(doc.StatusClaims(), statuslist.FormatCWT, check); err != nil {
+		return nil, log.entries, err
+	}
 
 	// The holder signs the session transcript. Rebuilding it here binds the
 	// response to this request.
@@ -1443,18 +1453,19 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 		return nil, log.entries, err
 	}
 
+	// Paths name the namespace first, so an element of another namespace
+	// doesn't answer them.
 	claims := map[string]any{}
-	for _, items := range doc.NameSpaces {
+	byNamespace := map[string]any{}
+	for ns, items := range doc.NameSpaces {
+		elements := map[string]any{}
 		for _, item := range items {
 			claims[item.ElementIdentifier] = item.ElementValue
+			elements[item.ElementIdentifier] = item.ElementValue
 		}
+		byNamespace[ns] = elements
 	}
-	var missing []string
-	for _, want := range req.wantMDOC {
-		if _, ok := claims[want]; !ok {
-			missing = append(missing, want)
-		}
-	}
+	missing := missingClaimPaths(byNamespace, paths)
 	if err = check("the requested elements are present",
 		errIf(len(missing) > 0, "missing from the presentation: %s", strings.Join(missing, ", "))); err != nil {
 		return nil, log.entries, err

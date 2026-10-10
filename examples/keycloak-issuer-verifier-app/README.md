@@ -46,7 +46,7 @@ sequenceDiagram
     end
 ```
 
-## How It Works
+## Configuration
 
 The static realm import (`realm/wallet-app-demo-realm.json`) carries the whole configuration.
 

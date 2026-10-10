@@ -188,7 +188,7 @@ func TestAVerifierHasNoProviderCertificate(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestRelyingParty(t, w)
 	_, err := w.Registrar().IssueRegistrationCertificate(registrar.RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier})
-	if err == nil || !strings.Contains(err.Error(), "0 attestation provider services") {
+	if !registrar.IsNotRegistered(err) || !strings.Contains(err.Error(), "as an attestation provider") {
 		t.Fatalf("got %v", err)
 	}
 }

@@ -57,8 +57,8 @@ const (
 
 	accessCAListID  = "access-ca"
 	registrarListID = "registrar"
-	// trustedListCAID takes the CAs of trusted list operators. It is no list
-	// the wallet publishes. Its CAs join those of --trusted-list-ca.
+	// trustedListCAID takes the CAs of trusted list operators, like
+	// --trusted-list-ca. The wallet doesn't publish it.
 	trustedListCAID  = "trusted-list-ca"
 	walletProviderID = "wallet-provider"
 	// listOfListsID is the list that points to all of the wallet's trusted
@@ -313,6 +313,8 @@ func (w *Wallet) ownTrustListURL(id string) string {
 const (
 	listCacheTTL       = 5 * time.Minute
 	failedListCacheTTL = time.Minute
+	// maxCachedLists bounds the cache. Any visitor can name a list URL.
+	maxCachedLists = 16
 	// maxFollowedPointers caps the lists the wallet reads from one external
 	// list of trusted lists.
 	maxFollowedPointers = 20
@@ -345,6 +347,15 @@ func (w *Wallet) rawTrustedList(rawURL string) (string, error) {
 		w.listCacheMu.Lock()
 		if w.listCache == nil {
 			w.listCache = map[string]cachedList{}
+		}
+		for len(w.listCache) >= maxCachedLists {
+			oldest := ""
+			for u, c := range w.listCache {
+				if oldest == "" || c.fetched.Before(w.listCache[oldest].fetched) {
+					oldest = u
+				}
+			}
+			delete(w.listCache, oldest)
 		}
 		w.listCache[rawURL] = cachedList{raw: raw, err: err, fetched: time.Now()}
 		w.listCacheMu.Unlock()
@@ -387,28 +398,6 @@ func (w *Wallet) readListSignedBy(rawURL string, signers []*x509.Certificate) (*
 		return nil, fmt.Errorf("the trusted list expired at %s (ETSI TS 119 602 V1.1.1 §6.3.15)", list.SchemeInfo.NextUpdate)
 	}
 	return list, nil
-}
-
-// Service kinds of a trusted list. A service type ends in /Issuance or
-// /Revocation (ETSI TS 119 602 V1.1.1 Annexes D to H).
-const (
-	issuanceServices   = "Issuance"
-	revocationServices = "Revocation"
-)
-
-// serviceAnchors returns the certificates of a list's services of one kind.
-// A withdrawn service anchors nothing (ETSI TS 119 602 V1.1.1 Table H.3).
-func serviceAnchors(list *trustlist.TrustList, kind string) []trustlist.CertInfo {
-	var anchors []trustlist.CertInfo
-	for _, entity := range list.Entities {
-		for _, service := range entity.Services {
-			if !strings.HasSuffix(service.ServiceType, "/"+kind) || strings.HasSuffix(service.ServiceStatus, "/withdrawn") {
-				continue
-			}
-			anchors = append(anchors, service.Certificates...)
-		}
-	}
-	return anchors
 }
 
 // TrustedListURLs are the lists on the wallet's list of trusted lists: its
@@ -493,7 +482,7 @@ func (w *Wallet) listAnchors(listType, kind string) []*x509.Certificate {
 	var anchors []*x509.Certificate
 	for _, tl := range w.trustedLists() {
 		if tl.Err == nil && tl.List.SchemeInfo.LoTEType == listType {
-			anchors = append(anchors, parsedAnchors(serviceAnchors(tl.List, kind))...)
+			anchors = append(anchors, parsedAnchors(trustlist.ServiceCertificates(tl.List, kind))...)
 		}
 	}
 	return anchors
@@ -585,22 +574,22 @@ func (w *Wallet) CredentialProviderAnchors(kind string) []*x509.Certificate {
 		case walletProviderTrustListType, accessCAListType, registrarListType, listOfTrustedListsType:
 			continue
 		}
-		anchors = append(anchors, parsedAnchors(serviceAnchors(tl.List, kind))...)
+		anchors = append(anchors, parsedAnchors(trustlist.ServiceCertificates(tl.List, kind))...)
 	}
 	return anchors
 }
 
 // Service kinds for CredentialProviderAnchors.
 const (
-	IssuanceServices   = issuanceServices
-	RevocationServices = revocationServices
+	IssuanceServices   = trustlist.IssuanceServices
+	RevocationServices = trustlist.RevocationServices
 )
 
 // WalletProviderAnchors are the issuance certificates of the wallet provider
 // lists, which anchor wallet and key attestations (ETSI TS 119 602 V1.1.1
 // Annex E).
 func (w *Wallet) WalletProviderAnchors() []*x509.Certificate {
-	return w.listAnchors(walletProviderTrustListType, issuanceServices)
+	return w.listAnchors(walletProviderTrustListType, trustlist.IssuanceServices)
 }
 
 func parsedAnchors(infos []trustlist.CertInfo) []*x509.Certificate {

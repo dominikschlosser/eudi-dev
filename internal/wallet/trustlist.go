@@ -361,42 +361,55 @@ func trustListGroupID(profile trustListProfile) string {
 // email and phone. A PID or PuB-EAA provider also names its Member State with
 // a URI, and a PuB-EAA provider the law it is established under.
 const (
-	listedProviderName       = "EUDI Dev Test Provider"
-	listedProviderIdentifier = "NTR" + mock.DefaultCertificateCountry + "-00000000"
-	pubEAANotifiedStatus     = "http://uri.etsi.org/19602/PubEAAProvidersList/SvcStatus/notified"
+	listedProviderName = "EUDI Dev Test Provider"
+	// listedProviderEUID is the provider's registered EUID. Its certificates
+	// carry it as NTRNL-NLTEST.00000000 (ETSI EN 319 412-1 V1.6.1
+	// LEG-5.1.4-07 b).
+	listedProviderEUID   = mock.DefaultCertificateCountry + "TEST.00000000"
+	pubEAANotifiedStatus = "http://uri.etsi.org/19602/PubEAAProvidersList/SvcStatus/notified"
 )
 
-func trustedEntityInformation(opts trustListOptions, name string) map[string]any {
-	tradeName := []map[string]string{{"lang": "en", "value": listedProviderIdentifier}}
+// trustedEntityInformation describes a listed entity. Its trade name is the
+// official registration identifier its certificates carry, in the semantics
+// of ETSI EN 319 412-1 LEG-5.1.4 (ETSI TS 119 602 V1.1.1 §6.5.2 and the
+// TE trade name rows of Annexes D to H). An entity without one has none.
+func trustedEntityInformation(opts trustListOptions, entity trustListEntity) map[string]any {
+	var tradeName []map[string]string
+	if identifier := certificatesOrganizationIdentifier(append(entity.Issuance, entity.Revocation...)); identifier != "" {
+		tradeName = append(tradeName, map[string]string{"lang": "en", "value": identifier})
+	}
 	electronic := []map[string]string{
 		{"lang": "en", "uriValue": firstNonEmpty(opts.Issuer, "https://github.com/dominikschlosser/eudi-dev")},
 		{"lang": "en", "uriValue": "mailto:provider@example.invalid"},
 		{"lang": "en", "uriValue": "tel:+31000000000"},
 	}
-	information := []map[string]string{{"lang": "en", "uriValue": firstNonEmpty(opts.Issuer, "https://github.com/dominikschlosser/eudi-dev")}}
+	informationURIs := []map[string]string{{"lang": "en", "uriValue": firstNonEmpty(opts.Issuer, "https://github.com/dominikschlosser/eudi-dev")}}
 	country := mock.DefaultCertificateCountry
 	switch opts.Profile.LoTEType {
 	case pidTrustListType:
-		information = append(information, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/PIDProvider/" + country})
+		informationURIs = append(informationURIs, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/PIDProvider/" + country})
 	case walletProviderTrustListType:
-		information = append(information, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/WalletProvider/" + country})
+		informationURIs = append(informationURIs, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/WalletProvider/" + country})
 	case accessCAListType:
-		information = append(information, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/WRPACProvider/" + country})
+		informationURIs = append(informationURIs, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/WRPACProvider/" + country})
 	case registrarListType:
-		information = append(information, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/WRPRCProvider/" + country})
+		informationURIs = append(informationURIs, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/WRPRCProvider/" + country})
 	case pubEAATrustListType:
 		tradeName = append(tradeName, map[string]string{"lang": "en", "value": "OJ:" + country + "-eudi-dev-test"})
 		electronic = append(electronic, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/PubEAAProvider/" + country})
 	}
-	return map[string]any{
-		"TEName":      []map[string]string{{"lang": "en", "value": name}},
-		"TETradeName": tradeName,
+	information := map[string]any{
+		"TEName": []map[string]string{{"lang": "en", "value": entity.Name}},
 		"TEAddress": map[string]any{
 			"TEPostalAddress":     []map[string]string{{"lang": "en", "StreetAddress": "Test address", "Locality": "Test city", "PostalCode": "0000", "Country": country}},
 			"TEElectronicAddress": electronic,
 		},
-		"TEInformationURI": information,
+		"TEInformationURI": informationURIs,
 	}
+	if len(tradeName) > 0 {
+		information["TETradeName"] = tradeName
+	}
+	return information
 }
 
 func trustListService(serviceType, name string, certificates []string) map[string]any {
@@ -479,7 +492,7 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 	trustedEntities := make([]map[string]any, 0, len(entities))
 	for _, entity := range entities {
 		trustedEntities = append(trustedEntities, map[string]any{
-			"TrustedEntityInformation": trustedEntityInformation(opts, entity.Name),
+			"TrustedEntityInformation": trustedEntityInformation(opts, entity),
 			"TrustedEntityServices":    trustListServices(opts.Profile, entity),
 		})
 	}
@@ -533,4 +546,23 @@ func trustListCertificates(certificates []string) []map[string]string {
 		values[i] = map[string]string{"val": cert}
 	}
 	return values
+}
+
+// certificatesOrganizationIdentifier returns the first organizationIdentifier
+// (OID 2.5.4.97) of base64 DER certificates.
+func certificatesOrganizationIdentifier(certificates []string) string {
+	for _, encoded := range certificates {
+		der, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			continue
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			continue
+		}
+		if identifier := organizationIdentifier(cert); identifier != "" {
+			return identifier
+		}
+	}
+	return ""
 }

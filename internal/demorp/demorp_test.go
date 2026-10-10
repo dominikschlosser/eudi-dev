@@ -29,6 +29,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -343,7 +344,7 @@ func jsonString(v string) string {
 
 func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientID, nonce string) string {
 	t.Helper()
-	credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{})
+	credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{configID: ticketConfigurationID})
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -356,7 +357,7 @@ func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientI
 func TestTicketTimeClaimsAreRounded(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
 
-	credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{})
+	credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{configID: ticketConfigurationID})
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -412,7 +413,7 @@ func TestVerifierRejectsKeyBindingOutsideTheAcceptableWindow(t *testing.T) {
 			h := d.VerifierHandler()
 			id, params := startVerification(t, h, "ticket")
 
-			credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{})
+			credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{configID: ticketConfigurationID})
 			if err != nil {
 				t.Fatalf("signing ticket: %v", err)
 			}
@@ -532,13 +533,14 @@ func TestVerifierRejectsWrongNonce(t *testing.T) {
 func serveStatusList(t *testing.T, d *DemoRP, w *wallet.Wallet) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(nil)
-	chain, err := w.DefaultSigningCertChain()
+	// The revocation service of the wallet's lists names the status list signer.
+	key, chain, err := w.StatusListSigningMaterial()
 	if err != nil {
-		t.Fatalf("signing chain: %v", err)
+		t.Fatalf("status list signer: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/statuslist", func(rw http.ResponseWriter, r *http.Request) {
-		jwt, err := statuslist.GenerateStatusListJWT([]byte{0b00000010}, w.IssuerKey, statuslist.StatusListConfig{
+		jwt, err := statuslist.GenerateStatusListJWT([]byte{0b00000010}, key, statuslist.StatusListConfig{
 			URI:       srv.URL + "/statuslist",
 			Issuer:    srv.URL,
 			CertChain: chain,
@@ -1074,7 +1076,7 @@ func TestVerifierRejectsInjectedDisclosure(t *testing.T) {
 
 	id, params := startVerification(t, h, "ticket")
 
-	credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{})
+	credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{configID: ticketConfigurationID})
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -1144,6 +1146,10 @@ func serveDemoStack(t *testing.T, w *wallet.Wallet) (*DemoRP, *httptest.Server) 
 	}
 	if w.VCIClientID == "" {
 		w.VCIClientID = ts.URL
+	}
+	// A running wallet registers the demo parties at startup, under its URL.
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
 	}
 	return d, ts
 }
@@ -1725,13 +1731,13 @@ func TestIssuerPersistsTheReservedStatusIndex(t *testing.T) {
 	saves := 0
 	d.SetOnWalletChange(func() { saves++ })
 
-	if _, err := d.signGranted(&holderKey.PublicKey, ticketGrant{}); err != nil {
+	if _, err := d.signGranted(&holderKey.PublicKey, ticketGrant{configID: ticketConfigurationID}); err != nil {
 		t.Fatalf("signing a ticket without a status reference: %v", err)
 	}
 	if saves != 0 {
 		t.Errorf("a ticket without a status reference saved the wallet %d times", saves)
 	}
-	if _, err := d.signGranted(&holderKey.PublicKey, ticketGrant{withStatus: true}); err != nil {
+	if _, err := d.signGranted(&holderKey.PublicKey, ticketGrant{tokenState: tokenState{offerSettings: offerSettings{configIDs: []string{ticketConfigurationID}, withStatus: true}}, configID: ticketConfigurationID}); err != nil {
 		t.Fatalf("signing a ticket with a status reference: %v", err)
 	}
 	if saves != 1 {
@@ -1755,11 +1761,63 @@ func TestAuthorizationCodeOfferKeepsTheStatusChoice(t *testing.T) {
 	grants := offer["grants"].(map[string]any)[authCodeGrant].(map[string]any)
 	issuerState := grants["issuer_state"].(string)
 
-	if src := d.offerByIssuerState(issuerState); src == nil || !src.withStatus {
-		t.Error("the status choice was lost between the offer and its issuer_state")
+	if grant, errResp := d.resolveAuthGrant(authGrant{issuerState: issuerState}, "", ""); errResp != nil || !grant.settings.withStatus {
+		t.Errorf("grant %+v, %v: the status choice was lost between the offer and its issuer_state", grant.settings, errResp)
 	}
-	if d.offerByIssuerState("some-other-state") != nil {
+	if _, errResp := d.resolveAuthGrant(authGrant{issuerState: "some-other-state"}, "", ""); errResp == nil {
 		t.Error("an unknown issuer_state must not resolve to an offer")
+	}
+}
+
+// An authorization flow issues what its offer, its scope or its
+// authorization_details name (OpenID4VCI 1.0 §5.1.1, §5.1.2). Without any,
+// it issues the ticket, this server's default scope (RFC 6749 §3.3).
+func TestAnAuthorizationFlowIssuesWhatItsRequestNames(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	for _, tc := range []struct {
+		scope, details string
+		want           []string
+	}{
+		{"pid-sdjwt", "", []string{"pid-sdjwt"}},
+		{"", `[{"type":"openid_credential","credential_configuration_id":"pid-mdoc"}]`, []string{"pid-mdoc"}},
+		{"", "", []string{ticketConfigurationID}},
+	} {
+		grant, errResp := d.resolveAuthGrant(authGrant{}, tc.scope, tc.details)
+		if errResp != nil || !slices.Equal(grant.settings.configIDs, tc.want) {
+			t.Errorf("scope %q details %q: %+v, %v, want %v", tc.scope, tc.details, grant.settings, errResp, tc.want)
+		}
+	}
+	if _, errResp := d.resolveAuthGrant(authGrant{}, "unknown-configuration", ""); errResp == nil || errResp["error"] != "invalid_scope" {
+		t.Errorf("an unknown scope: %v, want invalid_scope", errResp)
+	}
+}
+
+// A grant is redeemed once, and an empty grant key matches no offer.
+func TestAGrantIsRedeemedOnce(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	h := d.IssuerHandler()
+	for _, query := range []string{"", "?grant=authorization_code&authorization=presentation"} {
+		if code, doc := doJSON(t, h, "POST", "/api/offers"+query, "", nil); code != http.StatusCreated {
+			t.Fatalf("creating an offer: %d %v", code, doc)
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	preAuth := func(o *offerState) string { return o.preAuthCode }
+	if d.redeemOfferLocked("", preAuth) != nil {
+		t.Error("an empty pre-authorized code redeemed an offer")
+	}
+	var code string
+	for _, o := range d.offers {
+		if o.preAuthCode != "" {
+			code = o.preAuthCode
+		}
+	}
+	if d.redeemOfferLocked(code, preAuth) == nil {
+		t.Fatal("the pre-authorized code did not redeem its offer")
+	}
+	if d.redeemOfferLocked(code, preAuth) != nil {
+		t.Error("a pre-authorized code redeemed its offer twice")
 	}
 }
 
@@ -2053,6 +2111,9 @@ func TestIssuerReportsASigningFailureAsAServerFault(t *testing.T) {
 // registration certificate.
 func TestTheDemoVerifierSendsItsRegistrationCertificate(t *testing.T) {
 	d, w, _ := newDemoRP(t)
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
+	}
 	h := d.VerifierHandler()
 	_, chain, err := w.DemoVerifierAccessSigningMaterial()
 	if err != nil {
@@ -2080,6 +2141,30 @@ func TestTheDemoVerifierSendsItsRegistrationCertificate(t *testing.T) {
 	}
 	if code, _ := doJSON(t, h, "POST", "/api/requests", `{"type":"pid","identity":"anonymous"}`, map[string]string{"Content-Type": "application/json"}); code != http.StatusBadRequest {
 		t.Errorf("an unknown identity: %d, want 400", code)
+	}
+}
+
+// A local wallet lets the user delete the demo verifier's registration. Its
+// requests then go out without verifier_info.
+func TestADeletedDemoVerifierSendsItsRequestsWithoutVerifierInfo(t *testing.T) {
+	d, w, _ := newDemoRP(t)
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Registrar().DeleteRelyingParty("NLTEST.00000001"); err != nil {
+		t.Fatal(err)
+	}
+	h := d.VerifierHandler()
+	code, doc := doJSON(t, h, "POST", "/api/requests", `{"type":"pid"}`, map[string]string{"Content-Type": "application/json"})
+	if code != http.StatusOK && code != http.StatusCreated {
+		t.Fatalf("creating the request = %d: %v", code, doc)
+	}
+	walletURL, err := url.Parse(doc["wallet_url"].(string))
+	if err != nil {
+		t.Fatalf("parsing wallet_url: %v", err)
+	}
+	if payload := fetchRequestObject(t, h, walletURL.Query().Get("request_uri")); payload["verifier_info"] != nil {
+		t.Errorf("verifier_info = %v, want none", payload["verifier_info"])
 	}
 }
 

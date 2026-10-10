@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/json"
@@ -54,8 +55,8 @@ type demoIdentity struct {
 }
 
 var (
-	demoIssuerIdentity   = demoIdentity{Identifier: listedProviderIdentifier, LegalName: listedProviderName, Country: mock.DefaultCertificateCountry}
-	demoVerifierIdentity = demoIdentity{Identifier: "NTR" + mock.DefaultCertificateCountry + "-00000001", LegalName: "EUDI Dev Test Verifier", Country: mock.DefaultCertificateCountry}
+	demoIssuerIdentity   = demoIdentity{Identifier: listedProviderEUID, LegalName: listedProviderName, Country: mock.DefaultCertificateCountry}
+	demoVerifierIdentity = demoIdentity{Identifier: mock.DefaultCertificateCountry + "TEST.00000001", LegalName: "EUDI Dev Test Verifier", Country: mock.DefaultCertificateCountry}
 )
 
 // demoAccessSigningMaterial has the registrar sign the access certificate of
@@ -97,9 +98,19 @@ func (w *Wallet) demoAccessSigningMaterial(keyName string, identity demoIdentity
 // updates them to the wallet's templates, and makes sure both have a current
 // registration certificate. It reports whether the registrar state changed.
 func (w *Wallet) EnsureDemoRegistrations() (bool, error) {
+	return w.registerDemoParties(true)
+}
+
+// RegisterMissingDemoParties registers the demo issuer and verifier when the
+// registrar has no registration for them, and keeps an existing one.
+func (w *Wallet) RegisterMissingDemoParties() (bool, error) {
+	return w.registerDemoParties(false)
+}
+
+func (w *Wallet) registerDemoParties(overwrite bool) (bool, error) {
 	changed := false
 	for _, build := range []demoRegistration{w.demoIssuerRegistration, w.demoVerifierRegistration} {
-		_, updated, err := w.ensureDemoRegistration(build)
+		updated, err := w.ensureDemoRegistration(build, overwrite)
 		if err != nil {
 			return changed, err
 		}
@@ -112,7 +123,7 @@ func (w *Wallet) EnsureDemoRegistrations() (bool, error) {
 // V1.1.1 §4.2.3): its registrar dataset and its registration certificate.
 func (w *Wallet) DemoIssuerInfo() ([]any, error) {
 	result, err := w.demoCertificate(w.demoIssuerRegistration)
-	if err != nil {
+	if err != nil || result == nil {
 		return nil, err
 	}
 	return decodeInfo(result.IssuerInfo, "issuer_info")
@@ -122,7 +133,7 @@ func (w *Wallet) DemoIssuerInfo() ([]any, error) {
 // §5.1): the registration certificate of its intended use.
 func (w *Wallet) DemoVerifierInfo() ([]any, error) {
 	result, err := w.demoCertificate(w.demoVerifierRegistration)
-	if err != nil {
+	if err != nil || result == nil {
 		return nil, err
 	}
 	return decodeInfo(result.VerifierInfo, "verifier_info")
@@ -137,7 +148,7 @@ func (w *Wallet) DemoIdentityCheckVerifierInfo() ([]any, error) {
 		req.IntendedUseIdentifier = identityCheckIntendedUseID
 		return rp, req, err
 	})
-	if err != nil {
+	if err != nil || result == nil {
 		return nil, err
 	}
 	return decodeInfo(result.VerifierInfo, "verifier_info")
@@ -145,37 +156,52 @@ func (w *Wallet) DemoIdentityCheckVerifierInfo() ([]any, error) {
 
 type demoRegistration func() (registrar.WalletRelyingParty, registrar.RegistrationCertificateRequest, error)
 
-// demoCertificate returns the current certificate of a demo registration. A
-// running server saves the resulting registrar change.
+// demoCertificate returns the current certificate of a demo registration
+// and issues one when there is none or it expires soon. A deleted
+// registration has no certificate, and the result is nil. A running server
+// saves a new certificate.
 func (w *Wallet) demoCertificate(build demoRegistration) (*registrar.RegistrationCertificateResult, error) {
 	var result *registrar.RegistrationCertificateResult
 	var err error
 	change := func() bool {
-		var changed bool
-		result, changed, err = w.ensureDemoRegistration(build)
-		return changed
+		w.demoRegistrationMu.Lock()
+		defer w.demoRegistrationMu.Unlock()
+		var issued bool
+		_, req, buildErr := build()
+		if buildErr != nil {
+			err = buildErr
+			return false
+		}
+		result, issued, err = w.Registrar().CurrentRegistrationCertificate(req)
+		return issued
 	}
 	if w.saveRegistrarChange != nil {
 		w.saveRegistrarChange(change)
 	} else {
 		change()
 	}
+	if registrar.IsNotRegistered(err) {
+		return nil, nil
+	}
 	return result, err
 }
 
-func (w *Wallet) ensureDemoRegistration(build demoRegistration) (*registrar.RegistrationCertificateResult, bool, error) {
+func (w *Wallet) ensureDemoRegistration(build demoRegistration, overwrite bool) (bool, error) {
 	w.demoRegistrationMu.Lock()
 	defer w.demoRegistrationMu.Unlock()
 	rp, req, err := build()
 	if err != nil {
-		return nil, false, err
+		return false, err
+	}
+	if stored, exists := w.Registrar().RelyingParty(rp.Identifier[0].Identifier); exists && !overwrite {
+		return w.rebaseDemoParty(stored)
 	}
 	_, updated, err := w.Registrar().EnsureRelyingParty(rp)
 	if err != nil {
-		return nil, false, err
+		return false, err
 	}
-	result, issued, err := w.Registrar().CurrentRegistrationCertificate(req)
-	return result, updated || issued, err
+	_, issued, err := w.Registrar().CurrentRegistrationCertificate(req)
+	return updated || issued, err
 }
 
 func decodeInfo(value, name string) ([]any, error) {
@@ -291,7 +317,7 @@ func (w *Wallet) demoVerifierRegistration() (registrar.WalletRelyingParty, regis
 
 func (w *Wallet) demoRelyingParty(identity demoIdentity, service registrar.WalletRelyingPartyService) registrar.WalletRelyingParty {
 	return registrar.WalletRelyingParty{
-		Identifier:  []registrar.Identifier{{Identifier: identity.Identifier, Type: "http://data.europa.eu/eudi/id/EUID"}},
+		Identifier:  []registrar.Identifier{{Identifier: identity.Identifier, Type: registrar.EUIDIdentifierType}},
 		LegalPerson: registrar.LegalPerson{LegalName: []string{identity.LegalName}},
 		Country:     identity.Country,
 		TradeName:   service.ServiceTradeName,
@@ -303,4 +329,28 @@ func sortedUnique(values []string) []string {
 	out := slices.DeleteFunc(slices.Clone(values), func(v string) bool { return strings.TrimSpace(v) == "" })
 	slices.Sort(out)
 	return slices.Compact(out)
+}
+
+// rebaseDemoParty moves the URLs of a kept demo registration to the wallet's
+// current base URL, for a wallet that restarts on another port or base URL.
+// The registry URI shows the base the registration was made under.
+func (w *Wallet) rebaseDemoParty(stored registrar.WalletRelyingParty) (bool, error) {
+	previous := strings.TrimSuffix(stored.RegistryURI, "/api/registrar/wrp/"+stored.Identifier[0].Identifier)
+	current := w.RegistrarBase()
+	if previous == stored.RegistryURI || previous == current {
+		return false, nil
+	}
+	raw, err := json.Marshal(stored)
+	if err != nil {
+		return false, err
+	}
+	quoted := func(base string) []byte { b, _ := json.Marshal(base); return b[:len(b)-1] }
+	var rebased registrar.WalletRelyingParty
+	if err := json.Unmarshal(bytes.ReplaceAll(raw, quoted(previous), quoted(current)), &rebased); err != nil {
+		return false, err
+	}
+	if _, err := w.Registrar().UpdateRelyingParty(rebased); err != nil {
+		return false, err
+	}
+	return true, nil
 }

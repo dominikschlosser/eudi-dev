@@ -15,11 +15,10 @@
 package web
 
 import (
+	"crypto"
 	"fmt"
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
@@ -32,61 +31,81 @@ func loadLocalWallet(store *wallet.WalletStore) (*wallet.Wallet, error) {
 	return store.LoadOrCreate()
 }
 
-// The local CA verifies locally issued credentials without a trusted list.
-func localWalletTrustAnchors(store *wallet.WalletStore) []trustlist.CertInfo {
-	w, err := loadLocalWallet(store)
-	if err != nil || w == nil || len(w.CertChain) == 0 {
-		return nil
-	}
-	ca := w.CertChain[len(w.CertChain)-1]
-	return []trustlist.CertInfo{{Raw: ca.Raw, PublicKey: ca.PublicKey}}
+// credentialTrust is what one validation trusts. Validate resolves it once,
+// and every check reads it. A supplied key or trusted list is the only trust
+// source. Without one, the trusted list of the credential's entry in the
+// wallet's attestation catalogue is.
+type credentialTrust struct {
+	// keys, issuance and revocation come from the supplied key and trusted
+	// list. Issuance services anchor credentials, revocation services their
+	// status lists (ETSI TS 119 602 V1.1.1 Table D.3).
+	keys                 []crypto.PublicKey
+	issuance, revocation []trustlist.CertInfo
+	err                  error
+	catalogue            wallet.CatalogueAnchoring
+	catalogueFound       bool
+	noWallet             bool
 }
 
-func verifyWithLocalWalletIssuerKey(token *sdjwt.Token, store *wallet.WalletStore) (*sdjwt.VerifyResult, string) {
-	if token == nil {
-		return nil, ""
+func resolveTrust(raw string, opts ValidateOpts) credentialTrust {
+	var t credentialTrust
+	t.keys, t.issuance, t.revocation, t.err = suppliedTrust(opts)
+	if opts.Offline {
+		return t
 	}
-	kid, _ := token.Header["kid"].(string)
-	if strings.TrimSpace(kid) == "" {
-		return nil, ""
+	w := opts.Wallet
+	if w == nil {
+		loaded, err := loadLocalWallet(opts.WalletStore)
+		if err != nil || loaded == nil {
+			t.noWallet = true
+			return t
+		}
+		w = loaded
 	}
+	t.catalogue, t.catalogueFound = w.CheckCatalogueAnchoring(raw)
+	return t
+}
 
-	w, err := loadLocalWallet(store)
-	if err != nil || w == nil || w.IssuerKey == nil {
-		return nil, ""
-	}
-	if mock.KeyIDForPublicKey(&w.IssuerKey.PublicKey) != strings.TrimSpace(kid) {
-		return nil, ""
-	}
+func (t credentialTrust) supplied() bool {
+	return len(t.keys) > 0 || len(t.issuance) > 0 || len(t.revocation) > 0
+}
 
-	return sdjwt.Verify(token, &w.IssuerKey.PublicKey), "local wallet issuer key"
+// catalogueAnchors are the issuance and revocation certificates of the
+// catalogue list that anchors the credential. They count only without a
+// supplied key or list.
+func (t credentialTrust) catalogueAnchors() (issuance, revocation []trustlist.CertInfo, ok bool) {
+	if t.supplied() || t.catalogue.AnchoredBy == "" {
+		return nil, nil, false
+	}
+	return trustlist.CertInfos(t.catalogue.IssuanceAnchors), trustlist.CertInfos(t.catalogue.StatusAnchors), true
+}
+
+// anchoredBy names the catalogue list that anchors the credential.
+func (t credentialTrust) anchoredBy() string {
+	return fmt.Sprintf("the trusted list %s of the catalogue entry %q", t.catalogue.AnchoredBy, t.catalogue.Entry)
 }
 
 // checkCatalogueTrust validates a credential with the trusted lists of its
 // entry in the wallet's attestation catalogue, as the wallet does with a
 // received credential.
-func checkCatalogueTrust(raw string, opts ValidateOpts) CheckResult {
+func checkCatalogueTrust(trust credentialTrust, opts ValidateOpts) CheckResult {
 	result := CheckResult{Name: "trust", Status: "skipped"}
 	if opts.Offline {
 		result.Detail = "Needs the trusted lists of the attestation catalogue"
 		result.NeedsNetwork = true
 		return result
 	}
-	w := opts.Wallet
-	if w == nil {
-		var err error
-		if w, err = loadLocalWallet(opts.WalletStore); err != nil || w == nil {
-			result.Detail = "No wallet with an attestation catalogue"
-			return result
-		}
+	if trust.noWallet {
+		result.Detail = "No wallet with an attestation catalogue"
+		return result
 	}
-	anchoring, found := w.CheckCatalogueAnchoring(raw)
+	anchoring := trust.catalogue
 	switch {
-	case !found:
+	case !trust.catalogueFound:
 		result.Detail = "The attestation catalogue has no entry for this credential type"
 	case anchoring.AnchoredBy != "":
 		result.Status = "pass"
-		result.Detail = fmt.Sprintf("Anchored by the trusted list %s of the catalogue entry %q", anchoring.AnchoredBy, anchoring.Entry)
+		result.Detail = "Anchored by " + trust.anchoredBy()
 	case len(anchoring.Findings) > 0:
 		result.Status = "fail"
 		result.Detail = strings.Join(anchoring.Findings, " ")

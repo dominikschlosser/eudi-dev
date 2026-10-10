@@ -98,6 +98,29 @@ func TestInteractiveAuthorizationEndToEnd(t *testing.T) {
 	t.Errorf("no log entry recorded the presentation, log: %v", w.GetLog())
 }
 
+// A template offer issues its template through presentation during issuance,
+// as it does with a pre-authorized code.
+func TestInteractiveAuthorizationIssuesTheOfferedTemplate(t *testing.T) {
+	w := interactiveTestWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	for _, tc := range []struct{ id, typ string }{
+		{"italian-pid-mdoc", "eu.europa.ec.eudi.pid.1"},
+		{"german-pid-sdjwt", "urn:eudi:pid:de:1"},
+	} {
+		offer := postJSONTo(t, ts.URL+"/issuer/api/offers?credential="+tc.id+"&grant="+authCodeGrant+"&authorization="+authorizationPresentation, `{}`)
+		uri, _ := offer["scheme_uri"].(string)
+		result, err := w.ProcessCredentialOffer(uri)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.id, err)
+		}
+		issued, _ := w.GetCredential(result.CredentialID)
+		if issued.VCT != tc.typ && issued.DocType != tc.typ {
+			t.Errorf("%s: issued %s %s, want %s", tc.id, issued.VCT, issued.DocType, tc.typ)
+		}
+	}
+}
+
 // The issuer picks the interaction per offer. For an offer that wants browser
 // sign-in it asks a wallet that advertises auth_via_web for that interaction
 // (OpenID4VCI 1.1 §6.2.1.2). The wallet then publishes the sign-in URL.
@@ -542,11 +565,14 @@ func TestInteractiveRequestPinsTheIssuerCA(t *testing.T) {
 		t.Errorf("a credential issued under this CA carries aki %q, but the request pins %q", got, aki)
 	}
 
-	request := d.interactivePresentationRequest(&requestState{
+	request, err := d.interactivePresentationRequest(&requestState{
 		queryID: "pid", mdocQueryID: "pid_mdoc", nonce: "n",
 		vct: mock.DefaultPIDVCT, docType: "org.iso.18013.5.1.mDL",
 		want: []string{"given_name"}, wantMDOC: []string{"given_name"},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	jar, ok := request["request"].(string)
 	if !ok {
 		t.Fatalf("expected a signed request object, got %v", request)
@@ -660,8 +686,9 @@ func TestInteractiveAuthorizationVerifiesThePresentation(t *testing.T) {
 }
 
 // Browser sign-in stores its pushed requests in the same state map as the PAR
-// endpoint. The map has one cap, and a full map answers 429.
-func TestBrowserOfferChallengeIsCappedLikePAR(t *testing.T) {
+// endpoint. A full map evicts the request that expires first, so a flood of
+// requests doesn't lock out other wallets.
+func TestAFullStateMapMakesRoomForTheNextWallet(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 	provider := foreignWalletProvider(t)
 	clientKey, err := mock.GenerateKey()
@@ -672,7 +699,7 @@ func TestBrowserOfferChallengeIsCappedLikePAR(t *testing.T) {
 	d.mu.Lock()
 	for i := 0; i < maxEntries; i++ {
 		uri := fmt.Sprintf("%sfill-%d", requestURIPrefix, i)
-		d.authRequests[uri] = &authRequestState{requestURI: uri, expires: time.Now().Add(authRequestTTL)}
+		d.authRequests[uri] = &authRequestState{requestURI: uri, expires: time.Now().Add(authRequestTTL + time.Duration(i)*time.Second)}
 	}
 	d.mu.Unlock()
 
@@ -680,8 +707,13 @@ func TestBrowserOfferChallengeIsCappedLikePAR(t *testing.T) {
 		"OAuth-Client-Attestation":     provider.attest(t, "http://wallet.example", clientKey),
 		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
 	}, nil)
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("status = %d, want 429 once the state map is full (%s)", rec.Code, rec.Body.String())
+	if rec.Code == http.StatusTooManyRequests {
+		t.Fatalf("status = 429, want the next wallet served (%s)", rec.Body.String())
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, kept := d.authRequests[requestURIPrefix+"fill-0"]; kept || len(d.authRequests) != maxEntries {
+		t.Errorf("entries = %d, first one kept %t, want %d with the first one evicted", len(d.authRequests), kept, maxEntries)
 	}
 }
 

@@ -38,34 +38,25 @@ type Server struct {
 	Registrar func() *Registrar
 	// Mutate runs change and saves the wallet when change reports a change.
 	Mutate func(change func() bool)
-	// BuiltIn reports whether the registration of the identifier belongs to
-	// the wallet, which overwrites changes to it. Clients may not update or
-	// delete it.
-	BuiltIn func(identifier string) bool
-	// Protected reports whether clients may not change the registration of the
-	// identifier or its certificates.
-	Protected func(identifier string) bool
+	// Protected reports whether clients may not change a registration or its
+	// certificates.
+	Protected func(rp WalletRelyingParty) bool
 	// KeepTemplateEntries reports whether clients may not delete the
 	// catalogue entries of the predefined templates.
 	KeepTemplateEntries func() bool
 }
 
+// refuseProtected resolves any form of the identifier to its registration,
+// so the protection holds for every identifier of a party.
 func (h *Server) refuseProtected(w http.ResponseWriter, identifier string) bool {
-	if h.Protected == nil || !h.Protected(strings.TrimSpace(identifier)) {
+	if h.Protected == nil {
+		return false
+	}
+	rp, ok := h.Registrar().RelyingParty(identifier)
+	if !ok || !h.Protected(rp) {
 		return false
 	}
 	writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("%s is a registration of the public demo, and visitors can't change it. Register your own relying party instead", identifier)})
-	return true
-}
-
-func (h *Server) refuseBuiltIn(w http.ResponseWriter, identifier string) bool {
-	if h.refuseProtected(w, identifier) {
-		return true
-	}
-	if h.BuiltIn == nil || !h.BuiltIn(strings.TrimSpace(identifier)) {
-		return false
-	}
-	writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("%s is a registration of the wallet, which derives it from its templates. Register your own relying party instead", identifier)})
 	return true
 }
 
@@ -142,7 +133,7 @@ func (h *Server) handleUpdateRelyingParty(w http.ResponseWriter, r *http.Request
 		return
 	}
 	for _, id := range rp.Identifier {
-		if h.refuseBuiltIn(w, id.Identifier) {
+		if h.refuseProtected(w, id.Identifier) {
 			return
 		}
 	}
@@ -160,7 +151,7 @@ func (h *Server) handleUpdateRelyingParty(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Server) handleDeleteRelyingParty(w http.ResponseWriter, r *http.Request) {
-	if h.refuseBuiltIn(w, r.PathValue("identifier")) {
+	if h.refuseProtected(w, r.PathValue("identifier")) {
 		return
 	}
 	var err error

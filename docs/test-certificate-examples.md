@@ -82,7 +82,7 @@ Certificate:
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  8 20:52:14 2031 GMT
-        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test pid CA NL, organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test pid CA NL, organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -139,7 +139,7 @@ Certificate:
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  8 20:52:14 2031 GMT
-        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test wallet CA NL, organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test wallet CA NL, organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -196,7 +196,7 @@ Certificate:
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  8 20:52:14 2031 GMT
-        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test eaa CA NL, organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test eaa CA NL, organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -347,11 +347,11 @@ Certificate:
         Serial Number:
             bf:e1:43:b0:cf:02:75:d3:11:fc:8d:09:22:1d:62:0b
         Signature Algorithm: ecdsa-with-SHA256
-        Issuer: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test pid CA NL, organizationIdentifier=NTRNL-00000000
+        Issuer: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test pid CA NL, organizationIdentifier=NTRNL-NLTEST.00000000
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  9 20:52:14 2027 GMT
-        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Wallet PID Provider (pid), organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Wallet PID Provider (pid), organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -419,11 +419,11 @@ Certificate:
         Serial Number:
             b8:28:8a:04:1e:de:57:20:90:f6:6e:59:50:8f:cd:04
         Signature Algorithm: ecdsa-with-SHA256
-        Issuer: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test wallet CA NL, organizationIdentifier=NTRNL-00000000
+        Issuer: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test wallet CA NL, organizationIdentifier=NTRNL-NLTEST.00000000
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  9 20:52:14 2027 GMT
-        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Wallet Provider (wallet-provider), organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Wallet Provider (wallet-provider), organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -489,11 +489,11 @@ Certificate:
         Serial Number:
             4d:28:3e:8e:20:c6:01:b1:8b:2a:01:49:50:91:93:4b
         Signature Algorithm: ecdsa-with-SHA256
-        Issuer: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test eaa CA NL, organizationIdentifier=NTRNL-00000000
+        Issuer: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test eaa CA NL, organizationIdentifier=NTRNL-NLTEST.00000000
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  9 20:52:14 2027 GMT
-        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Wallet EAA Provider (eaa), organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Wallet EAA Provider (eaa), organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -552,7 +552,7 @@ Certificate:
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  9 20:52:14 2027 GMT
-        Subject: C=NL, O=EUDI Dev Test Provider, OU=issuance, CN=EUDI Dev Demo Issuer, organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Test Provider, OU=issuance, CN=EUDI Dev Demo Issuer, organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -608,7 +608,7 @@ Certificate:
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  9 20:52:14 2027 GMT
-        Subject: C=NL, O=EUDI Dev Test Verifier, OU=verification, CN=EUDI Dev Demo Verifier, organizationIdentifier=NTRNL-00000001
+        Subject: C=NL, O=EUDI Dev Test Verifier, OU=verification, CN=EUDI Dev Demo Verifier, organizationIdentifier=NTRNL-NLTEST.00000001
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -664,7 +664,7 @@ Certificate:
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  9 20:52:14 2027 GMT
-        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test Registrar, organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Test Registrar, organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -713,7 +713,7 @@ Certificate:
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  9 20:52:14 2027 GMT
-        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Status List Signer, organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Test Provider, CN=EUDI Dev Status List Signer, organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
@@ -766,7 +766,7 @@ Certificate:
         Validity
             Not Before: Oct  9 19:52:14 2026 GMT
             Not After : Oct  9 20:52:14 2027 GMT
-        Subject: C=NL, O=EUDI Dev Wallet, CN=EUDI Dev Test List Operator, organizationIdentifier=NTRNL-00000000
+        Subject: C=NL, O=EUDI Dev Wallet, CN=EUDI Dev Test List Operator, organizationIdentifier=NTRNL-NLTEST.00000000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)

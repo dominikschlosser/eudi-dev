@@ -8,7 +8,7 @@ The toolkit reports mechanisms outside that set as unsupported.
 
 If the toolkit ignored an unsupported mechanism, a request could look verified. When a request, credential or token uses an unsupported mechanism, the toolkit reports it in a finding. The finding identifies the skipped mechanism and what remains unchecked. The affected key or signature stays unresolved.
 
-## What this looks like in the code
+## In the code
 
 `openid_federation:` as a Client Identifier Prefix is refused with "not supported by this wallet". OID4VP 1.0 §5.9.3 defers its processing rules to OpenID Federation, and the wallet resolves no trust chain (`internal/wallet/clientid.go`).
 

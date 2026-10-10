@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"fmt"
+	"log"
 	"slices"
 )
 
@@ -292,4 +293,32 @@ func (s ConsentSetOptions) defaultChoice() int {
 		return -1
 	}
 	return 0
+}
+
+// applySelectedClaims discloses the claims the user selected per credential.
+// Strict mode discloses only claims the request asked for, so a selection can
+// withhold a claim but not add one. Debug mode sends the selection as it is.
+func (w *Wallet) applySelectedClaims(matches []CredentialMatch, selected map[string][]string) []CredentialMatch {
+	if selected == nil {
+		return matches
+	}
+	strict := w.Mode() == ValidationModeStrict
+	for i, m := range matches {
+		keys, ok := selected[m.CredentialID]
+		if !ok {
+			continue
+		}
+		if strict {
+			requested := m.SelectedKeys
+			keys = slices.DeleteFunc(slices.Clone(keys), func(k string) bool { return !slices.Contains(requested, k) })
+		}
+		cred, ok := w.GetCredential(m.CredentialID)
+		if !ok {
+			continue
+		}
+		matches[i].SelectedKeys = keys
+		matches[i].Claims = filterClaims(cred, keys)
+		log.Printf("[VP]   %s: disclosing %v", shortID(m.CredentialID), keys)
+	}
+	return matches
 }

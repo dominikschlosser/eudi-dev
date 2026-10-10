@@ -30,8 +30,8 @@ func TestTheRegistrarAssignsWhatARegistrationLeavesOut(t *testing.T) {
 	rp := registerTestRelyingParty(t, w)
 
 	id := rp.Identifier[0]
-	if !organizationIdentifierPattern.MatchString(id.Identifier) || id.Type != euidIdentifierType {
-		t.Errorf("identifier %+v, want an assigned EUID in organizationIdentifier form", id)
+	if semantic, err := SemanticIdentifier(id, rp.Country); err != nil || id.Type != EUIDIdentifierType || semantic != "NTRNL-"+id.Identifier {
+		t.Errorf("identifier %+v (%q, %v), want an assigned EUID", id, semantic, err)
 	}
 	if rp.RegistryURI != "https://wallet.example/api/registrar/wrp/"+id.Identifier || rp.LegalPerson.LegalName[0] != "Example Shop" {
 		t.Errorf("registry URI %q, legal name %v", rp.RegistryURI, rp.LegalPerson.LegalName)
@@ -90,7 +90,10 @@ func TestRegistrationsAreChecked(t *testing.T) {
 			Purpose:     use("").Purpose,
 			Credentials: []RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{mock.DefaultPIDVCT}}}},
 		}}}}}, "needs at least one claim"},
-		{"identifier with a space", WalletRelyingParty{TradeName: "Shop", Identifier: []Identifier{{Identifier: "LEIXG-12 34"}}}, "not an organizationIdentifier"},
+		{"EUID with a space", WalletRelyingParty{TradeName: "Shop", Identifier: []Identifier{{Identifier: "NLTEST.12 34", Type: EUIDIdentifierType}}}, "not an EUID"},
+		{"semantics identifier as EUID", WalletRelyingParty{TradeName: "Shop", Identifier: []Identifier{{Identifier: "NTRNL-12345678", Type: EUIDIdentifierType}}}, "not an EUID"},
+		{"short LEI", WalletRelyingParty{TradeName: "Shop", Identifier: []Identifier{{Identifier: "529900T8BM49", Type: LEIIdentifierType}}}, "not a LEI"},
+		{"unknown identifier type", WalletRelyingParty{TradeName: "Shop", Identifier: []Identifier{{Identifier: "12345678", Type: "https://example.com/id"}}}, "not one of the types"},
 		{"service twice", WalletRelyingParty{TradeName: "Shop", Services: []WalletRelyingPartyService{{ServiceIdentifier: "web"}, {ServiceIdentifier: "web"}}}, "registered twice"},
 		{"intended use twice", WalletRelyingParty{TradeName: "Shop", Services: []WalletRelyingPartyService{{IntendedUses: []IntendedUse{use("a"), use("a")}}}}, "registered twice"},
 	} {
@@ -110,7 +113,7 @@ func TestARegistrationCannotTakeAnotherPartysIdentifier(t *testing.T) {
 	taken := registerTestRelyingParty(t, w).Identifier[0].Identifier
 	_, err := w.RegisterRelyingParty(WalletRelyingParty{
 		TradeName:  "Other Shop",
-		Identifier: []Identifier{{Identifier: "NTRNL-OTHER"}, {Identifier: taken}},
+		Identifier: []Identifier{{Identifier: "NLTEST.OTHER"}, {Identifier: taken}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "already registered") {
 		t.Errorf("error %v, want the identifier taken", err)

@@ -87,7 +87,7 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 
 	docType := cred.DocType
 
-	mode := w.SessionTranscript
+	mode := w.sessionTranscriptFor(params)
 	if mode == "" {
 		mode = SessionTranscriptOID4VP
 	}
@@ -175,7 +175,7 @@ func (w *Wallet) buildSessionTranscript(params PresentationParams, mdocNonce str
 		return buildSessionTranscriptOID4VCIIAE(params.InteractiveAuthorizationEndpoint, params.Nonce, jwkThumbprint)
 	}
 
-	mode := w.SessionTranscript
+	mode := w.sessionTranscriptFor(params)
 	if mode == "" {
 		mode = SessionTranscriptOID4VP
 	}

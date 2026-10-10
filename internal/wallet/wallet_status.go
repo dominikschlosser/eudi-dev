@@ -165,10 +165,10 @@ func CredentialStatusRef(c StoredCredential) *statuslist.StatusRef {
 	switch c.Format {
 	case "mso_mdoc":
 		doc, err := mdoc.Parse(c.Raw)
-		if err != nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil || doc.IssuerAuth.MSO.Status == nil {
+		if err != nil || doc.StatusClaims() == nil {
 			return nil
 		}
-		return statuslist.ExtractStatusRef(map[string]any{"status": doc.IssuerAuth.MSO.Status})
+		return statuslist.ExtractStatusRef(doc.StatusClaims())
 	default:
 		return statuslist.ExtractStatusRef(c.Claims)
 	}

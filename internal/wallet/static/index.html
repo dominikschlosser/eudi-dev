@@ -11,8 +11,8 @@
 <body>
   <header>
     <div class="header-left">
-      <img src="logo.svg" alt="" class="header-logo">
-      <h1>EUDI Dev Wallet</h1>
+      <img src="logo.svg" alt="" class="header-logo" id="header-logo">
+      <h1 id="header-title">EUDI Dev Wallet</h1>
       <span class="header-links" id="header-links">
         <a href="decoder/" id="decoder-link">Decoder</a>
         <a href="#" id="how-to-use-link">How to use</a>
@@ -27,7 +27,7 @@
             <a href="#" id="registrar-catalog-link">Attestation catalogue</a>
           </span>
         </span>
-        <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener" id="github-link">GitHub</a>
       </span>
     </div>
     <div class="header-right">
@@ -38,14 +38,14 @@
   </header>
 
   <div id="demo-banner" hidden>
-    <span>
+    <span id="demo-banner-text">
       <strong>Shared demo instance.</strong> Everything here is visible to every
       visitor, and anyone can change or delete credentials and registered
       relying parties at any time
       (<span id="demo-banner-reset">state is reset regularly</span>). Use it
       for demonstration only. For isolated testing, run
       your own instance: see <a href="#" id="demo-banner-cli-link">Get the CLI</a>
-      or <a href="https://github.com/dominikschlosser/eudi-dev/blob/main/docs/public-demo.md" target="_blank" rel="noopener">host your own demo</a>.
+      or <a href="https://github.com/dominikschlosser/eudi-dev/blob/main/docs/public-demo.md" target="_blank" rel="noopener" id="demo-banner-host-link">host your own demo</a>.
     </span>
     <button class="btn" id="demo-banner-dismiss">Got it</button>
   </div>
@@ -57,33 +57,33 @@
 
   <div class="main">
     <div>
-      <div class="section-title">Actions</div>
+      <div class="section-title" id="actions-title">Actions</div>
       <div class="actions-bar">
         <input type="text" id="offer-input" placeholder="Paste OID4VCI offer URI or OID4VP request URI...">
         <button class="btn btn-primary" id="process-btn">Process</button>
         <button class="btn" id="import-btn">Import Credential</button>
         <button class="btn" id="issue-btn">Issue Credential</button>
       </div>
-      <div class="actions-hint">
-        No offer at hand? <a href="issuer/">Get one from the demo issuer</a>
-        &middot; <a href="verifier/">Present to the demo verifier</a>
+      <div class="actions-hint" id="actions-hint">
+        No offer at hand? <a href="issuer/" id="actions-hint-issuer-link">Get one from the demo issuer</a>
+        &middot; <a href="verifier/" id="actions-hint-verifier-link">Present to the demo verifier</a>
       </div>
     </div>
 
     <div id="deferred-section" hidden>
-      <div class="section-title">Awaiting issuance</div>
+      <div class="section-title" id="deferred-title">Awaiting issuance</div>
       <div id="deferred-list" class="deferred-list"></div>
     </div>
 
     <div>
-      <div class="section-title">Credentials</div>
+      <div class="section-title" id="credentials-title">Credentials</div>
       <div id="credentials" class="credentials">
         <div class="loading-state" id="cred-loading" role="status" aria-label="Loading credentials">
           <span class="loading-spinner" aria-hidden="true"></span>
-          <span>Loading credentials…</span>
+          <span id="cred-loading-text">Loading credentials…</span>
         </div>
         <div class="load-error" id="cred-error" role="alert" hidden>
-          <span>Could not load credentials.</span>
+          <span id="cred-error-text">Could not load credentials.</span>
           <button class="btn" id="cred-retry" type="button">Retry</button>
         </div>
         <div class="empty-state" id="cred-empty" hidden>No credentials loaded</div>
@@ -98,7 +98,7 @@
 
   <div class="activity-drawer" id="activity-drawer">
     <div class="drawer-head" id="activity-toggle" role="button" tabindex="0" aria-expanded="true" aria-controls="log">
-      <span class="section-title">Activity</span>
+      <span class="section-title" id="activity-title">Activity</span>
       <span class="drawer-head-right">
         <button class="btn btn-sm" id="clear-log-btn">Clear</button>
         <span class="drawer-chev" id="activity-chev" aria-hidden="true">⌄</span>
@@ -107,10 +107,10 @@
     <div id="log" class="log-entries drawer-body">
       <div class="loading-state" id="log-loading" role="status" aria-label="Loading activity">
         <span class="loading-spinner" aria-hidden="true"></span>
-        <span>Loading activity…</span>
+        <span id="log-loading-text">Loading activity…</span>
       </div>
       <div class="load-error" id="log-error" role="alert" hidden>
-        <span>Could not load activity.</span>
+        <span id="log-error-text">Could not load activity.</span>
         <button class="btn" id="log-retry" type="button">Retry</button>
       </div>
       <div class="empty-state" id="log-empty" hidden>No activity yet</div>
@@ -119,8 +119,8 @@
 
   <footer class="app-footer">
     <div class="sponsor-info" id="sponsor-info" hidden>
-      <span>Enjoying eudi-dev?</span>
-      <a href="https://github.com/sponsors/dominikschlosser" target="_blank" rel="noopener">
+      <span id="sponsor-text">Enjoying eudi-dev?</span>
+      <a href="https://github.com/sponsors/dominikschlosser" target="_blank" rel="noopener" id="sponsor-link">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>
         Support its development
       </a>
@@ -132,11 +132,11 @@
       <a href="#" id="news-link" hidden>News</a>
       <span id="demo-note" hidden></span>
     </div>
-    <div class="footer-disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
+    <div class="footer-disclaimer" id="footer-disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </footer>
 
   <div class="consent-overlay" id="news-overlay">
-    <div class="consent-dialog news-dialog" role="dialog" aria-modal="true" aria-label="News">
+    <div class="consent-dialog news-dialog" id="news-dialog" role="dialog" aria-modal="true" aria-label="News">
       <div class="news-content" id="news-content"></div>
       <div class="consent-buttons">
         <button class="btn" id="news-close">Close</button>
@@ -145,49 +145,49 @@
   </div>
 
   <div class="consent-overlay" id="howto-overlay">
-    <div class="consent-dialog">
-      <div class="consent-title">How to use this wallet</div>
-      <div class="howto-tabs" role="tablist" aria-label="How to use">
+    <div class="consent-dialog" id="howto-dialog">
+      <div class="consent-title" id="howto-title">How to use this wallet</div>
+      <div class="howto-tabs" id="howto-tabs" role="tablist" aria-label="How to use">
         <button type="button" class="howto-tab active" role="tab" id="howto-tab-basics" aria-selected="true" aria-controls="howto-panel-basics">Issuance and presentation</button>
         <button type="button" class="howto-tab" role="tab" id="howto-tab-registrar" aria-selected="false" aria-controls="howto-panel-registrar" tabindex="-1">Registrar</button>
       </div>
       <div class="howto-panel" role="tabpanel" id="howto-panel-basics" aria-labelledby="howto-tab-basics">
-      <p class="dialog-hint">Test issuance with OpenID4VCI and presentations with OpenID4VP. This wallet supports SD-JWT VC, mdoc, holder binding, status lists and trusted lists.</p>
+      <p class="dialog-hint" id="howto-basics-intro">Test issuance with OpenID4VCI and presentations with OpenID4VP. This wallet supports SD-JWT VC, mdoc, holder binding, status lists and trusted lists.</p>
       <div class="cli-install">
-        <div class="cli-install-label">Deliver a credential offer (OpenID4VCI)</div>
-        <pre><span class="howto-origin"></span>/credential-offer?credential_offer_uri=&hellip;</pre>
-        <div class="cli-install-label">Send an authorization request (OpenID4VP)</div>
-        <pre><span class="howto-origin"></span>/authorize?client_id=&hellip;&amp;request_uri=&hellip;</pre>
-        <div class="cli-install-label">Trusted list (verifiers trusting this wallet's credentials)</div>
-        <pre><span class="howto-origin"></span>/api/trustlist</pre>
+        <div class="cli-install-label" id="howto-offer-label">Deliver a credential offer (OpenID4VCI)</div>
+        <pre id="howto-offer-endpoint"><span class="howto-origin" id="howto-offer-origin"></span>/credential-offer?credential_offer_uri=&hellip;</pre>
+        <div class="cli-install-label" id="howto-request-label">Send an authorization request (OpenID4VP)</div>
+        <pre id="howto-request-endpoint"><span class="howto-origin" id="howto-request-origin"></span>/authorize?client_id=&hellip;&amp;request_uri=&hellip;</pre>
+        <div class="cli-install-label" id="howto-trustlist-label">Trusted list (verifiers trusting this wallet's credentials)</div>
+        <pre id="howto-trustlist-endpoint"><span class="howto-origin" id="howto-trustlist-origin"></span>/api/trustlist</pre>
       </div>
-      <p class="dialog-hint">To open a custom-scheme link in a browser, replace everything before the <code>?</code> with the matching endpoint URL. Keep the query parameters.</p>
+      <p class="dialog-hint" id="howto-scheme-hint">To open a custom-scheme link in a browser, replace everything before the <code>?</code> with the matching endpoint URL. Keep the query parameters.</p>
       <div class="cli-install">
-        <div class="cli-install-label">Custom-scheme links via CLI (any platform)</div>
-        <pre>eudi wallet accept 'openid4vp://authorize?client_id=&hellip;'</pre>
-        <div class="cli-install-label">System URL handler (macOS)</div>
-        <pre>eudi wallet register</pre>
+        <div class="cli-install-label" id="howto-accept-label">Custom-scheme links via CLI (any platform)</div>
+        <pre id="howto-accept-command">eudi wallet accept 'openid4vp://authorize?client_id=&hellip;'</pre>
+        <div class="cli-install-label" id="howto-register-label">System URL handler (macOS)</div>
+        <pre id="howto-register-command">eudi wallet register</pre>
       </div>
-      <p class="dialog-hint">On macOS, <code>wallet register</code> makes <code>openid4vp://</code>, <code>eudi-openid4vp://</code>, <code>haip-vp://</code>, <code>openid-credential-offer://</code>, <code>haip-vci://</code> and <code>eu-eaa-offer://</code> links open in this wallet. See the <a data-doc="docs/wallet.md" target="_blank" rel="noopener">wallet documentation</a> for all endpoints.</p>
-      <p class="dialog-hint">Try the <a href="issuer/" target="_blank">demo issuer</a> or <a href="verifier/" target="_blank">demo verifier</a>.</p>
+      <p class="dialog-hint" id="howto-register-hint">On macOS, <code>wallet register</code> makes <code>openid4vp://</code>, <code>eudi-openid4vp://</code>, <code>haip-vp://</code>, <code>openid-credential-offer://</code>, <code>haip-vci://</code> and <code>eu-eaa-offer://</code> links open in this wallet. See the <a data-doc="docs/wallet.md" target="_blank" rel="noopener" id="howto-wallet-docs-link">wallet documentation</a> for all endpoints.</p>
+      <p class="dialog-hint" id="howto-demo-hint">Try the <a href="issuer/" target="_blank" id="howto-demo-issuer-link">demo issuer</a> or <a href="verifier/" target="_blank" id="howto-demo-verifier-link">demo verifier</a>.</p>
       </div>
       <div class="howto-panel" role="tabpanel" id="howto-panel-registrar" aria-labelledby="howto-tab-registrar" hidden>
-      <p class="dialog-hint">Register your verifier or issuer with the wallet's registrar. You get an access certificate and a registration certificate. With <code>--arf</code> the wallet checks both, as the ARF asks.</p>
+      <p class="dialog-hint" id="howto-registrar-intro">Register your verifier or issuer with the wallet's registrar. You get an access certificate and a registration certificate. With <code>--arf</code> the wallet checks both, as the ARF asks.</p>
       <div class="cli-install">
-        <div class="cli-install-label">1. Register the relying party</div>
-        <pre>POST <span class="howto-origin"></span>/api/registrar/wrp</pre>
-        <div class="cli-install-label">2. Get an access certificate for your key (send a CSR)</div>
-        <pre>POST <span class="howto-origin"></span>/api/registrar/access-certificates</pre>
-        <div class="cli-install-label">3. Get a registration certificate (verifier_info or issuer_info)</div>
-        <pre>POST <span class="howto-origin"></span>/api/registrar/registration-certificates</pre>
+        <div class="cli-install-label" id="howto-registrar-register-label">1. Register the relying party</div>
+        <pre id="howto-registrar-register-endpoint">POST <span class="howto-origin" id="howto-registrar-register-origin"></span>/api/registrar/wrp</pre>
+        <div class="cli-install-label" id="howto-registrar-access-label">2. Get an access certificate for your key (send a CSR)</div>
+        <pre id="howto-registrar-access-endpoint">POST <span class="howto-origin" id="howto-registrar-access-origin"></span>/api/registrar/access-certificates</pre>
+        <div class="cli-install-label" id="howto-registrar-registration-label">3. Get a registration certificate (verifier_info or issuer_info)</div>
+        <pre id="howto-registrar-registration-endpoint">POST <span class="howto-origin" id="howto-registrar-registration-origin"></span>/api/registrar/registration-certificates</pre>
       </div>
-      <p class="dialog-hint">4. A verifier signs its request object with the access certificate's key, puts the chain in <code>x5c</code> and adds <code>verifier_info</code>. An issuer signs its metadata the same way and adds <code>issuer_info</code>.</p>
+      <p class="dialog-hint" id="howto-registrar-sign-hint">4. A verifier signs its request object with the access certificate's key, puts the chain in <code>x5c</code> and adds <code>verifier_info</code>. An issuer signs its metadata the same way and adds <code>issuer_info</code>.</p>
       <div class="cli-install">
-        <div class="cli-install-label">The same from the CLI</div>
-        <pre class="howto-commands">eudi wallet registrar verifiers add --name "Example Shop" --purpose "Age check" --dcql query.json
+        <div class="cli-install-label" id="howto-registrar-cli-label">The same from the CLI</div>
+        <pre class="howto-commands" id="howto-registrar-cli-commands">eudi wallet registrar verifiers add --name "Example Shop" --purpose "Age check" --dcql query.json
 eudi wallet registrar issuers add --name "Example University" --attestation dc+sd-jwt:urn:example:diploma:1</pre>
       </div>
-      <p class="dialog-hint">The Registrar section of this page does the same with forms. The <a data-doc="docs/wallet/registrar-api.md" target="_blank" rel="noopener">registrar walkthrough</a> shows every request with curl and its response.</p>
+      <p class="dialog-hint" id="howto-registrar-forms-hint">The Registrar section of this page does the same with forms. The <a data-doc="docs/wallet/registrar-api.md" target="_blank" rel="noopener" id="howto-registrar-docs-link">registrar walkthrough</a> shows every request with curl and its response.</p>
       </div>
       <div class="consent-buttons">
         <button class="btn" id="howto-close">Close</button>
@@ -196,41 +196,41 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
   </div>
 
   <div class="consent-overlay" id="conformance-overlay">
-    <div class="consent-dialog">
-      <div class="consent-title">Conformance</div>
+    <div class="consent-dialog" id="conformance-dialog">
+      <div class="consent-title" id="conformance-title">Conformance</div>
       <p class="dialog-hint" id="conf-intro">Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. Strict mode verifies HTTPS certificates and debug mode does not. The HTTPS setting below can change that.</p>
-      <table class="conformance-table">
-        <tr><td>Validation mode</td><td>
+      <table class="conformance-table" id="conformance-table">
+        <tr><td id="conf-mode-name">Validation mode</td><td>
           <select id="conf-mode-select" class="conf-input">
             <option value="strict">Strict (refuse)</option>
             <option value="debug">Debug (warn and continue)</option>
           </select>
         </td></tr>
-        <tr><td>HTTPS certificates</td><td>
+        <tr><td id="conf-tls-name">HTTPS certificates</td><td>
           <select id="conf-tls-select" class="conf-input" title="Verifies the TLS certificates of issuers and verifiers">
             <option value="auto">Depends on the mode</option>
             <option value="true">Always verify</option>
             <option value="false">Never verify</option>
           </select>
         </td></tr>
-        <tr><td>HAIP 1.0</td><td>
-          <label class="conf-toggle" title="--haip"><input type="checkbox" id="conf-haip-input"> Check presentations and issuance</label>
+        <tr><td id="conf-haip-name">HAIP 1.0</td><td>
+          <label class="conf-toggle" title="--haip" id="conf-haip-label"><input type="checkbox" id="conf-haip-input"> Check presentations and issuance</label>
         </td></tr>
-        <tr><td>ARF</td><td>
-          <label class="conf-toggle" title="Access and registration certificates, revocation, over-asking and the trusted lists of received credentials (--arf)"><input type="checkbox" id="conf-arf-input"> Check verifier and issuer certificates</label>
+        <tr><td id="conf-arf-name">ARF</td><td>
+          <label class="conf-toggle" id="conf-arf-label" title="Access and registration certificates, revocation, over-asking and the trusted lists of received credentials (--arf)"><input type="checkbox" id="conf-arf-input"> Check verifier and issuer certificates</label>
         </td></tr>
-        <tr><td>Request objects</td><td>
-          <label class="conf-toggle" title="The wallet always sends an encryption key in wallet_metadata. This makes the verifier use it (--require-encrypted-request)"><input type="checkbox" id="conf-encrypted-input"> Refuse unencrypted request objects</label>
+        <tr><td id="conf-encrypted-name">Request objects</td><td>
+          <label class="conf-toggle" id="conf-encrypted-label" title="The wallet always sends an encryption key in wallet_metadata. This makes the verifier use it (--require-encrypted-request)"><input type="checkbox" id="conf-encrypted-input"> Refuse unencrypted request objects</label>
         </td></tr>
-        <tr><td>OpenID4VCI version</td><td>
+        <tr><td id="conf-vci-version-name">OpenID4VCI version</td><td>
           <select id="conf-vci-version-select" class="conf-input">
             <option value="1.0">1.0</option>
             <option value="1.1">1.1 draft (where the issuer supports it)</option>
           </select>
         </td></tr>
-        <tr><td>mdoc session transcript</td><td id="conf-transcript" title="Set at startup with --session-transcript">—</td></tr>
-        <tr><td>Preferred format</td><td id="conf-format" title="Used when credentials in several formats match. Set at startup or with PUT /api/config/preferred-format">—</td></tr>
-        <tr><td>Key attestation level</td><td>
+        <tr><td id="conf-transcript-name">mdoc session transcript</td><td id="conf-transcript" title="Set at startup with --session-transcript">—</td></tr>
+        <tr><td id="conf-format-name">Preferred format</td><td id="conf-format" title="Used when credentials in several formats match. Set at startup or with PUT /api/config/preferred-format">—</td></tr>
+        <tr><td id="conf-key-attestation-name">Key attestation level</td><td>
           <select id="conf-key-attestation-select" class="conf-input" title="Sets key_storage and user_authentication in the key attestation (OpenID4VCI Appendix D.2)">
             <option value="">Match the issuer's requirements</option>
             <option value="none">Leave out</option>
@@ -264,24 +264,24 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
         <div class="form-error" id="trust-error" role="alert"></div>
       </div>
 
-      <div class="trust-section">
-        <div class="trust-section-title">Certificates &amp; keys</div>
-        <dl class="trust-items">
-          <dt>Trust anchor</dt>
-          <dd>
+      <div class="trust-section" id="trust-keys-section">
+        <div class="trust-section-title" id="trust-keys-title">Certificates &amp; keys</div>
+        <dl class="trust-items" id="trust-keys">
+          <dt id="ca-row-label">Trust anchor</dt>
+          <dd id="ca-row">
             <span class="trust-links">
               <a id="ca-cert-pem-link" href="api/certificates/ca">PEM</a>
               <a id="ca-cert-jwks-link" href="api/certificates/ca?format=jwks">JWKS</a>
             </span>
-            <span class="trust-item-hint">Trust this CA. Attestations include only the signing certificate, which can change.</span>
+            <span class="trust-item-hint" id="ca-row-hint">Trust this CA. Attestations include only the signing certificate, which can change.</span>
           </dd>
 
-          <dt>Signing key</dt>
-          <dd>
+          <dt id="signing-row-label">Signing key</dt>
+          <dd id="signing-row">
             <span class="trust-links">
               <a id="signing-jwks-link" href=".well-known/jwt-vc-issuer">JWKS</a>
             </span>
-            <span class="trust-item-hint">Signs credentials, wallet attestations and key attestations.</span>
+            <span class="trust-item-hint" id="signing-row-hint">Signs credentials, wallet attestations and key attestations.</span>
           </dd>
 
           <dt id="registrar-row-label">Registrar</dt>
@@ -291,7 +291,7 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
               <a id="registrar-cert-jwks-link" href="api/certificates/registrar?format=jwks">JWKS</a>
               <a id="registrar-ca-pem-link" href="api/certificates/registrar-ca">CA</a>
             </span>
-            <span class="trust-item-hint">Signs registration certificates, their status list and registrar responses. Its CA is on the registrar list.</span>
+            <span class="trust-item-hint" id="registrar-row-hint">Signs registration certificates, their status list and registrar responses. Its CA is on the registrar list.</span>
           </dd>
           <dt id="access-ca-row-label">Relying party access CA</dt>
           <dd id="access-ca-row">
@@ -299,7 +299,7 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
               <a id="access-ca-cert-pem-link" href="api/certificates/relying-party-access-ca">PEM</a>
               <a id="access-ca-cert-jwks-link" href="api/certificates/relying-party-access-ca?format=jwks">JWKS</a>
             </span>
-            <span class="trust-item-hint">Signs the access certificates of registered relying parties. It is on the access-ca list.</span>
+            <span class="trust-item-hint" id="access-ca-row-hint">Signs the access certificates of registered relying parties. It is on the access-ca list.</span>
           </dd>
           <dt id="tls-row-label">TLS</dt>
           <dd id="tls-row">
@@ -307,7 +307,7 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
               <a id="tls-cert-pem-link" href="api/certificates/tls">PEM</a>
               <a id="tls-cert-jwks-link" href="api/certificates/tls?format=jwks">JWKS</a>
             </span>
-            <span class="trust-item-hint">Wallet HTTPS certificate for certificate pinning.</span>
+            <span class="trust-item-hint" id="tls-row-hint">Wallet HTTPS certificate for certificate pinning.</span>
           </dd>
         </dl>
       </div>
@@ -324,11 +324,11 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
       <p class="dialog-hint" id="trust-provider-hint">The wallet puts the CA on one of its trusted lists. Use it for your own issuer or registrar. For an external list, add the CA of its operator on <code>trusted-list-ca</code>.</p>
       <form id="trust-provider-form">
         <div class="form-grid">
-          <label class="form-label" for="trust-entity-list">List</label>
+          <label class="form-label" for="trust-entity-list" id="trust-entity-list-label">List</label>
           <select id="trust-entity-list" class="form-input"></select>
-          <label class="form-label" for="trust-entity-name">Provider name</label>
+          <label class="form-label" for="trust-entity-name" id="trust-entity-name-label">Provider name</label>
           <input type="text" id="trust-entity-name" class="form-input" placeholder="Optional">
-          <label class="form-label" for="trust-entity-ca">CA certificate (PEM)</label>
+          <label class="form-label" for="trust-entity-ca" id="trust-entity-ca-label">CA certificate (PEM)</label>
           <textarea id="trust-entity-ca" class="form-input form-textarea" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
         </div>
         <div class="form-error" id="trust-provider-error" role="alert"></div>
@@ -346,7 +346,7 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
       <p class="dialog-hint" id="trust-external-hint">The wallet uses the list if its signer chains to the wallet CA or to a CA on <code>trusted-list-ca</code>.</p>
       <form id="trust-external-form">
         <div class="form-grid">
-          <label class="form-label" for="trust-list-url">URL</label>
+          <label class="form-label" for="trust-list-url" id="trust-list-url-label">URL</label>
           <input type="url" id="trust-list-url" class="form-input" placeholder="https://example.com/trusted-list">
         </div>
         <div class="form-error" id="trust-external-error" role="alert"></div>
@@ -374,9 +374,9 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
     <div class="consent-dialog registrar-dialog" role="dialog" aria-modal="true" aria-labelledby="registrar-parties-title" id="registrar-parties-dialog">
       <div class="consent-title" id="registrar-parties-title" tabindex="-1">Relying parties</div>
       <div class="registrar-filter" role="radiogroup" aria-label="Show relying parties" id="registrar-filter">
-        <label class="registrar-filter-option" for="registrar-filter-all"><input type="radio" name="registrar-filter" id="registrar-filter-all" value="all" checked> All</label>
-        <label class="registrar-filter-option" for="registrar-filter-verifiers"><input type="radio" name="registrar-filter" id="registrar-filter-verifiers" value="verifier"> Verifiers</label>
-        <label class="registrar-filter-option" for="registrar-filter-issuers"><input type="radio" name="registrar-filter" id="registrar-filter-issuers" value="issuer"> Issuers</label>
+        <label class="registrar-filter-option" for="registrar-filter-all" id="registrar-filter-all-label"><input type="radio" name="registrar-filter" id="registrar-filter-all" value="all" checked> All</label>
+        <label class="registrar-filter-option" for="registrar-filter-verifiers" id="registrar-filter-verifiers-label"><input type="radio" name="registrar-filter" id="registrar-filter-verifiers" value="verifier"> Verifiers</label>
+        <label class="registrar-filter-option" for="registrar-filter-issuers" id="registrar-filter-issuers-label"><input type="radio" name="registrar-filter" id="registrar-filter-issuers" value="issuer"> Issuers</label>
       </div>
       <input type="search" id="registrar-search" class="form-input registrar-search" placeholder="Search relying parties" title="Searches names, identifiers, purposes and credentials" aria-label="Search relying parties" list="registrar-search-suggestions" autocomplete="off">
       <datalist id="registrar-search-suggestions"></datalist>
@@ -404,28 +404,28 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
         <div class="form-grid">
           <div class="registrar-section" id="registrar-party-section">
           <div class="form-section-label" id="registrar-party-section-label">Relying party</div>
-          <label class="form-label" for="registrar-name">Name</label>
+          <label class="form-label" for="registrar-name" id="registrar-name-label">Name</label>
           <input type="text" id="registrar-name" class="form-input" value="Example Verifier">
 
-          <label class="form-label" for="registrar-identifier">Identifier</label>
+          <label class="form-label" for="registrar-identifier" id="registrar-identifier-label">Identifier</label>
           <input type="text" id="registrar-identifier" class="form-input" placeholder="Leave empty to have one assigned">
 
-          <label class="form-label" for="registrar-legal-name">Legal name</label>
+          <label class="form-label" for="registrar-legal-name" id="registrar-legal-name-label">Legal name</label>
           <input type="text" id="registrar-legal-name" class="form-input" value="Example Verifier B.V.">
 
-          <label class="form-label" for="registrar-country">Country</label>
+          <label class="form-label" for="registrar-country" id="registrar-country-label">Country</label>
           <input type="text" id="registrar-country" class="form-input" value="NL" maxlength="2">
 
-          <label class="form-label" for="registrar-support-uri">Support URL</label>
+          <label class="form-label" for="registrar-support-uri" id="registrar-support-uri-label">Support URL</label>
           <input type="text" id="registrar-support-uri" class="form-input" value="https://verifier.example/support">
 
-          <label class="form-label" for="registrar-service-id">Service</label>
+          <label class="form-label" for="registrar-service-id" id="registrar-service-id-label">Service</label>
           <input type="text" id="registrar-service-id" class="form-input" value="checkout">
           </div>
 
           <div class="registrar-section" id="registrar-issuer-section" hidden>
           <div class="form-section-label" id="registrar-issuer-section-label">Attestation provider</div>
-          <label class="form-label" for="registrar-entitlement" title="The entitlement of an attestation provider (ETSI TS 119 475 Annex A.2)">Entitlement</label>
+          <label class="form-label" for="registrar-entitlement" title="The entitlement of an attestation provider (ETSI TS 119 475 Annex A.2)" id="registrar-entitlement-label">Entitlement</label>
           <select id="registrar-entitlement" class="form-input">
             <option value="" selected>From the attestation types</option>
           </select>
@@ -437,10 +437,10 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
 
           <div class="registrar-section" id="registrar-use-section">
           <div class="form-section-label" id="registrar-use-section-label">Intended use</div>
-          <label class="form-label" for="registrar-purpose">Purpose</label>
+          <label class="form-label" for="registrar-purpose" id="registrar-purpose-label">Purpose</label>
           <input type="text" id="registrar-purpose" class="form-input" value="Age check before checkout">
 
-          <label class="form-label" for="registrar-privacy-policy">Privacy policy</label>
+          <label class="form-label" for="registrar-privacy-policy" id="registrar-privacy-policy-label">Privacy policy</label>
           <input type="text" id="registrar-privacy-policy" class="form-input" value="https://verifier.example/privacy">
 
           <span class="form-label registrar-credentials-label" id="registrar-credentials-label">Credentials and claims to register</span>
@@ -448,12 +448,12 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
           <button type="button" class="btn btn-sm registrar-add" id="registrar-add-credential">+ Add credential</button>
           </div>
 
-          <label class="form-label" for="registrar-registration-validity">Registration certificate validity</label>
+          <label class="form-label" for="registrar-registration-validity" id="registrar-registration-validity-label">Registration certificate validity</label>
           <input type="text" id="registrar-registration-validity" class="form-input" value="4320h" placeholder="Go duration, e.g. 4320h" aria-label="Registration certificate validity">
 
           <div class="registrar-section" id="registrar-access-section">
           <div class="form-section-label" id="registrar-access-section-label">Access certificate</div>
-          <label class="form-label form-label-top" for="registrar-csr">CSR</label>
+          <label class="form-label form-label-top" for="registrar-csr" id="registrar-csr-label">CSR</label>
           <textarea id="registrar-csr" class="form-input form-textarea" placeholder="Leave empty to create a key in this browser"></textarea>
 
           <details class="registrar-help" id="registrar-csr-help">
@@ -466,11 +466,11 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
           </details>
 
           <div class="registrar-section" id="registrar-dns-section">
-          <label class="form-label" for="registrar-dns">DNS names</label>
+          <label class="form-label" for="registrar-dns" id="registrar-dns-label">DNS names</label>
           <input type="text" id="registrar-dns" class="form-input" value="verifier.example" placeholder="comma separated">
           </div>
 
-          <label class="form-label" for="registrar-access-validity">Certificate validity</label>
+          <label class="form-label" for="registrar-access-validity" id="registrar-access-validity-label">Certificate validity</label>
           <input type="text" id="registrar-access-validity" class="form-input" value="8760h" placeholder="Go duration, e.g. 8760h" aria-label="Access certificate validity">
           </div>
         </div>
@@ -499,14 +499,14 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
           </div>
           <div id="registrar-verifier-info-block">
           <div class="registrar-result-head" id="registrar-verifier-info-head">
-            <label class="consent-purpose-label" for="registrar-verifier-info">verifier_info</label>
+            <label class="consent-purpose-label" for="registrar-verifier-info" id="registrar-verifier-info-label">verifier_info</label>
             <button type="button" class="btn btn-sm" id="registrar-copy-verifier-info">Copy</button>
           </div>
           <textarea id="registrar-verifier-info" class="form-input form-textarea" readonly></textarea>
           </div>
           <div id="registrar-issuer-info-block" hidden>
           <div class="registrar-result-head" id="registrar-issuer-info-head">
-            <label class="consent-purpose-label" for="registrar-issuer-info">issuer_info</label>
+            <label class="consent-purpose-label" for="registrar-issuer-info" id="registrar-issuer-info-label">issuer_info</label>
             <button type="button" class="btn btn-sm" id="registrar-copy-issuer-info">Copy</button>
           </div>
           <textarea id="registrar-issuer-info" class="form-input form-textarea" readonly></textarea>
@@ -545,20 +545,20 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
       <p class="dialog-hint" id="registrar-catalog-add-hint">The catalogue assigns the id and serves a schema for each format.</p>
       <form id="registrar-catalog-form">
         <div class="form-grid">
-          <label class="form-label" for="registrar-catalog-name">Name</label>
+          <label class="form-label" for="registrar-catalog-name" id="registrar-catalog-name-label">Name</label>
           <input type="text" id="registrar-catalog-name" class="form-input" value="University diploma">
 
           <span class="form-label registrar-credentials-label" id="registrar-catalog-formats-label">Format, type and claims</span>
           <div class="registrar-credentials" id="registrar-catalog-formats" role="group" aria-labelledby="registrar-catalog-formats-label"></div>
           <button type="button" class="btn btn-sm registrar-add" id="registrar-catalog-add-format">+ Add format</button>
 
-          <label class="form-label" for="registrar-catalog-category" title="Credentials of the type are signed under the provider CA of this category. Its trusted list is the default.">Category</label>
+          <label class="form-label" for="registrar-catalog-category" title="Credentials of the type are signed under the provider CA of this category. Its trusted list is the default." id="registrar-catalog-category-label">Category</label>
           <select id="registrar-catalog-category" class="form-input"><option value="eaa" selected>EAA</option></select>
 
-          <label class="form-label" for="registrar-catalog-rulebook">Rulebook</label>
+          <label class="form-label" for="registrar-catalog-rulebook" id="registrar-catalog-rulebook-label">Rulebook</label>
           <input type="text" id="registrar-catalog-rulebook" class="form-input" placeholder="Leave empty for a placeholder page">
 
-          <label class="form-label" for="registrar-catalog-los">Level of security</label>
+          <label class="form-label" for="registrar-catalog-los" id="registrar-catalog-los-label">Level of security</label>
           <select id="registrar-catalog-los" class="form-input">
             <option value="iso_18045_basic">Basic</option>
             <option value="iso_18045_enhanced-basic">Enhanced basic</option>
@@ -566,7 +566,7 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
             <option value="iso_18045_high">High</option>
           </select>
 
-          <label class="form-label" for="registrar-catalog-binding" title="How the attestation is bound to its holder (TS11 bindingType)">Holder binding</label>
+          <label class="form-label" for="registrar-catalog-binding" title="How the attestation is bound to its holder (TS11 bindingType)" id="registrar-catalog-binding-label">Holder binding</label>
           <select id="registrar-catalog-binding" class="form-input">
             <option value="key">Wallet key</option>
             <option value="claim">Another credential</option>
@@ -574,9 +574,9 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
             <option value="none">None</option>
           </select>
 
-          <label class="form-label" for="registrar-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)">Trusted list (LoTE)</label>
+          <label class="form-label" for="registrar-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)" id="registrar-catalog-trust-label">Trusted list (LoTE)</label>
           <input type="text" id="registrar-catalog-trust" class="form-input" placeholder="Leave empty for the category's list on this wallet">
-          <label class="form-label" for="registrar-catalog-issuer-ca" title="The wallet puts this CA on the trusted list of the category, so credentials of your issuer pass the check of --arf">Issuer CA (PEM, optional)</label>
+          <label class="form-label" for="registrar-catalog-issuer-ca" title="The wallet puts this CA on the trusted list of the category, so credentials of your issuer pass the check of --arf" id="registrar-catalog-issuer-ca-label">Issuer CA (PEM, optional)</label>
           <textarea id="registrar-catalog-issuer-ca" class="form-input form-textarea" placeholder="CA of your issuer"></textarea>
         </div>
         <div class="form-error" id="registrar-catalog-form-error" role="alert"></div>
@@ -592,20 +592,20 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
   <datalist id="registrar-types-mdoc"></datalist>
 
   <div class="consent-overlay" id="cli-overlay">
-    <div class="consent-dialog">
-      <div class="consent-title">Get the CLI</div>
-      <p class="dialog-hint">The <code>eudi</code> CLI from <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">eudi-dev</a> runs this wallet locally. It also decodes, issues and presents credentials, and proxies wallet traffic.</p>
-      <div class="cli-install">
-        <div class="cli-install-label">Homebrew</div>
-        <pre>brew install dominikschlosser/tap/eudi-dev</pre>
-        <div class="cli-install-label">Go</div>
-        <pre>go install github.com/dominikschlosser/eudi-dev/v3@latest</pre>
-        <div class="cli-install-label">Docker</div>
-        <pre>docker pull ghcr.io/dominikschlosser/eudi-dev</pre>
-        <div class="cli-install-label">Binaries</div>
-        <p class="dialog-hint"><a href="https://github.com/dominikschlosser/eudi-dev/releases" target="_blank" rel="noopener">GitHub Releases</a></p>
+    <div class="consent-dialog" id="cli-dialog">
+      <div class="consent-title" id="cli-title">Get the CLI</div>
+      <p class="dialog-hint" id="cli-intro">The <code>eudi</code> CLI from <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener" id="cli-repo-link">eudi-dev</a> runs this wallet locally. It also decodes, issues and presents credentials, and proxies wallet traffic.</p>
+      <div class="cli-install" id="cli-install">
+        <div class="cli-install-label" id="cli-brew-label">Homebrew</div>
+        <pre id="cli-brew-command">brew install dominikschlosser/tap/eudi-dev</pre>
+        <div class="cli-install-label" id="cli-go-label">Go</div>
+        <pre id="cli-go-command">go install github.com/dominikschlosser/eudi-dev/v3@latest</pre>
+        <div class="cli-install-label" id="cli-docker-label">Docker</div>
+        <pre id="cli-docker-command">docker pull ghcr.io/dominikschlosser/eudi-dev</pre>
+        <div class="cli-install-label" id="cli-binaries-label">Binaries</div>
+        <p class="dialog-hint" id="cli-binaries"><a href="https://github.com/dominikschlosser/eudi-dev/releases" target="_blank" rel="noopener" id="cli-releases-link">GitHub Releases</a></p>
       </div>
-      <p class="dialog-hint">Independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</p>
+      <p class="dialog-hint" id="cli-disclaimer">Independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</p>
       <div class="consent-buttons">
         <button class="btn" id="cli-close">Close</button>
       </div>
@@ -617,9 +617,9 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
   </div>
 
   <div class="consent-overlay" id="import-overlay">
-    <div class="consent-dialog">
-      <div class="consent-title">Import Credential</div>
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Paste an SD-JWT VC, JWT VC or mdoc credential.</p>
+    <div class="consent-dialog" id="import-dialog">
+      <div class="consent-title" id="import-title">Import Credential</div>
+      <p id="import-hint" style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">Paste an SD-JWT VC, JWT VC or mdoc credential.</p>
       <textarea id="import-textarea" style="width:100%;height:120px;font-family:var(--font-mono);font-size:11px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px;resize:vertical;"></textarea>
       <div class="consent-buttons">
         <button class="btn" id="import-cancel">Cancel</button>
@@ -629,56 +629,56 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
   </div>
 
   <div class="consent-overlay" id="issue-overlay">
-    <div class="consent-dialog">
+    <div class="consent-dialog" id="issue-dialog">
       <div class="consent-title" id="issue-title">Issue Credential</div>
       <p class="dialog-hint" id="issue-hint">Signs with the key of the credential's category unless you paste one, and stores the credential. Only the format is required. A template fills in the fields. You can still edit them.</p>
       <form id="issue-form">
         <div class="template-editor-head" id="template-editor-head" hidden>
           <div class="form-grid">
-            <label class="form-label" for="template-editor-name">Template name</label>
+            <label class="form-label" for="template-editor-name" id="template-editor-name-label">Template name</label>
             <input type="text" id="template-editor-name" class="form-input" placeholder="e.g. employee-card">
           </div>
-          <div class="claims-mode">
-            <label class="form-checkbox"><input type="radio" name="template-editor-mode" id="template-editor-mode-builder" value="builder" checked> Builder</label>
-            <label class="form-checkbox"><input type="radio" name="template-editor-mode" id="template-editor-mode-json" value="json"> JSON</label>
+          <div class="claims-mode" id="template-editor-mode">
+            <label class="form-checkbox" id="template-editor-mode-builder-label"><input type="radio" name="template-editor-mode" id="template-editor-mode-builder" value="builder" checked> Builder</label>
+            <label class="form-checkbox" id="template-editor-mode-json-label"><input type="radio" name="template-editor-mode" id="template-editor-mode-json" value="json"> JSON</label>
           </div>
           <textarea id="template-editor-json" aria-label="Template JSON" class="form-input form-textarea template-editor-json" hidden placeholder='{"format": "sdjwt", "vct": "urn:example:...", "claims": {...}}'></textarea>
         </div>
         <div class="form-grid" id="issue-form-grid">
-          <label class="form-label" for="issue-format">Format</label>
+          <label class="form-label" for="issue-format" id="issue-format-label">Format</label>
           <select id="issue-format" class="form-input">
             <option value="sdjwt" selected>SD-JWT</option>
             <option value="jwt">JWT VC</option>
             <option value="mdoc">mdoc</option>
           </select>
 
-          <label class="form-label" for="issue-template">Template</label>
+          <label class="form-label" for="issue-template" id="issue-template-label">Template</label>
           <select id="issue-template" class="form-input">
             <option value="" selected>(none)</option>
           </select>
 
-          <label class="form-label" for="issue-vct" data-formats="sdjwt jwt">VCT</label>
+          <label class="form-label" for="issue-vct" data-formats="sdjwt jwt" id="issue-vct-label">VCT</label>
           <input type="text" id="issue-vct" class="form-input" data-formats="sdjwt jwt" placeholder="default: urn:eudi:pid:1">
 
-          <label class="form-label" for="issue-doctype" data-formats="mdoc">Doc type</label>
+          <label class="form-label" for="issue-doctype" data-formats="mdoc" id="issue-doctype-label">Doc type</label>
           <input type="text" id="issue-doctype" class="form-input" data-formats="mdoc" placeholder="default: eu.europa.ec.eudi.pid.1">
 
-          <label class="form-label form-label-top">Claims</label>
-          <div class="claims-editor">
-            <div class="claims-mode">
-              <label class="form-checkbox"><input type="radio" name="issue-claims-mode" id="issue-claims-mode-builder" value="builder" checked> Builder</label>
-              <label class="form-checkbox"><input type="radio" name="issue-claims-mode" id="issue-claims-mode-json" value="json"> JSON</label>
+          <label class="form-label form-label-top" id="issue-claims-label">Claims</label>
+          <div class="claims-editor" id="issue-claims-editor">
+            <div class="claims-mode" id="issue-claims-mode">
+              <label class="form-checkbox" id="issue-claims-mode-builder-label"><input type="radio" name="issue-claims-mode" id="issue-claims-mode-builder" value="builder" checked> Builder</label>
+              <label class="form-checkbox" id="issue-claims-mode-json-label"><input type="radio" name="issue-claims-mode" id="issue-claims-mode-json" value="json"> JSON</label>
             </div>
             <div id="issue-claim-rows"></div>
             <button type="button" class="btn btn-sm" id="issue-add-claim">+ Add claim</button>
             <textarea id="issue-claims" class="form-input form-textarea" placeholder='JSON object, e.g. {"given_name": "Erika"} (default: test claims)' hidden></textarea>
           </div>
 
-          <label class="form-label" for="issue-always-disclosed" hidden>Always visible</label>
+          <label class="form-label" for="issue-always-disclosed" hidden id="issue-always-disclosed-label">Always visible</label>
           <input type="text" id="issue-always-disclosed" class="form-input" hidden placeholder="Claims issued without selective disclosure, e.g. issuing_country, address.country">
 
-          <label class="form-label issue-only" for="issue-status-list">Status list</label>
-          <div class="status-list-editor issue-only">
+          <label class="form-label issue-only" for="issue-status-list" id="issue-status-list-label">Status list</label>
+          <div class="status-list-editor issue-only" id="issue-status-list-editor">
             <select id="issue-status-list" class="form-input">
               <option value="auto" id="issue-status-list-auto" selected>Wallet status list</option>
               <option value="none">No status list</option>
@@ -688,82 +688,82 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
             <input type="number" id="issue-status-list-idx" class="form-input" placeholder="Index (default 0)" hidden>
           </div>
 
-          <label class="form-label" for="issue-exp">Expires in</label>
+          <label class="form-label" for="issue-exp" id="issue-exp-label">Expires in</label>
           <input type="text" id="issue-exp" class="form-input" placeholder="Duration, e.g. 720h or 24h (default: 720h)">
 
-          <label class="form-label issue-only" for="issue-nbf">Not before</label>
+          <label class="form-label issue-only" for="issue-nbf" id="issue-nbf-label">Not before</label>
           <input type="text" id="issue-nbf" class="form-input issue-only" placeholder="RFC3339 or relative duration, e.g. -1h">
 
-          <label class="form-label issue-only" for="issue-batch" data-formats="sdjwt mdoc">Copies</label>
+          <label class="form-label issue-only" for="issue-batch" data-formats="sdjwt mdoc" id="issue-batch-label">Copies</label>
           <input type="number" id="issue-batch" class="form-input issue-only" data-formats="sdjwt mdoc" min="1" placeholder="1 (a batch of N presents an unused copy each time)">
 
-          <label class="form-label issue-only" for="issue-binding" data-formats="sdjwt mdoc">Holder binding</label>
+          <label class="form-label issue-only" for="issue-binding" data-formats="sdjwt mdoc" id="issue-binding-label">Holder binding</label>
           <select id="issue-binding" class="form-input issue-only" data-formats="sdjwt mdoc">
             <option value="bound" selected>Bound to this wallet</option>
             <option value="unbound">Unbound (bearer, no cnf)</option>
           </select>
 
-          <div class="form-section-label">Display (optional)</div>
+          <div class="form-section-label" id="issue-display-section-label">Display (optional)</div>
 
           <p class="form-hint" id="issue-template-art-note" hidden>The template's logo and background are kept unless you replace them below.</p>
 
-          <label class="form-label" for="issue-display-name">Display name</label>
+          <label class="form-label" for="issue-display-name" id="issue-display-name-label">Display name</label>
           <input type="text" id="issue-display-name" class="form-input" maxlength="80" placeholder="e.g. Employee Badge">
 
-          <label class="form-label" for="issue-display-description">Description</label>
+          <label class="form-label" for="issue-display-description" id="issue-display-description-label">Description</label>
           <input type="text" id="issue-display-description" class="form-input" maxlength="500" placeholder="Shown behind the card's About control">
 
-          <label class="form-label" for="issue-bg-color">Background color</label>
-          <div class="form-color-row">
+          <label class="form-label" for="issue-bg-color" id="issue-bg-color-label">Background color</label>
+          <div class="form-color-row" id="issue-bg-color-row">
             <input type="color" id="issue-bg-color-picker" class="form-color-swatch" value="#3d59a1" aria-label="Background color picker">
             <input type="text" id="issue-bg-color" class="form-input" placeholder="Any CSS color, e.g. #3d59a1">
           </div>
 
-          <label class="form-label" for="issue-text-color">Text color</label>
-          <div class="form-color-row">
+          <label class="form-label" for="issue-text-color" id="issue-text-color-label">Text color</label>
+          <div class="form-color-row" id="issue-text-color-row">
             <input type="color" id="issue-text-color-picker" class="form-color-swatch" value="#ffffff" aria-label="Text color picker">
             <input type="text" id="issue-text-color" class="form-input" placeholder="Any CSS color, e.g. #ffffff">
           </div>
 
-          <label class="form-label issue-image-field" for="issue-logo">Logo</label>
-          <div class="form-image-row issue-image-field">
+          <label class="form-label issue-image-field" for="issue-logo" id="issue-logo-label">Logo</label>
+          <div class="form-image-row issue-image-field" id="issue-logo-row">
             <input type="text" id="issue-logo" class="form-input" placeholder="Data URI or http(s) URL">
             <input type="file" id="issue-logo-file" accept="image/*" class="form-file" aria-label="Upload a logo">
           </div>
 
-          <label class="form-label issue-image-field" for="issue-logo-alt">Logo alt text</label>
+          <label class="form-label issue-image-field" for="issue-logo-alt" id="issue-logo-alt-label">Logo alt text</label>
           <input type="text" id="issue-logo-alt" class="form-input issue-image-field" maxlength="120" placeholder="Describes the logo for screen readers">
 
-          <label class="form-label issue-image-field" for="issue-bg-image">Background image</label>
-          <div class="form-image-row issue-image-field">
+          <label class="form-label issue-image-field" for="issue-bg-image" id="issue-bg-image-label">Background image</label>
+          <div class="form-image-row issue-image-field" id="issue-bg-image-row">
             <input type="text" id="issue-bg-image" class="form-input" placeholder="Data URI or http(s) URL">
             <input type="file" id="issue-bg-image-file" accept="image/*" class="form-file" aria-label="Upload a background image">
           </div>
 
-          <div class="form-section-label issue-signing-field issue-only">Signing (optional)</div>
+          <div class="form-section-label issue-signing-field issue-only" id="issue-signing-section-label">Signing (optional)</div>
 
-          <label class="form-label form-label-top issue-signing-field issue-only" for="issue-signing-key">Signing key</label>
+          <label class="form-label form-label-top issue-signing-field issue-only" for="issue-signing-key" id="issue-signing-key-label">Signing key</label>
           <textarea id="issue-signing-key" class="form-input form-textarea issue-signing-field issue-only" placeholder="PEM or JWK private key. Default: the key of the credential's category"></textarea>
 
-          <label class="form-label form-label-top issue-signing-field issue-only" for="issue-signing-cert">Certificate chain</label>
+          <label class="form-label form-label-top issue-signing-field issue-only" for="issue-signing-cert" id="issue-signing-cert-label">Certificate chain</label>
           <textarea id="issue-signing-cert" class="form-input form-textarea issue-signing-field issue-only" placeholder="PEM certificates, leaf first. Embedded as the credential's x5c"></textarea>
 
-          <label class="form-label issue-only" for="issue-save-template">Save as template</label>
+          <label class="form-label issue-only" for="issue-save-template" id="issue-save-template-label">Save as template</label>
           <input type="text" id="issue-save-template" class="form-input issue-only" placeholder="Template name (optional)">
 
-          <label class="form-label issue-catalog-part" for="issue-catalog" hidden>Catalogue</label>
-          <label class="conf-toggle issue-catalog-part" hidden><input type="checkbox" id="issue-catalog"> Add the template to the attestation catalogue</label>
+          <label class="form-label issue-catalog-part" for="issue-catalog" hidden id="issue-catalog-label">Catalogue</label>
+          <label class="conf-toggle issue-catalog-part" id="issue-catalog-toggle" hidden><input type="checkbox" id="issue-catalog"> Add the template to the attestation catalogue</label>
           <div class="catalog-fields form-grid" id="issue-catalog-fields" hidden>
-            <label class="form-label" for="issue-catalog-name">Attestation name</label>
+            <label class="form-label" for="issue-catalog-name" id="issue-catalog-name-label">Attestation name</label>
             <input type="text" id="issue-catalog-name" class="form-input" placeholder="Name in the catalogue">
 
-            <label class="form-label" for="issue-catalog-category" title="Credentials of the type are signed under the provider CA of this category. Its trusted list is the default.">Category</label>
+            <label class="form-label" for="issue-catalog-category" title="Credentials of the type are signed under the provider CA of this category. Its trusted list is the default." id="issue-catalog-category-label">Category</label>
             <select id="issue-catalog-category" class="form-input"><option value="eaa" selected>EAA</option></select>
 
-            <label class="form-label" for="issue-catalog-rulebook">Rulebook</label>
+            <label class="form-label" for="issue-catalog-rulebook" id="issue-catalog-rulebook-label">Rulebook</label>
             <input type="text" id="issue-catalog-rulebook" class="form-input" placeholder="Leave empty for a placeholder page">
 
-            <label class="form-label" for="issue-catalog-los">Level of security</label>
+            <label class="form-label" for="issue-catalog-los" id="issue-catalog-los-label">Level of security</label>
             <select id="issue-catalog-los" class="form-input">
               <option value="iso_18045_basic">Basic</option>
               <option value="iso_18045_enhanced-basic">Enhanced basic</option>
@@ -771,7 +771,7 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
               <option value="iso_18045_high">High</option>
             </select>
 
-            <label class="form-label" for="issue-catalog-binding" title="How the attestation is bound to its holder (TS11 bindingType)">Holder binding</label>
+            <label class="form-label" for="issue-catalog-binding" title="How the attestation is bound to its holder (TS11 bindingType)" id="issue-catalog-binding-label">Holder binding</label>
             <select id="issue-catalog-binding" class="form-input">
               <option value="key">Wallet key</option>
               <option value="claim">Another credential</option>
@@ -779,7 +779,7 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
               <option value="none">None</option>
             </select>
 
-            <label class="form-label" for="issue-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)">Trusted list (LoTE)</label>
+            <label class="form-label" for="issue-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)" id="issue-catalog-trust-label">Trusted list (LoTE)</label>
             <input type="text" id="issue-catalog-trust" class="form-input" placeholder="Leave empty for the category's list on this wallet">
           </div>
         </div>
@@ -793,9 +793,9 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
   </div>
 
   <div class="consent-overlay" id="templates-overlay">
-    <div class="consent-dialog">
-      <div class="consent-title">Credential Templates</div>
-      <p class="dialog-hint">Templates are reusable claim sets for issuing credentials. Saving an existing name replaces that template.</p>
+    <div class="consent-dialog" id="templates-dialog">
+      <div class="consent-title" id="templates-title">Credential Templates</div>
+      <p class="dialog-hint" id="templates-hint">Templates are reusable claim sets for issuing credentials. Saving an existing name replaces that template.</p>
       <div id="templates-list" class="templates-list"></div>
       <div class="form-error" id="template-error"></div>
       <div class="consent-buttons">

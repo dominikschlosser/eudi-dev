@@ -15,23 +15,13 @@
 package wallet
 
 import (
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
-
-// Conformance settings belong to the running wallet and apply to every request. Only
-// the options here can vary per presentation.
-type presentationRequestOptions struct {
-	AutoAccept        bool
-	SessionTranscript string
-}
 
 func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	var authReq *AuthorizationRequestParams
@@ -86,42 +76,14 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	uriDisplay := format.Truncate(body.URI, 120)
 	s.log("  URI: %s", uriDisplay)
 
+	transcript := SessionTranscriptMode(body.SessionTranscript)
+	switch transcript {
+	case "", SessionTranscriptOID4VP, SessionTranscriptISO:
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid session transcript %q", body.SessionTranscript)})
+		return
+	}
 	reqServer := s
-	opts := presentationRequestOptions{
-		AutoAccept:        body.AutoAccept,
-		SessionTranscript: body.SessionTranscript,
-	}
-	if opts.AutoAccept || opts.SessionTranscript != "" {
-		reqWallet, err := cloneWalletForPresentation(s.wallet, opts)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-
-		reqServer = &Server{
-			wallet:           reqWallet,
-			port:             s.port,
-			mux:              s.mux,
-			onSave:           s.onSave,
-			onConsentRequest: s.onConsentRequest,
-			onUIRequest: func(requestID string) {
-				if !body.AutoAccept {
-					s.triggerUIRequest(requestID)
-				}
-			},
-			logFunc:       s.logFunc,
-			httpSrv:       s.httpSrv,
-			issuerSrv:     s.issuerSrv,
-			issuerTLSCert: s.issuerTLSCert,
-			issuerPort:    s.issuerPort,
-		}
-		reqServer.parseOpts = oid4vc.ParseOptions{
-			FetchRequestURI: MakeFetchRequestURI(reqWallet, func(format string, args ...any) {
-				reqServer.log(format, args...)
-			}),
-		}
-	}
-
 	parsed, err := ParseAuthorizationRequestWithOptions(body.URI, reqServer.parseOpts)
 	if err != nil {
 		reqServer.log("  ERROR: %v", err)
@@ -150,23 +112,25 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authReq := &AuthorizationRequestParams{
-		ClientID:         parsed.ClientID,
-		ResponseType:     parsed.ResponseType,
-		ResponseMode:     parsed.ResponseMode,
-		Nonce:            parsed.Nonce,
-		State:            parsed.State,
-		RedirectURI:      parsed.RedirectURI,
-		ResponseURI:      parsed.ResponseURI,
-		Scope:            parsed.Scope,
-		RequestURIMethod: parsed.RequestURIMethod,
-		RequestURI:       parsed.RequestURI,
-		ClientMetadata:   parsed.ClientMetadata,
-		DCQLQuery:        parsed.DCQLQuery,
-		RequestObject:    parsed.RequestObject,
-		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
-		FullParams:       parsed.FullParams,
-		Source:           "api",
-		Session:          requestOwner(r),
+		ClientID:          parsed.ClientID,
+		ResponseType:      parsed.ResponseType,
+		ResponseMode:      parsed.ResponseMode,
+		Nonce:             parsed.Nonce,
+		State:             parsed.State,
+		RedirectURI:       parsed.RedirectURI,
+		ResponseURI:       parsed.ResponseURI,
+		Scope:             parsed.Scope,
+		RequestURIMethod:  parsed.RequestURIMethod,
+		RequestURI:        parsed.RequestURI,
+		ClientMetadata:    parsed.ClientMetadata,
+		DCQLQuery:         parsed.DCQLQuery,
+		RequestObject:     parsed.RequestObject,
+		RequestPayload:    requestPayload(parsed.RequestObject, parsed.FullJSON),
+		FullParams:        parsed.FullParams,
+		Source:            "api",
+		Session:           requestOwner(r),
+		AutoAccept:        body.AutoAccept,
+		SessionTranscript: transcript,
 	}
 
 	if body.Interactive {
@@ -177,86 +141,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reqServer.handleAuthFlow(w, authReq)
-}
-
-func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*Wallet, error) {
-	if src == nil {
-		return nil, fmt.Errorf("wallet is not initialized")
-	}
-
-	// Copy conformance settings under the lock because the configuration API can
-	// change them concurrently.
-	srcMode, srcHAIP, srcEncrypted := src.ConformanceSettings()
-
-	src.mu.RLock()
-	verify := src.tlsVerify
-	relyingPartyCAs := src.RelyingPartyCAPEM
-	// The copy answers the registrar's status list in process, so it needs its
-	// own copy of the statuses.
-	registrationStatuses := slices.Clone(src.RegistrationStatuses)
-	src.mu.RUnlock()
-
-	clone := &Wallet{
-		HolderKey:               src.HolderKey,
-		IssuerKey:               src.IssuerKey,
-		CAKey:                   src.CAKey,
-		signers:                 src.signingStore(),
-		CertChain:               append([]*x509.Certificate(nil), src.CertChain...),
-		IssuedAttestations:      append([]IssuedAttestationSpec(nil), src.IssuedAttestations...),
-		RelyingPartyCAPEM:       relyingPartyCAs,
-		State:                   registrar.State{RegistrationStatuses: registrationStatuses},
-		AutoAccept:              src.AutoAccept,
-		SessionTranscript:       src.SessionTranscript,
-		PreferredFormat:         src.PreferredFormat,
-		KeyAttestationLevel:     src.KeyAttestationLevelSetting(),
-		RequireEncryptedRequest: srcEncrypted,
-		RequestEncryptionKey:    src.RequestEncryptionKey,
-		RequireHAIP:             srcHAIP,
-		RequireARF:              src.ARFChecks(),
-		ValidationMode:          srcMode,
-		tlsVerify:               verify,
-		outboundHTTP:            src.HTTPClient(),
-		VCIVersion:              src.VCIFeatureVersion(),
-		Credentials:             append([]StoredCredential(nil), src.Credentials...),
-		StatusEntries:           cloneStatusEntries(src.StatusEntries),
-		StatusListCounter:       src.StatusListCounter,
-		allocateStatusIndex:     src.allocateStatusIndex,
-		BaseURL:                 src.BaseURL,
-		IssuerURL:               src.IssuerURL,
-		ServingOrigin:           src.ServingOrigin,
-		VCIClientID:             src.VCIClientID,
-		VCIRedirectURI:          src.VCIRedirectURI,
-		Log:                     append([]LogEntry(nil), src.Log...),
-		logSink: func(entry LogEntry) {
-			src.appendLogEntry(entry)
-		},
-		// Issuance on the clone must update the original wallet.
-		credentialSink: func(cred StoredCredential) {
-			src.mu.Lock()
-			src.Credentials = append(src.Credentials, cred)
-			src.mu.Unlock()
-		},
-		// Update batch rotation on the original wallet so it is saved after
-		// presentation.
-		batchPresentedSink: func(id string) {
-			src.recordBatchPresentation(id)
-		},
-		runtime: src.runtimeState(),
-	}
-
-	if opts.AutoAccept {
-		clone.AutoAccept = true
-	}
-	if opts.SessionTranscript != "" {
-		switch SessionTranscriptMode(opts.SessionTranscript) {
-		case SessionTranscriptOID4VP, SessionTranscriptISO:
-			clone.SessionTranscript = SessionTranscriptMode(opts.SessionTranscript)
-		default:
-			return nil, fmt.Errorf("invalid session transcript %q", opts.SessionTranscript)
-		}
-	}
-
-	return clone, nil
 }
 
 func cloneStatusEntries(src map[string]StatusEntry) map[string]StatusEntry {

@@ -56,7 +56,7 @@ func TestImportPlainJWTStoresTheVCType(t *testing.T) {
 		"vc":  map[string]any{"type": []any{"VerifiableCredential", "NFEmployeeCredential"}},
 	})
 
-	cred, err := w.importPlainJWT(jwt, "", "")
+	cred, err := w.parsePlainJWTEntry(jwt, "", "")
 	if err != nil {
 		t.Fatalf("importPlainJWT: %v", err)
 	}

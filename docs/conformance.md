@@ -90,7 +90,7 @@ The wallet runs a conformance test with its normal keys:
 - its wallet provider signing key and certificate chain for client attestation and key attestation
 - its shared wallet CA as the trust anchor
 
-## What the Suite Does Not Cover
+## Gaps in the Suite
 
 The suite issues an authorization code without a user sign-in, so these plans skip the browser sign-in step. Playwright tests that step against the demo issuer. Its login page accepts each pushed `request_uri` only once (RFC 9126 §4).
 

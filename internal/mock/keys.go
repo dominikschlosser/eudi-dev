@@ -299,7 +299,9 @@ func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certifica
 	}
 	organizationIdentifier := opts.OrganizationIdentifier
 	if organizationIdentifier == "" {
-		organizationIdentifier = "NTR" + country + "-00000000"
+		// The legal person semantics identifier of the EUID <country>TEST.00000000
+		// (ETSI EN 319 412-1 V1.6.1 LEG-5.1.4-07 b).
+		organizationIdentifier = "NTR" + country + "-" + country + "TEST.00000000"
 	}
 	validity := opts.Validity
 	if validity <= 0 {

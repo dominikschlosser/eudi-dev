@@ -221,6 +221,37 @@ func parseCertificate(b64 string) (*CertInfo, error) {
 	}, nil
 }
 
+// Service kinds of ServiceCertificates. ETSI TS 119 602 V1.1.1 names the
+// service types of each list with these suffixes, such as
+// http://uri.etsi.org/19602/SvcType/PID/Issuance and .../PID/Revocation.
+const (
+	IssuanceServices   = "Issuance"
+	RevocationServices = "Revocation"
+)
+
+// ServiceCertificates returns the certificates of the services of one kind:
+// the issuance services anchor credentials, the revocation services their
+// status lists (ETSI TS 119 602 V1.1.1 Table D.3). Withdrawn services don't
+// count. In a list whose services name neither kind, every service counts.
+func ServiceCertificates(tl *TrustList, kind string) []CertInfo {
+	typed := false
+	for _, entity := range tl.Entities {
+		for _, svc := range entity.Services {
+			typed = typed || strings.HasSuffix(svc.ServiceType, "/"+IssuanceServices) || strings.HasSuffix(svc.ServiceType, "/"+RevocationServices)
+		}
+	}
+	var certs []CertInfo
+	for _, entity := range tl.Entities {
+		for _, svc := range entity.Services {
+			if strings.HasSuffix(svc.ServiceStatus, "/withdrawn") || (typed && !strings.HasSuffix(svc.ServiceType, "/"+kind)) {
+				continue
+			}
+			certs = append(certs, svc.Certificates...)
+		}
+	}
+	return certs
+}
+
 func ExtractPublicKeys(tl *TrustList) []CertInfo {
 	var keys []CertInfo
 	for _, entity := range tl.Entities {
@@ -241,4 +272,13 @@ func firstMultiLangValue(raw any) string {
 	entry, _ := values[0].(map[string]any)
 	value, _ := entry["value"].(string)
 	return value
+}
+
+// CertInfos describes parsed certificates as trusted list entries.
+func CertInfos(certs []*x509.Certificate) []CertInfo {
+	infos := make([]CertInfo, 0, len(certs))
+	for _, cert := range certs {
+		infos = append(infos, CertInfo{Subject: cert.Subject.String(), Issuer: cert.Issuer.String(), PublicKey: cert.PublicKey, Raw: cert.Raw})
+	}
+	return infos
 }

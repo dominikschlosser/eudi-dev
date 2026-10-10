@@ -80,8 +80,14 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 	}
 
 	// For externally issued credentials, report whether the status issuer's key is
-	// trusted. A valid signature alone does not establish trust.
-	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: s.wallet.HTTPClient(), Prefer: statuslist.FormatForCredential(cred.Format)})
+	// trusted. A valid signature alone does not establish trust. The revocation
+	// service of the list that anchors the credential anchors its status list.
+	statusAnchors := s.wallet.StatusListAnchors(cred.Raw)
+	checkOpts := statuslist.CheckOptions{HTTPClient: s.wallet.HTTPClient(), Prefer: statuslist.FormatForCredential(cred.Format)}
+	for _, anchor := range statusAnchors {
+		checkOpts.CandidateAnchors = append(checkOpts.CandidateAnchors, statuslist.TrustCert{Raw: anchor.Raw})
+	}
+	result, err := statuslist.CheckWithOptions(ref, checkOpts)
 	if err != nil {
 		// The UI badge is temporary. Keep the failure reason in the activity log.
 		s.wallet.addProtocolWarning("wallet", "status_list_check_failed",
@@ -231,21 +237,19 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if name := strings.TrimSpace(req.SaveAsTemplate); name != "" {
-		if !credtemplate.IsBareName(name) {
+	// The API names templates of the wallet's template store. A path would
+	// read a file of the server.
+	for _, name := range []string{req.Template, req.SaveAsTemplate, req.DisplayTemplate} {
+		if name = strings.TrimSpace(name); name != "" && !credtemplate.IsBareName(name) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid template name %q", name)})
 			return
 		}
+	}
+	if name := strings.TrimSpace(req.SaveAsTemplate); name != "" {
 		if err := s.checkDemoTemplate(credtemplate.Template{Name: name}); err != nil {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
-	}
-
-	if name := req.DisplayTemplate; name != "" && !credtemplate.IsBareName(name) {
-		// Accept only a template name. A path could escape the template directory.
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid display template name %q", name)})
-		return
 	}
 
 	if s.demo != nil && (strings.TrimSpace(req.SigningKey) != "" || strings.TrimSpace(req.SigningCert) != "") {

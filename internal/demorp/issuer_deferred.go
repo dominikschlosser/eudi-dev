@@ -45,6 +45,8 @@ func (d *DemoRP) deferIssuance(holderKeys []*ecdsa.PublicKey, granted ticketGran
 	txID := randToken()
 	now := time.Now()
 	d.mu.Lock()
+	d.pruneLocked()
+	makeRoom(d.deferred, func(t *deferredTicket) time.Time { return t.expires })
 	d.deferred[txID] = &deferredTicket{
 		holderKeys: holderKeys,
 		granted:    granted,
@@ -62,9 +64,9 @@ func (d *DemoRP) deferIssuance(holderKeys []*ecdsa.PublicKey, granted ticketGran
 func (d *DemoRP) handleDeferredCredential(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
-	token, ok := accessToken(r)
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_token"})
+	token, _, errResp := d.authorizeAccessToken(r, "/deferred_credential")
+	if errResp != nil {
+		writeJSON(w, http.StatusUnauthorized, errResp)
 		return
 	}
 	var req struct {
@@ -90,17 +92,6 @@ func (d *DemoRP) handleDeferredCredential(w http.ResponseWriter, r *http.Request
 	if pending.token != token {
 		writeJSON(w, http.StatusUnauthorized, oauthError("invalid_token", "the access token does not match this transaction"))
 		return
-	}
-	if pending.granted.jkt != "" {
-		presented, err := d.verifyDPoPProof(r, d.issuerID()+"/deferred_credential", token)
-		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, oauthError("invalid_dpop_proof", err.Error()))
-			return
-		}
-		if presented != pending.granted.jkt {
-			writeJSON(w, http.StatusUnauthorized, oauthError("invalid_token", "the access token is bound to a different DPoP key"))
-			return
-		}
 	}
 
 	if time.Now().Before(pending.readyAt) {

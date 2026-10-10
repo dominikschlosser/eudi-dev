@@ -96,25 +96,39 @@ func ticketClaims(base map[string]any, subject string, holder map[string]any, au
 // A pre-authorized offer has a pre-authorized code. An authorization code
 // offer has the issuer_state that links it to a browser login.
 type offerState struct {
-	id          string
+	id string
+	// offerSettings are what the offer was created with. Its grant issues
+	// with them.
+	offerSettings
+	// preAuthCode or issuerState is the grant of the offer. It is redeemed
+	// once, for one access token.
 	preAuthCode string
-	// preAuthCodeUsed is set by the first token exchange. That exchange binds
-	// the offer to the redeeming client.
-	preAuthCodeUsed bool
-	issuerState     string
-	subject         string
-	// holderClaims are the claims of the credential presented to authorize
-	// this issuance (OpenID4VCI 1.1 §6). Other flows leave it empty.
+	issuerState string
+	redeemed    bool
+	expires     time.Time
+}
+
+// tokenState is what an access token grants. Both grants build it with
+// issueTokenLocked.
+type tokenState struct {
+	offerSettings
+	// subject and holderClaims name the holder: the account that signed in,
+	// or the requested claims of the credential presented to authorize the
+	// issuance (OpenID4VCI 1.1 §6). A pre-authorized code leaves them empty.
+	subject      string
 	holderClaims map[string]any
-	// authorization is authorizationPresentation or authorizationBrowser.
-	authorization string
-	accessToken   string
-	// configIDs are the credential configurations in the offer. Nil means
-	// the ticket.
+	// jkt is the thumbprint of the DPoP key that binds the token. It is
+	// empty for a bearer token.
+	jkt        string
+	clientAuth *clientAuthentication
+	expires    time.Time
+}
+
+// offerSettings are the choices of the demo issuer page for one offer.
+type offerSettings struct {
+	// configIDs are the credential configurations in the offer. An offer
+	// that names none issues the ticket (offerConfigurationIDs).
 	configIDs []string
-	// jkt is the thumbprint of the DPoP key that binds the access token. It
-	// is empty for a bearer token.
-	jkt string
 	// withStatus adds a reference to the wallet status list so the
 	// credential can be revoked.
 	withStatus bool
@@ -123,10 +137,8 @@ type offerState struct {
 	// batchSize is the number of copies to sign (§8.3), each for its own key.
 	// 0 or 1 issues a single credential.
 	batchSize int
-	// clientAuth is how the wallet authenticated at the token exchange. It is
-	// nil before the exchange.
-	clientAuth *clientAuthentication
-	expires    time.Time
+	// authorization is authorizationPresentation or authorizationBrowser.
+	authorization string
 }
 
 // IssuerHandler returns the demo issuer. Mount it with the /issuer prefix
@@ -216,12 +228,16 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 		},
 		"credential_configurations_supported": d.credentialConfigurations(),
 	}
+	// Without a registration the metadata has no issuer_info, and a wallet
+	// with --arf reports that (ETSI TS 119 472-3 §4.2.3).
 	info, err := d.wallet.DemoIssuerInfo()
 	if err != nil {
 		http.Error(w, "building issuer metadata: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	metadata["issuer_info"] = info
+	if info != nil {
+		metadata["issuer_info"] = info
+	}
 	if wallet.PrefersSignedIssuerMetadata(r.Header.Get("Accept")) {
 		jwt, err := wallet.SignCredentialIssuerMetadata(d.wallet, issuer, metadata, time.Now().Add(time.Hour))
 		if err != nil {
@@ -263,19 +279,17 @@ func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 
 	d.mu.Lock()
 	d.pruneLocked()
-	if len(d.offers) >= maxEntries {
-		d.mu.Unlock()
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open offers, try again later"})
-		return
-	}
+	makeRoom(d.offers, func(o *offerState) time.Time { return o.expires })
 	offer := &offerState{
-		id:            randToken(),
-		configIDs:     configIDs,
-		withStatus:    withStatus,
-		deferred:      r.URL.Query().Get("deferred") == "true",
-		batchSize:     parseBatchSize(r.URL.Query().Get("batch")),
-		authorization: normalizeAuthorizationMode(r.URL.Query().Get("authorization")),
-		expires:       time.Now().Add(entryTTL),
+		id: randToken(),
+		offerSettings: offerSettings{
+			configIDs:     configIDs,
+			withStatus:    withStatus,
+			deferred:      r.URL.Query().Get("deferred") == "true",
+			batchSize:     parseBatchSize(r.URL.Query().Get("batch")),
+			authorization: normalizeAuthorizationMode(r.URL.Query().Get("authorization")),
+		},
+		expires: time.Now().Add(entryTTL),
 	}
 	if authCode {
 		offer.issuerState = randToken()
@@ -317,7 +331,7 @@ func (d *DemoRP) handleOfferByReference(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"credential_issuer":            d.issuerID(),
-		"credential_configuration_ids": offer.configurationIDs(),
+		"credential_configuration_ids": offer.configIDs,
 		"grants":                       grants,
 	})
 }
@@ -357,42 +371,101 @@ func (d *DemoRP) handleToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	code := r.PostFormValue("pre-authorized_code")
-
 	d.mu.Lock()
-	defer d.mu.Unlock()
-	var offer *offerState
-	for _, o := range d.offers {
-		if o.preAuthCode == code {
-			offer = o
-			break
-		}
-	}
-	if offer == nil || time.Now().After(offer.expires) || offer.preAuthCodeUsed {
+	offer := d.redeemOfferLocked(r.PostFormValue("pre-authorized_code"), func(o *offerState) string { return o.preAuthCode })
+	if offer == nil {
+		d.mu.Unlock()
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error":             "invalid_grant",
 			"error_description": "unknown, used or expired pre-authorized code",
 		})
 		return
 	}
-	// The token exchange binds the code to the client, so it is consumed here
-	// (RFC 6749 §4.1.2).
-	offer.preAuthCodeUsed = true
-	offer.accessToken = randToken()
-	offer.jkt = jkt
-	offer.clientAuth = &clientAuth
-	d.tokens[offer.accessToken] = offer
+	token := d.issueTokenLocked(tokenState{offerSettings: offer.offerSettings, jkt: jkt, clientAuth: &clientAuth})
+	d.mu.Unlock()
+	writeTokenResponse(w, token, jkt)
+}
+
+// redeemOfferLocked finds the offer whose grant key matches and consumes it.
+// A grant is redeemed once (RFC 6749 §4.1.2), and an empty key matches no
+// offer. Callers hold d.mu.
+func (d *DemoRP) redeemOfferLocked(key string, grantKey func(*offerState) string) *offerState {
+	offer := d.offerLocked(key, grantKey)
+	if offer == nil || offer.redeemed {
+		return nil
+	}
+	offer.redeemed = true
+	return offer
+}
+
+// offerLocked finds the live offer whose grant key matches. Callers hold d.mu.
+func (d *DemoRP) offerLocked(key string, grantKey func(*offerState) string) *offerState {
+	if key == "" {
+		return nil
+	}
+	for _, offer := range d.offers {
+		if grantKey(offer) == key && time.Now().Before(offer.expires) {
+			return offer
+		}
+	}
+	return nil
+}
+
+// issueTokenLocked stores what a new access token grants and returns the
+// token. Callers hold d.mu.
+func (d *DemoRP) issueTokenLocked(granted tokenState) string {
+	token := randToken()
+	granted.expires = time.Now().Add(entryTTL)
+	d.pruneLocked()
+	makeRoom(d.tokens, func(t *tokenState) time.Time { return t.expires })
+	d.tokens[token] = &granted
+	return token
+}
+
+// writeTokenResponse answers a token request. OpenID4VCI 1.0 §6.2 defines no
+// c_nonce in it. The wallet gets one from the Nonce Endpoint (§7).
+func writeTokenResponse(w http.ResponseWriter, token, jkt string) {
 	tokenType := "Bearer"
 	if jkt != "" {
 		tokenType = "DPoP"
 	}
-	// OpenID4VCI 1.0 §6.2 defines no c_nonce in the token response. The wallet
-	// gets it from the Nonce Endpoint (§7).
 	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token": offer.accessToken,
+		"access_token": token,
 		"token_type":   tokenType,
 		"expires_in":   int(entryTTL.Seconds()),
 	})
+}
+
+// authorizeAccessToken checks the access token of a request to endpoint and
+// returns what it grants. A DPoP-bound token needs a proof with its key
+// (RFC 9449 §7).
+func (d *DemoRP) authorizeAccessToken(r *http.Request, endpoint string) (string, tokenState, map[string]string) {
+	token, ok := accessToken(r)
+	if !ok {
+		return "", tokenState{}, map[string]string{"error": "invalid_token"}
+	}
+	d.mu.Lock()
+	granted, known := d.tokens[token]
+	var copied tokenState
+	if known && time.Now().Before(granted.expires) {
+		copied = *granted
+	} else {
+		known = false
+	}
+	d.mu.Unlock()
+	if !known {
+		return "", tokenState{}, map[string]string{"error": "invalid_token"}
+	}
+	if copied.jkt != "" {
+		presented, err := d.verifyDPoPProof(r, d.issuerID()+endpoint, token)
+		if err != nil {
+			return "", tokenState{}, oauthError("invalid_dpop_proof", err.Error())
+		}
+		if presented != copied.jkt {
+			return "", tokenState{}, oauthError("invalid_token", "the access token is bound to a different DPoP key")
+		}
+	}
+	return token, copied, nil
 }
 
 // credentialRequest is a Credential Request as defined in OpenID4VCI 1.0 §8.2.
@@ -410,48 +483,12 @@ type credentialRequest struct {
 func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
-	token, ok := accessToken(r)
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_token"})
+	token, tok, errResp := d.authorizeAccessToken(r, "/credential")
+	if errResp != nil {
+		writeJSON(w, http.StatusUnauthorized, errResp)
 		return
 	}
-	d.mu.Lock()
-	offer, known := d.tokens[token]
-	if known && time.Now().After(offer.expires) {
-		delete(d.tokens, token)
-		known = false
-	}
-	// Copy under the lock because the token endpoint writes to the same struct.
-	var granted ticketGrant
-	if known {
-		granted = ticketGrant{
-			configIDs:    offer.configurationIDs(),
-			subject:      offer.subject,
-			holderClaims: offer.holderClaims,
-			jkt:          offer.jkt,
-			withStatus:   offer.withStatus,
-			deferred:     offer.deferred,
-			batchSize:    offer.batchSize,
-			clientAuth:   offer.clientAuth,
-		}
-	}
-	d.mu.Unlock()
-	if !known {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_token"})
-		return
-	}
-	// A DPoP-bound token needs a DPoP proof with the same key here too.
-	if granted.jkt != "" {
-		presented, err := d.verifyDPoPProof(r, d.issuerID()+"/credential", token)
-		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, oauthError("invalid_dpop_proof", err.Error()))
-			return
-		}
-		if presented != granted.jkt {
-			writeJSON(w, http.StatusUnauthorized, oauthError("invalid_token", "the access token is bound to a different DPoP key"))
-			return
-		}
-	}
+	granted := ticketGrant{tokenState: tok}
 
 	var req credentialRequest
 	if err := decodeJSONBody(r, &req); err != nil {
@@ -528,9 +565,6 @@ func (d *DemoRP) signBatch(holderKeys []*ecdsa.PublicKey, granted ticketGrant) (
 // This issuer returns no authorization_details, so a request must use
 // credential_configuration_id. The error codes are those of §8.3.1.2.
 func (d *DemoRP) checkRequestedCredential(req credentialRequest, offered []string) (int, map[string]string) {
-	if len(offered) == 0 {
-		offered = []string{ticketConfigurationID}
-	}
 	switch {
 	case req.CredentialIdentifier != "" && req.CredentialConfigurationID != "":
 		return http.StatusBadRequest, oauthError("invalid_credential_request",
@@ -555,11 +589,7 @@ func (d *DemoRP) handleNonce(w http.ResponseWriter, r *http.Request) {
 
 	d.mu.Lock()
 	d.pruneLocked()
-	if len(d.nonces) >= maxEntries {
-		d.mu.Unlock()
-		writeJSON(w, http.StatusTooManyRequests, oauthError("temporarily_unavailable", "too many outstanding nonces"))
-		return
-	}
+	makeRoom(d.nonces, func(e time.Time) time.Time { return e })
 	d.nonces[nonce] = time.Now().Add(entryTTL)
 	d.mu.Unlock()
 
@@ -734,44 +764,20 @@ func (d *DemoRP) statusListURI() string {
 }
 
 type ticketGrant struct {
-	// configIDs are the configurations in the offer. configID is the one in
-	// the credential request. Empty means the ticket.
-	configIDs []string
-	configID  string
-	subject   string
-	// holderClaims are the claims of a credential presented to authorize this
-	// issuance. Account sign-in leaves it empty.
-	holderClaims map[string]any
-	// jkt is the DPoP key thumbprint of the access token. It is empty for a
-	// bearer token.
-	jkt        string
-	withStatus bool
-	deferred   bool
-	batchSize  int
-	clientAuth *clientAuthentication
+	tokenState
+	// configID is the configuration of the credential request, one of the
+	// token's configIDs.
+	configID string
 }
 
 // signGranted issues the template with the granted configuration id. The
 // ticket is the demo-ticket template.
 func (d *DemoRP) signGranted(holderKey *ecdsa.PublicKey, granted ticketGrant) (string, error) {
-	id := granted.configID
-	if id == "" {
-		id = ticketConfigurationID
-	}
-	cfg, ok := d.templateConfiguration(id)
+	cfg, ok := d.templateConfiguration(granted.configID)
 	if !ok {
-		return "", fmt.Errorf("this issuer has no credential configuration %q", id)
+		return "", fmt.Errorf("this issuer has no credential configuration %q", granted.configID)
 	}
 	return d.signTemplate(cfg, holderKey, granted)
-}
-
-// configurationIDs returns the offer configurations. An empty offer means
-// the ticket.
-func (o *offerState) configurationIDs() []string {
-	if len(o.configIDs) == 0 {
-		return []string{ticketConfigurationID}
-	}
-	return append([]string(nil), o.configIDs...)
 }
 
 func decodeJSONBody(r *http.Request, target any) error {

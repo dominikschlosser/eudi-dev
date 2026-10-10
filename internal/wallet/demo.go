@@ -101,8 +101,16 @@ type demoState struct {
 }
 
 // SetDemo enables the public-demo profile. Call before ListenAndServe.
+// Visitors share the demo wallet, so it holds at most this many credentials
+// and pending issuances between resets.
+const (
+	maxDemoCredentials = 500
+	maxDemoDeferred    = 100
+)
+
 func (s *Server) SetDemo(opts DemoOptions) {
 	s.demo = &demoState{opts: opts, fixedTemplates: map[string]bool{}}
+	s.wallet.SetCapacity(maxDemoCredentials, maxDemoDeferred)
 	templates, err := credtemplate.List(s.wallet.Templates)
 	if err != nil {
 		templates = credtemplate.PredefinedTemplates()

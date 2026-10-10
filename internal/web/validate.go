@@ -49,6 +49,7 @@ type ValidateOpts struct {
 // Validate adds a validation object to the decoded result.
 func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 	detected := format.DetectEncoding(input)
+	trust := resolveTrust(input, opts)
 
 	var checks []CheckResult
 
@@ -65,9 +66,9 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		checks = append(checks, CheckSDJWTType(token))
 		checks = append(checks, checkSDJWTExpiry(token))
 		checks = append(checks, CheckSDJWTIntegrity(token))
-		checks = append(checks, checkSDJWTSignature(token, opts))
-		checks = append(checks, checkCatalogueTrust(input, opts))
-		checks = append(checks, checkSDJWTStatus(token, opts)...)
+		checks = append(checks, checkSDJWTSignature(token, trust, opts))
+		checks = append(checks, checkCatalogueTrust(trust, opts))
+		checks = append(checks, checkSDJWTStatus(token, trust, opts)...)
 
 		result["validation"] = map[string]any{
 			"checks": checks,
@@ -87,7 +88,7 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 			Status: "skipped",
 			Detail: "Not applicable for plain JWT",
 		})
-		checks = append(checks, checkSDJWTSignature(token, opts))
+		checks = append(checks, checkSDJWTSignature(token, trust, opts))
 		checks = append(checks, CheckResult{
 			Name:   "status",
 			Status: "skipped",
@@ -108,9 +109,9 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 
 		checks = append(checks, checkMDOCExpiry(doc))
 		checks = append(checks, CheckMDOCIntegrity(doc))
-		checks = append(checks, checkMDOCSignature(doc, opts))
-		checks = append(checks, checkCatalogueTrust(input, opts))
-		checks = append(checks, checkMDOCStatus(doc, opts)...)
+		checks = append(checks, checkMDOCSignature(doc, trust, opts))
+		checks = append(checks, checkCatalogueTrust(trust, opts))
+		checks = append(checks, checkMDOCStatus(doc, trust, opts)...)
 
 		result["validation"] = map[string]any{
 			"checks": checks,
@@ -204,28 +205,24 @@ func checkMDOCExpiry(doc *mdoc.Document) CheckResult {
 	}
 }
 
-func checkSDJWTSignature(token *sdjwt.Token, opts ValidateOpts) CheckResult {
-	pubKeys, tlCerts, err := resolveKeys(opts)
-	if err != nil {
+func checkSDJWTSignature(token *sdjwt.Token, trust credentialTrust, opts ValidateOpts) CheckResult {
+	if trust.err != nil {
 		return CheckResult{
 			Name:   "signature",
 			Status: "fail",
-			Detail: err.Error(),
+			Detail: trust.err.Error(),
 		}
 	}
+	pubKeys, tlCerts := trust.keys, trust.issuance
 
-	// Without explicit keys, credentials issued by the local wallet validate
-	// against its CA with a full chain.
-	if len(pubKeys) == 0 && len(tlCerts) == 0 {
-		if anchors := localWalletTrustAnchors(opts.WalletStore); len(anchors) > 0 {
-			if caKey, err := validate.ExtractAndValidateX5C(token.Header, anchors); err == nil && caKey != nil {
-				result := sdjwt.Verify(token, caKey)
-				if result.SignatureValid {
-					return CheckResult{
-						Name:   "signature",
-						Status: "pass",
-						Detail: fmt.Sprintf("Valid (%s, via local wallet CA, chain verified)", result.Algorithm),
-					}
+	if issuance, _, ok := trust.catalogueAnchors(); ok {
+		if caKey, err := validate.ExtractAndValidateX5C(token.Header, issuance); err == nil && caKey != nil {
+			result := sdjwt.Verify(token, caKey)
+			if result.SignatureValid {
+				return CheckResult{
+					Name:   "signature",
+					Status: "pass",
+					Detail: fmt.Sprintf("Valid (%s, chain verified to %s)", result.Algorithm, trust.anchoredBy()),
 				}
 			}
 		}
@@ -237,14 +234,7 @@ func checkSDJWTSignature(token *sdjwt.Token, opts ValidateOpts) CheckResult {
 
 	result, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts)
 	if err != nil {
-		if len(pubKeys) == 0 && len(tlCerts) == 0 {
-			if localResult, localSource := verifyWithLocalWalletIssuerKey(token, opts.WalletStore); localResult != nil {
-				result = localResult
-				source = localSource
-				err = nil
-			}
-		}
-		if err != nil && len(pubKeys) == 0 && len(tlCerts) == 0 && validate.CanResolveJWTIssuerMetadata(token) {
+		if len(pubKeys) == 0 && len(tlCerts) == 0 && validate.CanResolveJWTIssuerMetadata(token) {
 			return CheckResult{
 				Name:   "signature",
 				Status: "skipped",
@@ -256,14 +246,6 @@ func checkSDJWTSignature(token *sdjwt.Token, opts ValidateOpts) CheckResult {
 				Name:   "signature",
 				Status: "fail",
 				Detail: err.Error(),
-			}
-		}
-	}
-	if result == nil {
-		if len(pubKeys) == 0 && len(tlCerts) == 0 {
-			if localResult, localSource := verifyWithLocalWalletIssuerKey(token, opts.WalletStore); localResult != nil {
-				result = localResult
-				source = localSource
 			}
 		}
 	}
@@ -312,12 +294,6 @@ func offlineSDJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCer
 			Name:   "signature",
 			Status: "fail",
 			Detail: err.Error(),
-		}
-	}
-	if result == nil && len(pubKeys) == 0 && len(tlCerts) == 0 {
-		if localResult, localSource := verifyWithLocalWalletIssuerKey(token, opts.WalletStore); localResult != nil {
-			result = localResult
-			source = localSource
 		}
 	}
 	if result == nil {
@@ -369,27 +345,25 @@ func offlineSDJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCer
 	}
 }
 
-func checkMDOCSignature(doc *mdoc.Document, opts ValidateOpts) CheckResult {
-	pubKeys, tlCerts, err := resolveKeys(opts)
-	if err != nil {
+func checkMDOCSignature(doc *mdoc.Document, trust credentialTrust, opts ValidateOpts) CheckResult {
+	if trust.err != nil {
 		return CheckResult{
 			Name:   "signature",
 			Status: "fail",
-			Detail: err.Error(),
+			Detail: trust.err.Error(),
 		}
 	}
+	pubKeys, tlCerts := trust.keys, trust.issuance
 
 	if len(pubKeys) == 0 && len(tlCerts) == 0 {
-		// Credentials issued by the local wallet validate against its CA
-		// with a full chain.
-		if anchors := localWalletTrustAnchors(opts.WalletStore); len(anchors) > 0 {
-			if caKey, err := validate.ExtractAndValidateMDOCX5Chain(doc, anchors); err == nil && caKey != nil {
+		if issuance, _, ok := trust.catalogueAnchors(); ok {
+			if caKey, err := validate.ExtractAndValidateMDOCX5Chain(doc, issuance); err == nil && caKey != nil {
 				result := mdoc.Verify(doc, caKey)
 				if result.SignatureValid {
 					return CheckResult{
 						Name:   "signature",
 						Status: "pass",
-						Detail: fmt.Sprintf("Valid (%s, via local wallet CA, chain verified)", result.Algorithm),
+						Detail: fmt.Sprintf("Valid (%s, chain verified to %s)", result.Algorithm, trust.anchoredBy()),
 					}
 				}
 			}
@@ -452,7 +426,7 @@ func checkMDOCSignature(doc *mdoc.Document, opts ValidateOpts) CheckResult {
 	}
 }
 
-func checkSDJWTStatus(token *sdjwt.Token, opts ValidateOpts) []CheckResult {
+func checkSDJWTStatus(token *sdjwt.Token, trust credentialTrust, opts ValidateOpts) []CheckResult {
 	if nonStandard := validate.NonStatusListFormat(token.ResolvedClaims); nonStandard != "" {
 		return []CheckResult{{
 			Name:   "status",
@@ -465,30 +439,22 @@ func checkSDJWTStatus(token *sdjwt.Token, opts ValidateOpts) []CheckResult {
 		return []CheckResult{skip}
 	}
 
-	_, tlCerts, err := resolveKeys(opts)
-	if err != nil {
-		return []CheckResult{{Name: "status", Status: "fail", Detail: err.Error()}}
-	}
-	return checkStatusRef(ref, statuslist.FormatJWT, tlCerts)
+	return checkStatusRef(ref, statuslist.FormatJWT, trust)
 }
 
-func checkMDOCStatus(doc *mdoc.Document, opts ValidateOpts) []CheckResult {
-	if doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil || doc.IssuerAuth.MSO.Status == nil {
+func checkMDOCStatus(doc *mdoc.Document, trust credentialTrust, opts ValidateOpts) []CheckResult {
+	if doc.StatusClaims() == nil {
 		return []CheckResult{{Name: "status", Status: "skipped", Detail: "No status reference in credential"}}
 	}
 
 	// ExtractStatusRef expects {"status": {"status_list": ...}}. MSO.Status is
 	// already the inner status object.
-	ref := statuslist.ExtractStatusRef(map[string]any{"status": doc.IssuerAuth.MSO.Status})
+	ref := statuslist.ExtractStatusRef(doc.StatusClaims())
 	if skip, ok := statusCheckNotRun(ref, opts); ok {
 		return []CheckResult{skip}
 	}
 
-	_, tlCerts, err := resolveKeys(opts)
-	if err != nil {
-		return []CheckResult{{Name: "status", Status: "fail", Detail: err.Error()}}
-	}
-	return checkStatusRef(ref, statuslist.FormatCWT, tlCerts)
+	return checkStatusRef(ref, statuslist.FormatCWT, trust)
 }
 
 // A credential without a status reference needs no network check. A reference stays
@@ -520,8 +486,13 @@ func statusCheckNotRun(ref *statuslist.StatusRef, opts ValidateOpts) (CheckResul
 }
 
 // The credential status and the trust in the status list signature are
-// separate checks.
-func checkStatusRef(ref *statuslist.StatusRef, prefer string, tlCerts []trustlist.CertInfo) []CheckResult {
+// separate checks. The revocation service of the trusted list anchors the
+// status list (ETSI TS 119 602 V1.1.1 Table D.3): of the supplied list, or of
+// the catalogue list that anchors the credential.
+func checkStatusRef(ref *statuslist.StatusRef, prefer string, trust credentialTrust) []CheckResult {
+	if trust.err != nil {
+		return []CheckResult{{Name: "status", Status: "fail", Detail: trust.err.Error()}}
+	}
 	if ref == nil {
 		return []CheckResult{{Name: "status", Status: "skipped", Detail: "No status list reference in credential"}}
 	}
@@ -530,10 +501,12 @@ func checkStatusRef(ref *statuslist.StatusRef, prefer string, tlCerts []trustlis
 	}
 
 	checkOpts := statuslist.CheckOptions{Prefer: prefer}
-	for _, ci := range tlCerts {
-		if len(ci.Raw) > 0 {
-			checkOpts.TrustListCerts = append(checkOpts.TrustListCerts, statuslist.TrustCert{Raw: ci.Raw})
-		}
+	for _, ci := range trust.revocation {
+		checkOpts.TrustListCerts = append(checkOpts.TrustListCerts, statuslist.TrustCert{Raw: ci.Raw})
+	}
+	_, catalogueRevocation, anchored := trust.catalogueAnchors()
+	for _, ci := range catalogueRevocation {
+		checkOpts.CandidateAnchors = append(checkOpts.CandidateAnchors, statuslist.TrustCert{Raw: ci.Raw})
 	}
 
 	result, err := statuslist.CheckWithOptions(ref, checkOpts)
@@ -556,18 +529,22 @@ func checkStatusRef(ref *statuslist.StatusRef, prefer string, tlCerts []trustlis
 	signature := CheckResult{Name: "status list signature", Status: "warning", Detail: sigDetail}
 	if result.TrustAnchored {
 		signature.Status = "pass"
+		if anchored {
+			signature.Detail = fmt.Sprintf("%s, anchored by the revocation service of %s", sigDetail, trust.anchoredBy())
+		}
 	}
 	return []CheckResult{status, signature}
 }
 
-func resolveKeys(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, error) {
+// suppliedTrust reads the key and the trusted list the caller supplied.
+func suppliedTrust(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, []trustlist.CertInfo, error) {
 	var pubKeys []crypto.PublicKey
-	var tlCerts []trustlist.CertInfo
+	var tlCerts, revocation []trustlist.CertInfo
 
 	if opts.Key != "" {
 		key, err := keys.ParsePublicKey([]byte(opts.Key))
 		if err != nil {
-			return nil, nil, fmt.Errorf("parsing key: %w", err)
+			return nil, nil, nil, fmt.Errorf("parsing key: %w", err)
 		}
 		pubKeys = append(pubKeys, key)
 	}
@@ -575,9 +552,10 @@ func resolveKeys(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, e
 	if opts.TrustListRaw != "" {
 		tl, err := trustlist.Parse(opts.TrustListRaw)
 		if err != nil {
-			return nil, nil, fmt.Errorf("parsing trusted list: %w", err)
+			return nil, nil, nil, fmt.Errorf("parsing trusted list: %w", err)
 		}
-		tlCerts = trustlist.ExtractPublicKeys(tl)
+		tlCerts = trustlist.ServiceCertificates(tl, trustlist.IssuanceServices)
+		revocation = trustlist.ServiceCertificates(tl, trustlist.RevocationServices)
 		for _, ci := range tlCerts {
 			pubKeys = append(pubKeys, ci.PublicKey)
 		}
@@ -587,20 +565,21 @@ func resolveKeys(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, e
 		// The URL is caller-supplied, and ReadRemoteInput cannot read local files.
 		tlRaw, err := format.ReadRemoteInput(opts.TrustListURL)
 		if err != nil {
-			return nil, nil, fmt.Errorf("fetching trusted list: %w", err)
+			return nil, nil, nil, fmt.Errorf("fetching trusted list: %w", err)
 		}
 		tl, err := trustlist.Parse(tlRaw)
 		if err != nil {
-			return nil, nil, fmt.Errorf("parsing trusted list: %w", err)
+			return nil, nil, nil, fmt.Errorf("parsing trusted list: %w", err)
 		}
-		certs := trustlist.ExtractPublicKeys(tl)
+		certs := trustlist.ServiceCertificates(tl, trustlist.IssuanceServices)
 		tlCerts = append(tlCerts, certs...)
+		revocation = append(revocation, trustlist.ServiceCertificates(tl, trustlist.RevocationServices)...)
 		for _, ci := range certs {
 			pubKeys = append(pubKeys, ci.PublicKey)
 		}
 	}
 
-	return pubKeys, tlCerts, nil
+	return pubKeys, tlCerts, revocation, nil
 }
 
 func relativeTimeGo(t time.Time) string {

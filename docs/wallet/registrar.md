@@ -15,9 +15,20 @@ A relying party offers services. A verifier's service has intended uses (TS05 v1
 
 A registration names its supervisory authority with `name`, `country` and at least one contact in `email`, `phone` or `formURI` (TS05 v1.5 §2.4.7). `email`, `phone` and `formURI` are lists. If you give no contact, the registrar adds the test address `dpa@eudi-test.dev` and the form `<issuer URL>/supervisory-authority`. The name defaults to `Test Supervisory Authority` and the country to the relying party's country.
 
-If a registration has no identifier, the registrar assigns one. It is an `organizationIdentifier` such as `NTRNL-1A2B3C4D5E6F7A8B`: the identifier type (`LEI`, `NTR`, `VAT`, `EOR` or `EXC`), a country code, a dash and the value (ETSI TS 119 475 §5.1.3).
+A registration's identifier has one of the types of ETSI TS 119 475 clause B.2.5: `EUID`, `LEI`, `VATIN`, `TIN`, `EORI-No` or `Excise`. Without one, the registrar assigns an EUID in the test register, such as `NLTEST.1A2B3C4D5E6F7A8B`. The certificates carry the matching semantics identifier of ETSI EN 319 412-1 (TS 119 475 Table 2):
 
-Anyone with access to the wallet can register, change and delete relying parties and revoke their certificates. On a shared instance every visitor sees every registration and can delete it.
+| Type | Registered | In the certificates |
+|---|---|---|
+| `EUID` | `NLTEST.1A2B3C4D5E6F7A8B` | `NTRNL-NLTEST.1A2B3C4D5E6F7A8B` |
+| `LEI` | `529900T8BM49AURSDO55` | `LEIXG-529900T8BM49AURSDO55` |
+| `VATIN` | `BE0876866142` | `VATBE-0876866142` |
+| `TIN` | `12345678901` | `VATDE-12345678901` (country of the party) |
+| `EORI-No` | `DE1234567` | `EORDE-1234567` |
+| `Excise` | `DE00012345678` | `EXCDE-00012345678` |
+
+An identifier without a type is read as an EUID, or as the semantics identifier of a certificate, such as `LEIXG-529900T8BM49AURSDO55`. Lookups accept both forms.
+
+Anyone with access to the wallet can register, change and delete relying parties and revoke their certificates. On a shared instance every visitor sees every registration and can delete it. A public demo keeps the demo issuer and verifier.
 
 An update can add identifiers. The first identifier never changes, because the issued certificates contain it.
 
@@ -66,11 +77,11 @@ The search looks at names, identifiers, purposes and credential types.
 
 A verifier registration certificate belongs to one intended use. An issuer registration certificate belongs to the service. The registrar keeps the current certificate, so its `verifier_info` or `issuer_info` value stays available. Issuing a new certificate revokes the old one. A certificate the registrar revoked itself can't be activated again.
 
-**+ Add verifier registration certificate** adds an intended use (ETSI TS 119 475) and issues a verifier registration certificate for it. The existing certificates stay valid. For an issuer, the dialog starts with a PID identity check. The party stays one relying party with both roles, because CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration. The registrar adds the `Service_Provider` entitlement. The issuer signs its request with its access certificate and sends the new certificate in `verifier_info`.
+**+ Add verifier registration certificate** adds an intended use (ETSI TS 119 475) and issues a verifier registration certificate for it. The existing certificates stay valid. For an issuer, the dialog suggests an intended use that asks for a PID before issuance. The party stays one relying party with both roles, because CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration. The registrar adds the `Service_Provider` entitlement. The issuer signs its request with its access certificate and sends the new certificate in `verifier_info`.
 
 **+ Add issuer registration certificate** adds attestation types to a party without them and issues the issuer registration certificate. A party has one issuer registration certificate for its service (ARF RPRC_13). **Edit attestation types** changes its list and issues a new certificate. The registrar then derives the provider entitlements from the categories of the types, unless you pick one.
 
-Deleting a registration certificate removes what it certifies from the registration: the intended use, or the attestation types of the service. The registrar revokes its certificates. Deleting the relying party revokes all its certificates.
+Deleting a registration certificate removes what it certifies from the registration: the intended use, or the attestation types of the service. The registrar revokes the certificates of that intended use or service. Deleting the relying party revokes all its certificates.
 
 ![Register a verifier](../assets/registrar-register.png)
 
@@ -87,7 +98,7 @@ Every element has an ID for automated tests:
 | Element | IDs |
 |---------|-----|
 | Registrar menu | `registrar-menu-toggle` opens the submenu with `registrar-parties-link` and `registrar-catalog-link` |
-| Relying parties | Filters `registrar-filter-all`, `registrar-filter-verifiers`, `registrar-filter-issuers`. `registrar-search` searches, with suggestions in `registrar-search-suggestions`. `registrar-page-prev`, `registrar-page-next` and `registrar-page-info` page through the list. `registrar-parties-register` and `registrar-parties-register-issuer` open the register dialogs, and `registrar-parties-close` closes the dialog. A party is `registrar-party-<identifier>` with `-name`, `-identifier`, `-role-verifier`, `-role-issuer`, `-add-use`, `-add-issuer` and `-delete`. Each certificate has a line in the card, `<row>-summary` with `-summary-kind`, `-summary-title`, `-summary-status`, `-details` and `-summary-delete`. **Details** opens `registrar-cert-overlay` with `registrar-cert-title`, `registrar-cert-party`, `registrar-cert-body` and `registrar-cert-close`. The certificate in it keeps the IDs below, plus `-delete`, and an issuer certificate `-edit`. An intended use is `registrar-party-<identifier>-use-<intended use>` with `-purpose`, `-status`, `-credentials`, `-issue` and `-revoke` (Revoke or Activate). An issued certificate shows in `-result` with `-verifier-info` and `-copy`. An issuer service is `registrar-party-<identifier>-service-<service>` (`default` without a service identifier) with `-entitlement`, `-status`, `-attestations`, `-issue`, `-revoke`, and `-result` with `-issuer-info` and `-copy`. In `<identifier>`, `<intended use>` and `<service>`, characters other than letters, digits, `_` and `-` become `_` |
+| Relying parties | Filters `registrar-filter-all`, `registrar-filter-verifiers`, `registrar-filter-issuers`. `registrar-search` searches, with suggestions in `registrar-search-suggestions`. `registrar-page-prev`, `registrar-page-next` and `registrar-page-info` page through the list. `registrar-parties-register` and `registrar-parties-register-issuer` open the register dialogs, and `registrar-parties-close` closes the dialog. A party is `registrar-party-<identifier>` with `-name`, `-identifier`, `-role-verifier`, `-role-issuer`, `-add-use`, `-add-issuer` and `-delete`. Each certificate has a line in the card. Its IDs are the ID of its intended use or service (below) with `-summary`, `-summary-kind`, `-summary-title`, `-summary-status`, `-details` and `-summary-delete`. **Details** opens `registrar-cert-overlay` with `registrar-cert-title`, `registrar-cert-party`, `registrar-cert-body` and `registrar-cert-close`. The certificate in it keeps the IDs below, plus `-delete`, and an issuer certificate `-edit`. An intended use is `registrar-party-<identifier>-use-<intended use>` with `-purpose`, `-status`, `-credentials`, `-issue` and `-revoke` (Revoke or Activate). An issued certificate shows in `-result` with `-verifier-info` and `-copy`. An issuer service is `registrar-party-<identifier>-service-<service>` (`default` without a service identifier) with `-entitlement`, `-status`, `-attestations`, `-issue`, `-revoke`, and `-result` with `-issuer-info` and `-copy`. In `<identifier>`, `<intended use>` and `<service>`, characters other than letters, digits, `_` and `-` become `_` |
 | Register dialogs | `registrar-title`, `registrar-name`, `registrar-identifier`, `registrar-legal-name`, `registrar-country`, `registrar-support-uri`, `registrar-service-id`, `registrar-purpose`, `registrar-privacy-policy`, credential rows `registrar-credential-<n>-format`, `-type`, `-claims` and `-remove`, `registrar-add-credential`, `registrar-entitlement`, attestation rows `registrar-attestation-<n>-format`, `-type` and `-remove`, `registrar-add-attestation`, `registrar-registration-validity`, `registrar-csr`, `registrar-dns`, `registrar-access-validity`, `registrar-csr-help-toggle`, `registrar-copy-csr-command`, `registrar-error`, `registrar-submit`, `registrar-close`. Results in `registrar-result` with `registrar-result-identifier`, `registrar-client-id-<n>`, `registrar-pem` (labelled by `registrar-pem-label`), `registrar-download-pem`, `registrar-verifier-info` and `registrar-issuer-info`. `registrar-copy-pem`, `registrar-copy-verifier-info` and `registrar-copy-issuer-info` copy a result field. `registrar-client-id-<n>` counts from 0 |
 | Attestation catalogue | `registrar-catalog-search`, the filter rows `registrar-catalog-filter-category`, `-los`, `-binding` and `-source` with buttons such as `registrar-catalog-filter-category-pid` (`aria-pressed` when selected), `registrar-catalog-filter-clear`, `registrar-catalog-list`, `registrar-catalog-close`, `registrar-catalog-add`. An entry is `registrar-catalog-entry-<id>` with `-name`, `-template`, `-category`, `-los`, `-binding`, `-id`, `-version`, `-formats`, `-schema-<n>`, `-rulebook`, `-trust` and `-delete`. **Add attestation** opens `registrar-catalog-add-overlay` with `registrar-catalog-name`, format rows `registrar-catalog-format-<n>-format`, `-type`, `-claims` and `-remove`, `registrar-catalog-add-format`, `registrar-catalog-category`, `registrar-catalog-rulebook`, `registrar-catalog-los`, `registrar-catalog-binding`, `registrar-catalog-trust`, `registrar-catalog-form-error`, `registrar-catalog-cancel` and `registrar-catalog-save` |
 | Consent findings | In debug mode a collapsed `consent-findings` lists the findings about the verifier or the issuer. `consent-findings-summary` counts them, and `consent-findings-list` has one `consent-finding-<n>` each |
@@ -119,7 +130,7 @@ The registrar fills in the rest. `registry_uri` points to the registration in th
 
 The access certificate has the policy `0.4.0.194118.1.2` (ETSI TS 119 411-8 §5.3) and is signed by the relying party access CA. That CA is a separate root. Access certificates from the registrar never chain to the wallet CA. The registrar key signs the registration certificates. Its certificate chains to the registrar CA, another separate root. You can download the registrar certificate, the registrar CA and the relying party access CA under **Trust & certificates**.
 
-## What the wallet checks
+## Wallet checks
 
 The consent dialog shows the registered purpose and a link to the privacy policy (ARF RPA_10). API clients find them in `purposes` and `privacy_policies` of a pending request. The wallet shows them even without `--arf`. The registration certificate must have a valid signature, and it must belong to the access certificate of the signed request. For an unsigned request the dialog shows neither.
 
@@ -174,14 +185,16 @@ eudi wallet trust add-ca --list registrar --ca other-registrar-ca.pem
 
 ![Demo verifier identity](../assets/verifier-identity.png)
 
-The demo issuer and the demo verifier are registered like any other relying party. Each has its own access certificate from the relying party access CA, and the identifier in it is the identifier of its registration.
+The demo issuer and the demo verifier are registered like any other relying party. Each has its own access certificate from the relying party access CA, with the semantics identifier of its registration.
 
 - **EUDI Dev Demo Issuer** is an issuer. It is registered for the credential types of its templates and of the issued-attestation registry, except unlisted ones. The [category](serve.md#credential-categories) of a type comes from the template or the catalogue entry, else it is an EAA. Its entitlements are those of the categories, such as `PID_Provider` for the PIDs and `Non_Q_EAA_Provider` for the demo ticket. It also has the intended use `identity-check`, which asks for `given_name` and `family_name` of the EUDI PID in both formats. The demo issuer sends that registration certificate when it asks for your PID during [interactive authorization](issuing.md#interactive-authorization). Because of this intended use it also has the `Service_Provider` entitlement (ARF RPRC_05 note).
 - **EUDI Dev Demo Verifier** is a verifier with one intended use, `demo-requests`. It registers the claims of every predefined template, so the demo requests ask only for registered claims.
 
-The wallet registers both when it starts, after a demo reset, when you save or delete a template and once an hour, and stores the result. Both registrations are derived from the templates, so the wallet doesn't let you edit or delete them. You can issue and revoke their certificates.
+The wallet registers both at startup if they are missing. After that a local wallet leaves them alone, also when the templates change. You can change or delete them like any other registration. Without its registration the demo issuer publishes no `issuer_info` and the demo verifier sends no `verifier_info`. A restart on another port or base URL moves both registrations to the new URL.
 
-The demo issuer and the demo verifier each use their current registration certificate. If there is none, or the current one expires within a day, the registrar issues a new one. A revoked certificate stays the current one, so the demo keeps sending it until a new certificate replaces it. On a public demo, the certificates are locked too.
+On a public demo, visitors can't change either registration or its certificates. The wallet updates both when the templates or the catalogue change, and after every reset.
+
+The demo issuer and the demo verifier each use their current registration certificate. If there is none, or the current one expires within a day, the registrar issues a new one. A revoked certificate stays the current one, so the demo keeps sending it until a new certificate replaces it.
 
 The demo issuer signs its metadata with its access certificate and publishes its registration certificate in `issuer_info`. On the demo verifier page you choose how the verifier identifies itself:
 
@@ -226,7 +239,7 @@ What each field changes:
 | Holder binding | Published in the `SchemaMeta` only. The wallet binds every credential to a key, whatever the entry says |
 | Version | Published in the `SchemaMeta` only |
 
-In the catalogue filter, any selected value within a row matches, and the rows narrow each other down.
+In the catalogue filter, the selected values of one row combine with OR, and the rows combine with AND.
 
 TS11 leaves adding entries to the Commission's registration process (§4.5), so `POST /api/catalog/attestations` is this catalogue's own method. The TS11 methods work on the `SchemaMeta` of an entry.
 
@@ -266,18 +279,18 @@ The CLI uses the same registrar. If a wallet is running, it calls the API. Other
 ```bash
 eudi wallet registrar verifiers add --name "Example Shop" --purpose "Age check" --dcql query.json
 eudi wallet registrar issuers add --name "Example University" --attestation dc+sd-jwt:urn:example:diploma:1
-eudi wallet registrar verifiers add --to NTRNL-1A2B3C4D5E6F7A8B --purpose "Identity check before issuance" --dcql pid.json
-eudi wallet registrar issuers add --to NTRNL-0F1E2D3C4B5A6978 --attestation dc+sd-jwt:urn:example:ticket:1
+eudi wallet registrar verifiers add --to NLTEST.1A2B3C4D5E6F7A8B --purpose "Identity check before issuance" --dcql pid.json
+eudi wallet registrar issuers add --to NLTEST.0F1E2D3C4B5A6978 --attestation dc+sd-jwt:urn:example:ticket:1
 eudi wallet registrar verifiers
 eudi wallet registrar issuers
 openssl ecparam -name prime256v1 -genkey -noout -out verifier.key
 openssl req -new -key verifier.key -subj "/" -out verifier.csr
-eudi wallet registrar access-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --csr verifier.csr --dns shop.example > verifier.pem
-eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B
-eudi wallet registrar registration-cert --identifier NTRNL-1A2B3C4D5E6F7A8B --new
-eudi wallet registrar revoke --identifier NTRNL-1A2B3C4D5E6F7A8B
-eudi wallet registrar activate --identifier NTRNL-1A2B3C4D5E6F7A8B
-eudi wallet registrar verifiers rm NTRNL-1A2B3C4D5E6F7A8B
+eudi wallet registrar access-cert --identifier NLTEST.1A2B3C4D5E6F7A8B --csr verifier.csr --dns shop.example > verifier.pem
+eudi wallet registrar registration-cert --identifier NLTEST.1A2B3C4D5E6F7A8B
+eudi wallet registrar registration-cert --identifier NLTEST.1A2B3C4D5E6F7A8B --new
+eudi wallet registrar revoke --identifier NLTEST.1A2B3C4D5E6F7A8B
+eudi wallet registrar activate --identifier NLTEST.1A2B3C4D5E6F7A8B
+eudi wallet registrar verifiers rm NLTEST.1A2B3C4D5E6F7A8B
 eudi wallet catalog
 eudi wallet catalog add --name "University diploma" --type dc+sd-jwt:urn:example:diploma:1 --claim dc+sd-jwt:degree
 eudi wallet catalog rm 3f1c3b0d-71ad-496b-9f94-68198503e761
@@ -297,7 +310,7 @@ With `--to`, both add the other role to a registered relying party instead. `ver
 |---------|------|---------|-------------|
 | `verifiers add`, `issuers add` | `--name` | None | Trade name (required without `--to`) |
 | `verifiers add`, `issuers add` | `--to` | None | Identifier of a registered relying party to add the role to |
-| `verifiers add`, `issuers add` | `--identifier` | Assigned | `organizationIdentifier` |
+| `verifiers add`, `issuers add` | `--identifier` | Assigned EUID | EUID, or an `organizationIdentifier` such as `LEIXG-529900T8BM49AURSDO55` |
 | `verifiers add`, `issuers add` | `--legal-name` | `--name` | Legal name |
 | `verifiers add`, `issuers add` | `--country` | The identifier's country (`NL` for an assigned identifier) | Country code |
 | `verifiers add`, `issuers add` | `--support-uri` | `<issuer URL>/support` | Support contact URL |

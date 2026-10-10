@@ -1983,6 +1983,9 @@ func TestOpenIDCredentialIssuerMetadata_SignedJWTContainsIssuerInfo(t *testing.T
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating credentials: %v", err)
 	}
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
+	}
 	srv := NewServer(w, 0, nil)
 
 	resp := signedIssuerMetadataRequest(t, srv)
@@ -2101,6 +2104,9 @@ func TestAnEAATypeIsRegisteredAndListedAsAnEAA(t *testing.T) {
 	w.IssuedAttestations = []IssuedAttestationSpec{
 		{Format: "dc+sd-jwt", VCT: "urn:test:employee:1", Category: credtemplate.CategoryEAA},
 		{Format: "mso_mdoc", DocType: "org.iso.23220.photoid.1", Category: credtemplate.CategoryEAA},
+	}
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
 	}
 	srv := NewServer(w, 0, nil)
 

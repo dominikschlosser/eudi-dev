@@ -64,9 +64,6 @@ const MaxAccessCertificateValidity = 365 * 24 * time.Hour
 // (OpenID4VP 1.0 §5.9.3).
 var dnsNamePattern = regexp.MustCompile(`^(?i:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.(?i:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))*$`)
 
-// ETSI EN 319 412-1 §5.1.4 with the identifier types of ETSI TS 119 475 §5.1.3.
-var organizationIdentifierPattern = regexp.MustCompile(`^(LEI|NTR|VAT|EOR|EXC)[A-Z]{2}-[A-Za-z0-9.-]+$`)
-
 // IssueAccessCertificate signs an access certificate for the public key of a
 // CSR.
 func (r *Registrar) IssueAccessCertificate(req AccessCertificateRequest) (*AccessCertificateResult, error) {
@@ -111,6 +108,10 @@ func (r *Registrar) AccessCertificateFor(rp WalletRelyingParty, serviceIdentifie
 	if !ok {
 		return nil, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, serviceIdentifier)
 	}
+	subject, err := SemanticIdentifier(rp.Identifier[0], rp.Country)
+	if err != nil {
+		return nil, err
+	}
 	dnsNames = trimmedNonEmpty(dnsNames)
 	if len(dnsNames) > maxRegistrationItems {
 		return nil, fmt.Errorf("an access certificate may name at most %d DNS names", maxRegistrationItems)
@@ -133,7 +134,7 @@ func (r *Registrar) AccessCertificateFor(rp WalletRelyingParty, serviceIdentifie
 		Organization:           rp.LegalPerson.LegalName[0],
 		OrganizationalUnit:     service.ServiceIdentifier,
 		Country:                rp.Country,
-		OrganizationIdentifier: rp.Identifier[0].Identifier,
+		OrganizationIdentifier: subject,
 		Role:                   mock.AccessCertificate,
 		URIs:                   uris,
 		DNSNames:               dnsNames,

@@ -219,7 +219,7 @@ func TestTheCategoryListsFollowTheirLoTEProfiles(t *testing.T) {
 	if len(pid.ListAndSchemeInformation.PointersToOtherLoTE) != 1 || pid.ListAndSchemeInformation.HistoricalInformationPeriod != nil {
 		t.Error("the PID list needs a pointer to itself and no history period (Table D.1)")
 	}
-	if pidEntity.TETradeName[0].Value != listedProviderIdentifier || !slices.Contains(uris(pidEntity.TEInformationURI), "http://uri.etsi.org/19602/ListOfTrustedEntities/PIDProvider/NL") {
+	if pidEntity.TETradeName[0].Value != "NTRNL-"+listedProviderEUID || !slices.Contains(uris(pidEntity.TEInformationURI), "http://uri.etsi.org/19602/ListOfTrustedEntities/PIDProvider/NL") {
 		t.Errorf("PID provider %+v, want the registration identifier and the Member State URI (Table D.2)", pidEntity)
 	}
 
@@ -238,5 +238,37 @@ func TestTheCategoryListsFollowTheirLoTEProfiles(t *testing.T) {
 		if s.ServiceInformation.ServiceStatus != pubEAANotifiedStatus || len(s.ServiceInformation.ServiceDigitalIdentity.X509Certificates) != 1 {
 			t.Errorf("service %+v, want the notified status and one certificate (Table H.3)", s.ServiceInformation)
 		}
+	}
+}
+
+// An entity's trade name is the registration identifier its own certificates
+// carry, and an entity without one has none (ETSI TS 119 602 V1.1.1 §6.5.2).
+func TestAListedEntityTakesTheTradeNameOfItsCertificates(t *testing.T) {
+	caKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := mock.GenerateCACert(caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := mock.GenerateLeafCertWithOptions(caKey, ca, &leafKey.PublicKey, mock.LeafCertOptions{OrganizationIdentifier: "NTRBE-BETEST.42"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encode := func(c *x509.Certificate) []string { return []string{base64.StdEncoding.EncodeToString(c.Raw)} }
+	own := trustedEntityInformation(trustListOptions{}, trustListEntity{Name: "Own", Issuance: encode(leaf)})
+	if got := own["TETradeName"].([]map[string]string)[0]["value"]; got != "NTRBE-BETEST.42" {
+		t.Errorf("trade name %q, want the certificate's identifier", got)
+	}
+	if organizationIdentifier(ca) != "" {
+		t.Fatal("the test CA carries an organizationIdentifier")
+	}
+	if none := trustedEntityInformation(trustListOptions{}, trustListEntity{Name: "None", Issuance: encode(ca)}); none["TETradeName"] != nil {
+		t.Errorf("trade name %v for a certificate without an identifier", none["TETradeName"])
 	}
 }

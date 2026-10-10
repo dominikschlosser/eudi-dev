@@ -884,7 +884,7 @@ func fetchAttestationChallenge(endpoint string, clients ...*http.Client) (string
 		return "", fmt.Errorf("challenge endpoint returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 	var payload map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if _, err := format.DecodeRemoteJSON(resp.Body, "challenge response", &payload); err != nil {
 		return "", fmt.Errorf("parsing challenge response: %w", err)
 	}
 	challenge, _ := payload["attestation_challenge"].(string)

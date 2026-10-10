@@ -15,7 +15,9 @@
 package format
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -191,6 +193,23 @@ func ReadRemoteBody(r io.Reader, what string) ([]byte, error) {
 		return nil, fmt.Errorf("%s exceeds %d bytes", what, MaxRemoteBytes)
 	}
 	return b, nil
+}
+
+// DecodeRemoteJSON decodes the first JSON value of a remote body of at most
+// MaxRemoteBytes. A transfer that breaks off after a complete value still
+// decodes. It returns the body for logging.
+func DecodeRemoteJSON(r io.Reader, what string, v any) ([]byte, error) {
+	body, readErr := io.ReadAll(io.LimitReader(r, MaxRemoteBytes+1))
+	if len(body) > MaxRemoteBytes {
+		return nil, fmt.Errorf("%s exceeds %d bytes", what, MaxRemoteBytes)
+	}
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(v); err != nil {
+		if readErr != nil {
+			return body, readErr
+		}
+		return body, err
+	}
+	return body, nil
 }
 
 const maxFetchBytes = 10 << 20

@@ -4,7 +4,7 @@ Test the demo issuer at `/issuer` and verifier at `/verifier` with the official 
 
 Only the wallet goes through certification. These issuer and verifier plans run locally (or on the hosted demo service) as quality checks. The wrapper refuses to run them on the production certification service.
 
-## What Runs
+## Test Plans
 
 The wrapper starts one wallet server and drives these plans through the official `run-test-plan.py`:
 
@@ -52,7 +52,7 @@ ONLY_SCENARIOS=vp-verifier-final-sdjwt,vci-issuer-preauth \
 
 The `--rerun` selector passes through to the official runner exactly as in the wallet runbook.
 
-## How the Demo Pair Is Served
+## HTTPS Setup
 
 The verifier plans require the `request_uri` and the `response_uri` to be https, and the HAIP issuer metadata checks require an https credential issuer. The wrapper starts the wallet with an https base URL and `--serve-tls`, so the wallet serves that origin itself over TLS with its own certificate (the suite skips certificate verification on outbound calls).
 

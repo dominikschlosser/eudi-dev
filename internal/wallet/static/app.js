@@ -144,33 +144,34 @@
         const formatLabel = formatLabelFor(p);
         const next = p.next_attempt_at ? new Date(p.next_attempt_at) : null;
         const when = next && !isNaN(next) ? next.toLocaleTimeString() : '';
+        const prefix = 'deferred-' + domID(p.id);
         const logoImg = display.logo_uri
-          ? '<img class="credential-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
+          ? '<img class="credential-logo" id="' + prefix + '-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
           : '';
-        const faceHtml = '<div class="card-face">' +
-            '<span class="format-badge format-badge-face">' + formatLabel + '</span>' +
+        const faceHtml = '<div class="card-face" id="' + prefix + '-face">' +
+            '<span class="format-badge format-badge-face" id="' + prefix + '-face-format">' + formatLabel + '</span>' +
             logoImg +
-            '<div class="face-name">' + escHtml(name) + '</div>' +
+            '<div class="face-name" id="' + prefix + '-face-name">' + escHtml(name) + '</div>' +
           '</div>';
-        return '<div class="deferred-item" data-id="' + escHtml(p.id) + '">' +
+        return '<div class="deferred-item" id="' + prefix + '" data-id="' + domID(p.id) + '">' +
           faceHtml +
           '<div class="deferred-body">' +
             '<div class="deferred-item-head">' +
-              '<span class="format-badge format-badge-row">' + formatLabel + '</span>' +
-              '<span class="deferred-name">' + escHtml(name) + '</span>' +
-              '<span class="status-badge deferred-awaiting">Awaiting issuance</span>' +
+              '<span class="format-badge format-badge-row" id="' + prefix + '-format">' + formatLabel + '</span>' +
+              '<span class="deferred-name" id="' + prefix + '-name">' + escHtml(name) + '</span>' +
+              '<span class="status-badge deferred-awaiting" id="' + prefix + '-status">Awaiting issuance</span>' +
             '</div>' +
-            '<div class="deferred-meta deferred-status">' +
+            '<div class="deferred-meta deferred-status" id="' + prefix + '-progress">' +
               '<span class="deferred-spinner" aria-hidden="true"></span>' +
               'The issuer asked the wallet to check back every ' + escHtml(p.interval || '') +
               (when ? '. Next attempt at ' + escHtml(when) : '') +
               (p.attempts ? ' (' + escHtml(p.attempts) + ' so far)' : '') +
             '</div>' +
-            (p.issuer ? '<div class="deferred-meta">' + escHtml(p.issuer) + '</div>' : '') +
-            (p.last_error ? '<div class="deferred-meta deferred-error">' + escHtml(p.last_error) + '</div>' : '') +
+            (p.issuer ? '<div class="deferred-meta" id="' + prefix + '-issuer">' + escHtml(p.issuer) + '</div>' : '') +
+            (p.last_error ? '<div class="deferred-meta deferred-error" id="' + prefix + '-error">' + escHtml(p.last_error) + '</div>' : '') +
             '<div class="deferred-actions">' +
-              '<button class="btn btn-sm deferred-check" data-id="' + escHtml(p.id) + '">Check now</button>' +
-              '<button class="btn btn-sm btn-danger deferred-abandon" data-id="' + escHtml(p.id) + '">Abandon</button>' +
+              '<button class="btn btn-sm deferred-check" id="' + prefix + '-check" data-id="' + domID(p.id) + '">Check now</button>' +
+              '<button class="btn btn-sm btn-danger deferred-abandon" id="' + prefix + '-abandon" data-id="' + domID(p.id) + '">Abandon</button>' +
             '</div>' +
           '</div>' +
         '</div>';
@@ -412,38 +413,39 @@
     }
 
     const display = cred.display || {};
+    const cp = idPrefix + 'credential-' + cred.id + '-';
     const logoImg = display.logo_uri
-      ? '<img class="credential-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
+      ? '<img class="credential-logo" id="' + cp + 'logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
       : '';
     const faceLabel = display.name ? escHtml(display.name) : escHtml(typeLabel);
 
-    const faceHtml = '<div class="card-face">' +
-      '<span class="format-badge format-badge-face">' + formatLabel + '</span>' +
+    const faceHtml = '<div class="card-face" id="' + cp + 'face">' +
+      '<span class="format-badge format-badge-face" id="' + cp + 'face-format">' + formatLabel + '</span>' +
       logoImg +
-      '<div class="face-name">' + faceLabel + '</div>' +
+      '<div class="face-name" id="' + cp + 'face-name">' + faceLabel + '</div>' +
       '</div>';
 
-    const nameHtml = '<span class="credential-name">' + faceLabel + '</span>';
+    const nameHtml = '<span class="credential-name" id="' + cp + 'name">' + faceLabel + '</span>';
 
 
-    const idMeta = '<span class="cred-meta-item cred-m-id"><span class="cred-meta-k">id</span> <span class="mono cred-shortid">#' + escHtml(shortCredentialId(cred.id)) + '</span></span>';
+    const idMeta = '<span class="cred-meta-item cred-m-id"><span class="cred-meta-k" id="' + cp + 'meta-id-key">id</span> <span class="mono cred-shortid" id="' + cp + 'meta-id">#' + escHtml(shortCredentialId(cred.id)) + '</span></span>';
 
     const rel = relativeTime(cred.issued_at);
-    const issuedMeta = rel ? '<span class="cred-meta-item cred-m-iat"><span class="cred-meta-k">iat</span> ' + escHtml(rel) + '</span>' : '';
+    const issuedMeta = rel ? '<span class="cred-meta-item cred-m-iat" id="' + cp + 'meta-iat"><span class="cred-meta-k" id="' + cp + 'meta-iat-key">iat</span> ' + escHtml(rel) + '</span>' : '';
 
     const typeMeta = display.name
-      ? '<span class="cred-meta-item cred-m-type"><span class="cred-meta-k">type</span> <span class="mono">' + escHtml(typeLabel) + '</span></span>'
+      ? '<span class="cred-meta-item cred-m-type"><span class="cred-meta-k" id="' + cp + 'meta-type-key">type</span> <span class="mono" id="' + cp + 'meta-type">' + escHtml(typeLabel) + '</span></span>'
       : '';
 
     let issuerMeta = '';
     if (cred.issuer && cred.issuer.value) {
-      issuerMeta = '<span class="cred-meta-item cred-m-iss"><span class="cred-meta-k">' + escHtml(cred.issuer.kind || 'iss') +
-        '</span> <span class="mono">' + escHtml(cred.issuer.value) + '</span></span>';
+      issuerMeta = '<span class="cred-meta-item cred-m-iss"><span class="cred-meta-k" id="' + cp + 'meta-iss-key">' + escHtml(cred.issuer.kind || 'iss') +
+        '</span> <span class="mono" id="' + cp + 'meta-iss">' + escHtml(cred.issuer.value) + '</span></span>';
     }
 
-    const bodyHtml = '<div class="credential-info">' +
+    const bodyHtml = '<div class="credential-info" id="' + cp + 'info">' +
         '<div class="credential-type cred-hdr">' +
-          '<span class="format-badge format-badge-row">' + formatLabel + '</span>' +
+          '<span class="format-badge format-badge-row" id="' + cp + 'format">' + formatLabel + '</span>' +
           nameHtml +
         '</div>' +
         '<div class="cred-pills">' + protectedBadge + statusBadge + expiryBadge + signatureBadge + keyBindingBadge + '</div>' +
@@ -481,11 +483,13 @@
       if (!face.querySelector('.credential-logo')) {
         const name = display.name || '';
         const initials = credentialInitials(name);
-        const glyph = name && initials
-          ? '<span class="face-init">' + escHtml(initials) + '</span>'
-          : GENERIC_FACE_GLYPH;
         const nameEl = face.querySelector('.face-name');
-        if (nameEl) nameEl.insertAdjacentHTML('beforebegin', glyph);
+        if (nameEl) {
+          nameEl.insertAdjacentHTML('beforebegin', name && initials
+            ? '<span class="face-init">' + escHtml(initials) + '</span>'
+            : GENERIC_FACE_GLYPH);
+          nameEl.previousElementSibling.id = card.id + (name && initials ? '-face-initials' : '-face-glyph');
+        }
       }
     }
 
@@ -532,7 +536,7 @@
       const aboutBtn = hasDesc
         ? '<button class="btn btn-sm about-btn" id="about-' + cred.id + '" data-about="' + cred.id + '" aria-expanded="false" aria-label="Show description">' +
             descIcon('ic-info', '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6h.01"/>') +
-            '<span>About</span>' +
+            '<span id="about-' + cred.id + '-label">About</span>' +
             descIcon('ic-chev', '<path d="M6 9l6 6 6-6"/>') +
           '</button>'
         : '';
@@ -545,11 +549,11 @@
       // The flipped card hides the About button, so phones need a Back control inside the
       // description.
       const descPane = hasDesc
-        ? '<div class="cred-desc"><div class="cred-desc-in">' +
-            '<div class="cred-desc-head"><span class="cred-desc-label">Description</span>' +
-              '<button class="cred-desc-back" data-desc-close="' + cred.id + '" aria-label="Back to card">' +
-                descIcon('', '<path d="M15 18l-6-6 6-6"/>') + '<span>Back</span></button></div>' +
-            '<div class="cred-desc-body">' + linkifyText(cred.display.description) + '</div>' +
+        ? '<div class="cred-desc" id="' + card.id + '-desc"><div class="cred-desc-in">' +
+            '<div class="cred-desc-head"><span class="cred-desc-label" id="' + card.id + '-desc-label">Description</span>' +
+              '<button class="cred-desc-back" id="' + card.id + '-desc-back" data-desc-close="' + cred.id + '" aria-label="Back to card">' +
+                descIcon('', '<path d="M15 18l-6-6 6-6"/>') + '<span id="' + card.id + '-desc-back-label">Back</span></button></div>' +
+            '<div class="cred-desc-body" id="' + card.id + '-desc-body">' + linkifyText(cred.display.description, card.id + '-desc-body') + '</div>' +
           '</div></div>'
         : '';
       card.innerHTML = '<div class="cred-front">' + body.html + actionsHtml + '</div>' + descPane;
@@ -784,7 +788,7 @@
       '<input type="text" class="form-input claim-ns" id="issue-claim-ns-' + idx + '" placeholder="namespace (default: doc type)">' +
       '<input type="text" class="form-input" id="issue-claim-key-' + idx + '" placeholder="claim name">' +
       '<input type="text" class="form-input" id="issue-claim-value-' + idx + '" placeholder="value (text or JSON)">' +
-      '<label class="claim-sd" title="Allow selective disclosure. Uncheck to always disclose this claim."><input type="checkbox" id="issue-claim-sd-' + idx + '" checked> SD</label>' +
+      '<label class="claim-sd" id="issue-claim-sd-label-' + idx + '" title="Allow selective disclosure. Uncheck to always disclose this claim."><input type="checkbox" id="issue-claim-sd-' + idx + '" checked> SD</label>' +
       '<button type="button" class="btn btn-sm" id="issue-claim-remove-' + idx + '" title="Remove claim">&times;</button>';
     row.querySelector('input[id^="issue-claim-ns-"]').value = ns || '';
     row.querySelector('input[id^="issue-claim-key-"]').value = key || '';
@@ -1486,11 +1490,13 @@
 
       const label = document.createElement('span');
       label.className = 'template-row-name';
+      label.id = row.id + '-name';
       label.textContent = tpl.name;
       row.appendChild(label);
 
       const meta = document.createElement('span');
       meta.className = 'template-row-meta';
+      meta.id = row.id + '-meta';
       meta.textContent = (tpl.format || 'any') + (tpl.predefined ? ' · pre-defined' : '');
       row.appendChild(meta);
 
@@ -1601,8 +1607,9 @@
     }
     logEmpty.hidden = true;
 
-    combineRequestLogs(log).reverse().forEach(entry => {
+    combineRequestLogs(log).reverse().forEach((entry, index) => {
       const el = document.createElement('div');
+      el.id = 'log-entry-' + index;
       const view = activityView(entry);
       const hasDetails = view.payload || view.presentations.length > 0 || Object.keys(view.details).length > 0;
       el.className = 'log-entry' + (hasDetails ? ' has-details' : '');
@@ -1616,18 +1623,18 @@
       const warning = entry.severity === 'warning';
       const statusClass = warning ? 'warning' : (entry.success ? 'success' : 'failure');
       const statusLabel = warning ? '⚠ WARN' : (entry.success ? 'OK' : 'FAIL');
-      let html = '<div class="log-header" data-testid="log-entry-toggle">' +
-        '<span class="log-chevron">' + (hasDetails ? '▸' : '') + '</span>' +
-        '<span class="log-time">' + time + '</span>' +
-        '<span class="log-action ' + entry.action + '">' + escHtml(entry.action) + '</span>' +
-        '<span class="log-detail" title="' + escHtml(view.detail) + '">' + escHtml(view.detail) + '</span>' +
-        '<span class="log-status ' + statusClass + '">' + statusLabel + '</span>' +
+      let html = '<div class="log-header" id="' + el.id + '-header" data-testid="log-entry-toggle">' +
+        '<span class="log-chevron" id="' + el.id + '-chevron">' + (hasDetails ? '▸' : '') + '</span>' +
+        '<span class="log-time" id="' + el.id + '-time">' + time + '</span>' +
+        '<span class="log-action ' + entry.action + '" id="' + el.id + '-action">' + escHtml(entry.action) + '</span>' +
+        '<span class="log-detail" id="' + el.id + '-detail" title="' + escHtml(view.detail) + '">' + escHtml(view.detail) + '</span>' +
+        '<span class="log-status ' + statusClass + '" id="' + el.id + '-status">' + statusLabel + '</span>' +
         '</div>';
       if (hasDetails) {
-        html += '<div class="log-details">';
-        if (Object.keys(view.details).length) html += renderLogDetails(view.details);
-        if (view.payload) html += renderLogPayload(view.payload, view.decoderInput, view.presentations, view.credentials);
-        else if (view.presentations.length) html += '<div class="log-payload-controls">' + renderLogPresentations(view.presentations) + '</div>';
+        html += '<div class="log-details" id="' + el.id + '-details">';
+        if (Object.keys(view.details).length) html += renderLogDetails(view.details, el.id);
+        if (view.payload) html += renderLogPayload(view.payload, view.decoderInput, view.presentations, view.credentials, el.id);
+        else if (view.presentations.length) html += '<div class="log-payload-controls" id="' + el.id + '-controls">' + renderLogPresentations(view.presentations, el.id) + '</div>';
         html += '</div>';
       }
       el.innerHTML = html;
@@ -1787,53 +1794,53 @@
     return JSON.stringify(value, null, 2);
   }
 
-  function renderLogPayload(payload, decoderInput, presentations, credentials) {
+  function renderLogPayload(payload, decoderInput, presentations, credentials, idPrefix) {
     const canToggle = payload.encrypted && payload.body != null && payload.wire !== undefined;
     const showWire = payload.encrypted && payload.wire !== undefined;
-    let html = '<section class="log-payload"><div class="log-payload-heading"><div class="log-payload-label">' + escHtml(payload.label) + '</div>';
+    let html = '<section class="log-payload" id="' + idPrefix + '-payload"><div class="log-payload-heading"><div class="log-payload-label" id="' + idPrefix + '-payload-label">' + escHtml(payload.label) + '</div>';
     if (payload.encrypted) {
       const view = showWire ? 'Encrypted view' : (payload.body != null ? 'Decrypted view' : 'Encrypted on wire');
-      html += '<span class="log-payload-view" title="Encrypted on the wire">' + view + '</span>';
+      html += '<span class="log-payload-view" id="' + idPrefix + '-payload-view" title="Encrypted on the wire">' + view + '</span>';
     }
     html += '</div>';
     let controls = '';
-    if (canToggle) controls += '<button type="button" class="btn log-payload-toggle" data-testid="log-payload-toggle" title="Switch the log display between the wire value and plaintext">View decrypted</button>';
-    if (decoderInput) controls += renderLogDecoderLink(decoderInput);
-    if (presentations.length) controls += renderLogPresentations(presentations);
-    for (const credential of credentials) {
+    if (canToggle) controls += '<button type="button" class="btn log-payload-toggle" id="' + idPrefix + '-payload-toggle" data-testid="log-payload-toggle" title="Switch the log display between the wire value and plaintext">View decrypted</button>';
+    if (decoderInput) controls += renderLogDecoderLink(decoderInput, idPrefix + '-decoder-link');
+    if (presentations.length) controls += renderLogPresentations(presentations, idPrefix);
+    credentials.forEach((credential, n) => {
       const label = credentials.length > 1 ? 'Open copy ' + (credential.index + 1) + ' in decoder' : 'Open in decoder';
-      controls += renderLogDecoderLink(credential.token, label, {
+      controls += renderLogDecoderLink(credential.token, idPrefix + '-credential-' + n, label, {
         'credential-index': credential.index,
         ...(credential.id ? { 'credential-id': credential.id } : {}),
       });
-    }
-    if (controls) html += '<div class="log-payload-controls">' + controls + '</div>';
+    });
+    if (controls) html += '<div class="log-payload-controls" id="' + idPrefix + '-controls">' + controls + '</div>';
     const missing = payload.encrypted ? 'Plaintext unavailable' : 'No response body available';
     const value = showWire ? payload.wire : payload.body;
     const body = value == null ? missing : (value === '' ? '(empty body)' : logPayloadText(value));
-    html += '<pre>' + escHtml(body) + '</pre>';
+    html += '<pre id="' + idPrefix + '-payload-body">' + escHtml(body) + '</pre>';
     if (payload.wire !== undefined && !payload.encrypted) {
-      html += '<details class="log-wire"><summary data-testid="log-wire-toggle">Wire value</summary><pre>' + escHtml(logPayloadText(payload.wire)) + '</pre></details>';
+      html += '<details class="log-wire" id="' + idPrefix + '-wire"><summary id="' + idPrefix + '-wire-toggle" data-testid="log-wire-toggle">Wire value</summary><pre id="' + idPrefix + '-wire-body">' + escHtml(logPayloadText(payload.wire)) + '</pre></details>';
     }
     return html + '</section>';
   }
 
-  function renderLogDecoderLink(value, label = 'Open in decoder', attributes = {}) {
+  function renderLogDecoderLink(value, id, label = 'Open in decoder', attributes = {}) {
     const data = Object.entries(attributes).map(([key, val]) => ' data-' + key + '="' + escHtml(String(val)) + '"').join('');
-    return '<a class="btn log-decoder-link" data-testid="log-decoder-link"' + data + ' href="decoder/#credential=' + encodeURIComponent(value) +
+    return '<a class="btn log-decoder-link" id="' + id + '" data-testid="log-decoder-link"' + data + ' href="decoder/#credential=' + encodeURIComponent(value) +
       '" target="_blank" rel="noopener">' + escHtml(label) + '</a>';
   }
 
-  function renderLogPresentations(presentations) {
+  function renderLogPresentations(presentations, idPrefix) {
     let html = '';
-    for (const presentation of presentations) {
+    presentations.forEach((presentation, n) => {
       const label = "Open '" + presentation.queryID + "' in decoder" + (presentation.tokenIndex > 0 ? ' (' + (presentation.tokenIndex + 1) + ')' : '');
-      html += renderLogDecoderLink(presentation.token, label, { 'query-id': presentation.queryID, 'token-index': presentation.tokenIndex });
-    }
+      html += renderLogDecoderLink(presentation.token, idPrefix + '-presentation-' + n, label, { 'query-id': presentation.queryID, 'token-index': presentation.tokenIndex });
+    });
     return html;
   }
 
-  function renderLogDetails(details) {
+  function renderLogDetails(details, idPrefix) {
     const isObj = v => typeof v === 'object' && v !== null;
     const keys = Object.keys(details).sort((a, b) => {
       if (isObj(details[a]) !== isObj(details[b])) return isObj(details[a]) ? 1 : -1;
@@ -1841,16 +1848,17 @@
       if (ia !== -1 || ib !== -1) return (ia === -1 ? logKeyOrder.length : ia) - (ib === -1 ? logKeyOrder.length : ib);
       return a.localeCompare(b);
     });
-    let html = '<div class="log-fields">';
-    for (const key of keys) {
+    let html = '<div class="log-fields" id="' + idPrefix + '-fields">';
+    keys.forEach((key, n) => {
       const val = details[key];
-      html += '<span class="log-key">' + escHtml(key) + '</span>';
+      const field = idPrefix + '-field-' + n;
+      html += '<span class="log-key" id="' + field + '-key">' + escHtml(key) + '</span>';
       if (isObj(val)) {
-        html += '<span class="log-value"><pre>' + escHtml(JSON.stringify(val, null, 2)) + '</pre></span>';
+        html += '<span class="log-value" id="' + field + '-value"><pre id="' + field + '-json">' + escHtml(JSON.stringify(val, null, 2)) + '</pre></span>';
       } else {
-        html += '<span class="log-value">' + escHtml(String(val)) + '</span>';
+        html += '<span class="log-value" id="' + field + '-value">' + escHtml(String(val)) + '</span>';
       }
-    }
+    });
     html += '</div>';
     return html;
   }
@@ -2038,11 +2046,11 @@
     consentRequestOpen = false;
     consentOverlay.classList.add('active');
 
-    var html = '<div class="dialog-title" style="color:var(--danger)">Error</div>' +
-      '<div class="dialog-message">' + escHtml(message) + '</div>';
+    var html = '<div class="dialog-title" id="error-title" style="color:var(--danger)">Error</div>' +
+      '<div class="dialog-message" id="error-message">' + escHtml(message) + '</div>';
 
     if (detail) {
-      html += '<pre class="error-detail">' + escHtml(detail) + '</pre>';
+      html += '<pre class="error-detail" id="error-detail">' + escHtml(detail) + '</pre>';
     }
 
     html += '<div class="consent-buttons">' +
@@ -2091,7 +2099,7 @@
     var titleColor = isSuccess ? 'var(--success, #22c55e)' : 'var(--danger)';
     var titleText = isSuccess ? 'Success' : 'Verifier Error';
 
-    var html = '<div class="dialog-title" style="color:' + titleColor + '">' + titleText + ' (HTTP ' + (result.status_code || '?') + ')</div>';
+    var html = '<div class="dialog-title" id="result-title" style="color:' + titleColor + '">' + titleText + ' (HTTP ' + (result.status_code || '?') + ')</div>';
 
     if (result.error) {
       var errorBody = result.error;
@@ -2099,7 +2107,7 @@
         var parsed = JSON.parse(errorBody);
         errorBody = JSON.stringify(parsed, null, 2);
       } catch (e) { /* Keep values that cannot be decoded unchanged. */ }
-      html += '<pre class="error-detail">' + escHtml(errorBody) + '</pre>';
+      html += '<pre class="error-detail" id="result-detail">' + escHtml(errorBody) + '</pre>';
     }
 
     html += '<div class="consent-buttons">' +
@@ -2120,36 +2128,37 @@
     const fmt = cred.format ? formatLabelFor(cred) : '';
     const typeLabel = cred.vct || cred.doctype || cred.id;
     const display = cred.display || {};
+    const prefix = 'offer-credential-' + domID(cred.id);
     const logoImg = display.logo_uri
-      ? '<img class="credential-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
+      ? '<img class="credential-logo" id="' + prefix + '-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
       : '';
-    const faceBadge = fmt ? '<span class="format-badge format-badge-face">' + fmt + '</span>' : '';
-    const rowBadge = fmt ? '<span class="format-badge format-badge-row">' + fmt + '</span>' : '';
+    const faceBadge = fmt ? '<span class="format-badge format-badge-face" id="' + prefix + '-face-format">' + fmt + '</span>' : '';
+    const rowBadge = fmt ? '<span class="format-badge format-badge-row" id="' + prefix + '-format">' + fmt + '</span>' : '';
     const faceName = cred.name || typeLabel;
-    const nameHtml = '<span class="credential-name">' + escHtml(faceName) + '</span>';
+    const nameHtml = '<span class="credential-name" id="' + prefix + '-name">' + escHtml(faceName) + '</span>';
     const typeMeta = cred.name
-      ? '<div class="cred-meta"><span class="cred-meta-item"><span class="cred-meta-k">type</span> <span class="mono">' + escHtml(typeLabel) + '</span></span></div>'
+      ? '<div class="cred-meta"><span class="cred-meta-item"><span class="cred-meta-k" id="' + prefix + '-meta-type-key">type</span> <span class="mono" id="' + prefix + '-meta-type">' + escHtml(typeLabel) + '</span></span></div>'
       : '';
     const card = '<div class="credential-card">' +
-        '<div class="card-face">' + faceBadge + logoImg + '<div class="face-name">' + escHtml(faceName) + '</div></div>' +
-        '<div class="credential-info">' +
+        '<div class="card-face" id="' + prefix + '-face">' + faceBadge + logoImg + '<div class="face-name" id="' + prefix + '-face-name">' + escHtml(faceName) + '</div></div>' +
+        '<div class="credential-info" id="' + prefix + '-info">' +
           '<div class="credential-type cred-hdr">' + rowBadge + nameHtml + '</div>' +
           typeMeta +
           (cred.description
-            ? '<div class="offer-description" id="offer-description-' + registrarDomID(cred.id) + '">' + linkifyText(cred.description) + '</div>' +
-              '<button type="button" class="link-btn offer-description-toggle" id="offer-description-' + registrarDomID(cred.id) + '-toggle" aria-expanded="false">More</button>'
+            ? '<div class="offer-description" id="offer-description-' + domID(cred.id) + '">' + linkifyText(cred.description, 'offer-description-' + domID(cred.id)) + '</div>' +
+              '<button type="button" class="link-btn offer-description-toggle" id="offer-description-' + domID(cred.id) + '-toggle" aria-expanded="false">More</button>'
             : '') +
         '</div>' +
       '</div>';
     let claims = '';
     if (cred.claims && cred.claims.length > 0) {
-      claims = '<div class="cl-hd">↗ You will receive<span class="cl-count">' + cred.claims.length +
+      claims = '<div class="cl-hd" id="' + prefix + '-claims-title">↗ You will receive<span class="cl-count" id="' + prefix + '-claims-count">' + cred.claims.length +
           ' claim' + (cred.claims.length === 1 ? '' : 's') + '</span></div>' +
-        '<div class="consent-claims offer-claims">' + cred.claims.map(claim =>
-          '<div class="consent-claim"><span class="consent-claim-name mono">' + escHtml(claim).replace(/\./g, '.<wbr>') + '</span></div>'
+        '<div class="consent-claims offer-claims" id="' + prefix + '-claims">' + cred.claims.map((claim, i) =>
+          '<div class="consent-claim"><span class="consent-claim-name mono" id="' + prefix + '-claim-' + i + '">' + escHtml(claim).replace(/\./g, '.<wbr>') + '</span></div>'
         ).join('') + '</div>';
     }
-    return '<div class="consent-credential" data-config-id="' + escHtml(cred.id) + '">' + card + claims + '</div>';
+    return '<div class="consent-credential" id="' + prefix + '" data-config-id="' + domID(cred.id) + '">' + card + claims + '</div>';
   }
 
   // A long issuer description stays at two lines until the user opens it.
@@ -2169,9 +2178,9 @@
     const facts = [];
     if (details.grant) facts.push(['Flow', details.grant]);
     if (facts.length > 0) {
-      html += '<div class="offer-facts" id="offer-facts">' + facts.map(([k, v]) =>
-        '<div><span class="offer-fact-name">' + escHtml(k) + '</span>' +
-        '<span class="offer-fact-value">' + escHtml(v) + '</span></div>'
+      html += '<div class="offer-facts" id="offer-facts">' + facts.map(([k, v], i) =>
+        '<div id="offer-fact-' + i + '"><span class="offer-fact-name" id="offer-fact-' + i + '-name">' + escHtml(k) + '</span>' +
+        '<span class="offer-fact-value" id="offer-fact-' + i + '-value">' + escHtml(v) + '</span></div>'
       ).join('') + '</div>';
     }
 
@@ -2179,8 +2188,8 @@
     // offer.
     if (details.tx_code) {
       const numeric = details.tx_code_input_mode !== 'text';
-      html += '<div class="offer-tx-code">' +
-        '<label for="offer-tx-code-input">Transaction code</label>' +
+      html += '<div class="offer-tx-code" id="offer-tx-code">' +
+        '<label for="offer-tx-code-input" id="offer-tx-code-label">Transaction code</label>' +
         '<input type="text" id="offer-tx-code-input" autocomplete="one-time-code"' +
         (numeric ? ' inputmode="numeric" pattern="[0-9]*"' : '') +
         (details.tx_code_length ? ' maxlength="' + escHtml(details.tx_code_length) + '"' : '') +
@@ -2199,9 +2208,9 @@
 
     const credentials = details.credentials || [];
     if (credentials.length === 0) {
-      (req.offer_configs || []).forEach(cfg => {
-        html += '<div class="consent-credential"><div class="consent-credential-header">' +
-          '<span style="font-size:12px;font-weight:600;">' + escHtml(cfg) + '</span>' +
+      (req.offer_configs || []).forEach((cfg, i) => {
+        html += '<div class="consent-credential" id="offer-config-' + i + '"><div class="consent-credential-header">' +
+          '<span id="offer-config-' + i + '-name" style="font-size:12px;font-weight:600;">' + escHtml(cfg) + '</span>' +
           '</div></div>';
       });
       return html;
@@ -2308,7 +2317,7 @@
       const q = queryById(qid);
       if (!q.multiple || q.candidates.length < 2) return '';
       const sent = activeCandidates(qid).length;
-      return '<div class="consent-multiple-note" id="consent-multiple-' + escHtml(qid) + '">' +
+      return '<div class="consent-multiple-note" id="consent-multiple-' + domID(qid) + '">' +
         'The verifier accepts several credentials here. Sending ' + sent + ' of ' + q.candidates.length + ' matching credentials.</div>';
     }
     // Debug mode offers every claim_sets option satisfied by the picked
@@ -2348,10 +2357,10 @@
       const optionsHtml = sets.map((set, i) =>
         '<option value="' + set.index + '"' + (set.index === current ? ' selected' : '') + '>' +
           (i === 0 ? 'auto: ' : '') + escHtml(set.keys.join(', ')) + '</option>').join('');
-      return '<div class="consent-claim-set" id="consent-claim-set-row-' + escHtml(qid) + '">' +
-        '<label class="consent-purpose-label" for="consent-claim-set-' + escHtml(qid) + '">Claim set for ' + escHtml(qid) + '</label>' +
-        '<select class="form-input" id="consent-claim-set-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '">' + optionsHtml + '</select>' +
-        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">By default the wallet sends the first matching claim set. Debug mode lets you pick another.</div>' +
+      return '<div class="consent-claim-set" id="consent-claim-set-row-' + domID(qid) + '">' +
+        '<label class="consent-purpose-label" id="consent-claim-set-' + domID(qid) + '-label" for="consent-claim-set-' + domID(qid) + '">Claim set for ' + escHtml(qid) + '</label>' +
+        '<select class="form-input" id="consent-claim-set-' + domID(qid) + '" data-query="' + escHtml(qid) + '">' + optionsHtml + '</select>' +
+        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + domID(qid) + '">By default the wallet sends the first matching claim set. Debug mode lets you pick another.</div>' +
       '</div>';
     }
     function isAutoSelection() {
@@ -2395,7 +2404,7 @@
         name = d.issuer_name || '';
         cid = d.issuer || req.client_id || '';
         if (d.issuer_logo) {
-          logoHtml = '<img class="who-logo" src="' + escHtml(d.issuer_logo) + '" alt="' + escHtml((name || 'Issuer') + ' logo') + '">';
+          logoHtml = '<img class="who-logo" id="consent-who-logo" src="' + escHtml(d.issuer_logo) + '" alt="' + escHtml((name || 'Issuer') + ' logo') + '">';
         }
       } else {
         name = req.client_name || '';
@@ -2403,20 +2412,20 @@
         const auth = req.client_auth;
         if (auth) {
           chip = auth.signed
-            ? '<span class="who-chip who-ok" title="Signature matches the supplied key. Signer trust is unchecked.">✓ Signed</span>'
-            : '<span class="who-chip who-bad" title="' + escHtml(auth.detail || 'Unsigned request. The sender cannot be authenticated. Anyone can send requests to a shared demo.') + '">✗ Not authenticated</span>';
+            ? '<span class="who-chip who-ok" id="consent-who-auth" title="Signature matches the supplied key. Signer trust is unchecked.">✓ Signed</span>'
+            : '<span class="who-chip who-bad" id="consent-who-auth" title="' + escHtml(auth.detail || 'Unsigned request. The sender cannot be authenticated. Anyone can send requests to a shared demo.') + '">✗ Not authenticated</span>';
         }
       }
-      const idLine = '<span class="mono">' + escHtml(cid) + '</span>';
+      const idLine = '<span class="mono" id="consent-who-id">' + escHtml(cid) + '</span>';
       let nameHtml, sub;
       if (name) {
-        nameHtml = '<span class="who-name">' + escHtml(name) + '</span>';
+        nameHtml = '<span class="who-name" id="consent-who-name">' + escHtml(name) + '</span>';
         sub = '<div class="who-cid" id="offer-issuer-origin">' + idLine + '</div>';
       } else {
         nameHtml = '<span class="who-name mono" id="offer-issuer-origin">' + escHtml(cid) + '</span>';
         sub = '';
       }
-      return '<div class="who">' + logoHtml + '<div class="who-text"><div class="who-nm">' + nameHtml + chip + '</div>' + sub + '</div></div>';
+      return '<div class="who" id="consent-who">' + logoHtml + '<div class="who-text"><div class="who-nm">' + nameHtml + chip + '</div>' + sub + '</div></div>';
     }
 
     // Debug mode continues after failed checks. They stay one collapsed line
@@ -2433,7 +2442,7 @@
     }
 
     function headerHtml() {
-      let html = '<div class="consent-title">' + (isIssuance ? 'Credential Offer' : 'Presentation Request') + '</div>' +
+      let html = '<div class="consent-title" id="consent-title">' + (isIssuance ? 'Credential Offer' : 'Presentation Request') + '</div>' +
         whoBlock() + findingsBlock();
 
       // Verifier purposes come from registration certificates in verifier_info (OpenID4VP
@@ -2458,8 +2467,8 @@
 
     // Allow required claims to be unchecked so developers can test verifier behavior.
     // Keep warnings visible without hover because touch screens have no hover state.
-    function warnMarker(hint) {
-      return '<span class="consent-claim-hint"><span class="consent-claim-warn" aria-hidden="true">⚠</span>' + escHtml(hint) + '</span>';
+    function warnMarker(hint, id) {
+      return '<span class="consent-claim-hint" id="' + id + '-hint"><span class="consent-claim-warn" id="' + id + '-warn" aria-hidden="true">⚠</span>' + escHtml(hint) + '</span>';
     }
 
     function claimChecklist(credID, claims, kept, emptyArrays, missing) {
@@ -2469,36 +2478,39 @@
       const missingList = missing || [];
       const total = keys.length + missingList.length;
       let rows = '';
-      keys.forEach(key => {
+      const prefix = 'consent-credential-' + credID;
+      keys.forEach((key, i) => {
         // Selecting an array without its selectively disclosable elements reveals an empty
         // array.
         const empty = empties.includes(key);
         const val = empty ? '[]'
           : (typeof claims[key] === 'object' ? JSON.stringify(claims[key]) : String(claims[key]));
-        const warn = empty ? warnMarker('Empty array disclosed. Use a null or index path for the values.') : '';
+        const row = prefix + '-claim-' + i;
+        const warn = empty ? warnMarker('Empty array disclosed. Use a null or index path for the values.', row) : '';
         const checked = kept ? kept.includes(key) : true;
-        rows += '<label class="consent-claim">' +
-          '<input type="checkbox"' + (checked ? ' checked' : '') + ' data-cred="' + credID + '" data-claim="' + escHtml(key) + '">' +
-          '<span class="consent-claim-name mono">' + escHtml(key) + '</span>' +
-          '<span class="consent-claim-value mono">' + escHtml(val) + '</span>' + warn +
+        rows += '<label class="consent-claim" id="' + row + '">' +
+          '<input type="checkbox" id="' + row + '-input"' + (checked ? ' checked' : '') + ' data-cred="' + credID + '" data-claim="' + escHtml(key) + '">' +
+          '<span class="consent-claim-name mono" id="' + row + '-name">' + escHtml(key) + '</span>' +
+          '<span class="consent-claim-value mono" id="' + row + '-value">' + escHtml(val) + '</span>' + warn +
         '</label>';
       });
       // Debug mode includes missing claims so the mismatch remains visible.
-      missingList.forEach(path => {
-        rows += '<div class="consent-claim consent-claim-missing">' +
-          '<input type="checkbox" disabled aria-hidden="true">' +
-          '<span class="consent-claim-name mono">' + escHtml(path) + '</span>' +
-          '<span class="consent-claim-value mono">(not disclosed)</span>' +
-          warnMarker('Not provided by the selected credential.') +
+      missingList.forEach((path, i) => {
+        const row = prefix + '-missing-' + i;
+        rows += '<div class="consent-claim consent-claim-missing" id="' + row + '">' +
+          '<input type="checkbox" id="' + row + '-input" disabled aria-hidden="true">' +
+          '<span class="consent-claim-name mono" id="' + row + '-name">' + escHtml(path) + '</span>' +
+          '<span class="consent-claim-value mono" id="' + row + '-value">(not disclosed)</span>' +
+          warnMarker('Not provided by the selected credential.', row) +
         '</div>';
       });
       if (total === 0) {
-        return '<div class="cl-hd">↗ Shared with the verifier<span class="cl-count">no fields</span></div>' +
+        return '<div class="cl-hd" id="' + prefix + '-claims-title">↗ Shared with the verifier<span class="cl-count" id="' + prefix + '-claims-count">no fields</span></div>' +
           '<div class="consent-claims-empty" id="consent-claims-empty-' + credID + '">None of the requested claims is in this credential. Only its always-disclosed claims are sent.</div>';
       }
-      return '<div class="cl-hd">↗ Shared with the verifier<span class="cl-count">' +
+      return '<div class="cl-hd" id="' + prefix + '-claims-title">↗ Shared with the verifier<span class="cl-count" id="' + prefix + '-claims-count">' +
           shared + ' of ' + total + ' field' + (total === 1 ? '' : 's') + '</span></div>' +
-        '<div class="consent-claims">' + rows + '</div>';
+        '<div class="consent-claims" id="' + prefix + '-claims">' + rows + '</div>';
     }
 
     // Match details contain only requested claims. Use them until full credential details
@@ -2513,7 +2525,7 @@
       const claimSet = options ? chosenClaimSet(mc) : null;
       return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
         '<div class="credential-card' + (cred.batch ? ' batch' : '') + '">' + body.html + '</div>' +
-        untrustedAuthorityNote(mc) + unboundNote(mc) + mismatchNote(mc, 'consent-mismatch-' + mc.query_id + '-' + mc.credential_id) +
+        untrustedAuthorityNote(mc, 'consent-untrusted-' + mc.credential_id) + unboundNote(mc) + mismatchNote(mc, 'consent-mismatch-' + mc.query_id + '-' + mc.credential_id) +
         (claimSet
           ? claimChecklist(mc.credential_id, claimSet.claims, kept, null, null)
           : claimChecklist(mc.credential_id, mc.claims, kept, mc.empty_array_claims, mc.missing_claims)) +
@@ -2522,9 +2534,9 @@
 
     // Debug mode offers credentials that fail trusted_authorities. Explain the mismatch
     // before consent.
-    function untrustedAuthorityNote(mc) {
+    function untrustedAuthorityNote(mc, id) {
       if (!mc || !mc.untrusted_authority) return '';
-      return '<div class="consent-untrusted" role="note">⚠ Could not match this issuer to the verifier\'s trusted authorities. ' +
+      return '<div class="consent-untrusted" role="note" id="' + domID(id) + '">⚠ Could not match this issuer to the verifier\'s trusted authorities. ' +
         'This credential is allowed ' +
         'because debug mode ignores that restriction.</div>';
     }
@@ -2533,7 +2545,7 @@
     // requires it (OpenID4VP 1.0 §6.1).
     function unboundNote(mc) {
       if (!mc || !mc.unbound) return '';
-      return '<div class="consent-untrusted" role="note" id="consent-unbound-' + escHtml(mc.credential_id) + '">⚠ This credential has no holder binding, which the query requires. ' +
+      return '<div class="consent-untrusted" role="note" id="consent-unbound-' + domID(mc.credential_id) + '">⚠ This credential has no holder binding, which the query requires. ' +
         'Debug mode sends it anyway.</div>';
     }
 
@@ -2542,13 +2554,13 @@
     // reason so the expected verifier error is clear.
     function mismatchNote(mc, id) {
       if (!mc || !mc.mismatches || mc.mismatches.length === 0) return '';
-      return '<div class="consent-mismatch" role="note" id="' + escHtml(id) + '">' +
-        '<span class="consent-mismatch-title" id="' + escHtml(id) + '-title">⚠ Does not match the query. Debug mode sends it anyway.</span>' +
-        '<ul>' + mc.mismatches.map((r, i) => '<li id="' + escHtml(id) + '-reason-' + i + '">' + escHtml(r) + '</li>').join('') + '</ul></div>';
+      return '<div class="consent-mismatch" role="note" id="' + domID(id) + '">' +
+        '<span class="consent-mismatch-title" id="' + domID(id) + '-title">⚠ Does not match the query. Debug mode sends it anyway.</span>' +
+        '<ul>' + mc.mismatches.map((r, i) => '<li id="' + domID(id) + '-reason-' + i + '">' + escHtml(r) + '</li>').join('') + '</ul></div>';
     }
     function unansweredNote(qid) {
-      return '<div class="consent-unanswered" role="note" id="consent-unanswered-' + escHtml(qid) + '">' +
-        'No credential matches <span class="query-chip">' + escHtml(qid) + '</span>. ' +
+      return '<div class="consent-unanswered" role="note" id="consent-unanswered-' + domID(qid) + '">' +
+        'No credential matches <span class="query-chip" id="consent-unanswered-' + domID(qid) + '-query">' + escHtml(qid) + '</span>. ' +
         'Debug mode can send a non-matching one. Choose it under Edit.</div>';
     }
     function candidateRowHtml(qid, c, i, multi) {
@@ -2558,50 +2570,51 @@
       const detail = candidateDetails.get(c.credential_id);
       const body = credentialCardBody(detail || {
         id: c.credential_id, format: c.format, vct: c.vct, doctype: c.doctype, claims: c.claims,
-      }, 'candidate-');
-      return '<div class="candidate' + (picked ? ' selected' : '') + (nonMatching ? ' nonmatching' : '') + '" id="consent-candidate-' + escHtml(qid) + '-' + c.credential_id + '" data-query="' + escHtml(qid) + '" data-cred="' + c.credential_id + '"' + (nonMatching ? ' data-non-matching="true"' : '') + ' tabindex="0" role="' + (multi ? 'checkbox' : 'radio') + '" aria-checked="' + picked + '" aria-label="' + escHtml(c.vct || c.doctype || c.format) + '">' +
+      }, 'candidate-' + escHtml(qid) + '-');
+      const rowID = 'consent-candidate-' + escHtml(qid) + '-' + c.credential_id;
+      return '<div class="candidate' + (picked ? ' selected' : '') + (nonMatching ? ' nonmatching' : '') + '" id="consent-candidate-' + domID(qid) + '-' + c.credential_id + '" data-query="' + escHtml(qid) + '" data-cred="' + c.credential_id + '"' + (nonMatching ? ' data-non-matching="true"' : '') + ' tabindex="0" role="' + (multi ? 'checkbox' : 'radio') + '" aria-checked="' + picked + '" aria-label="' + escHtml(c.vct || c.doctype || c.format) + '">' +
         '<div class="candidate-row">' +
-          '<input type="' + (multi ? 'checkbox' : 'radio') + '" name="consent-pick-' + escHtml(qid) + '"' + (picked ? ' checked' : '') + ' tabindex="-1" aria-hidden="true">' +
+          '<input type="' + (multi ? 'checkbox' : 'radio') + '" id="' + rowID + '-input" name="consent-pick-' + escHtml(qid) + '"' + (picked ? ' checked' : '') + ' tabindex="-1" aria-hidden="true">' +
           '<div class="credential-card' + (detail && detail.batch ? ' batch' : '') + '">' + body.html + '</div>' +
           '<div class="candidate-actions">' +
-            (!nonMatching && (multi || i === 0) ? '<span class="auto-chip">auto</span>' : '') +
-            (nonMatching ? '<span class="mismatch-chip" id="consent-mismatch-chip-' + escHtml(qid) + '-' + c.credential_id + '">no match</span>' : '') +
+            (!nonMatching && (multi || i === 0) ? '<span class="auto-chip" id="' + rowID + '-auto">auto</span>' : '') +
+            (nonMatching ? '<span class="mismatch-chip" id="consent-mismatch-chip-' + domID(qid) + '-' + c.credential_id + '">no match</span>' : '') +
             // Open decoding in another tab to preserve pending consent.
-            '<a class="btn btn-sm candidate-decode" id="consent-decode-' + escHtml(qid) + '-' + c.credential_id + '"' +
+            '<a class="btn btn-sm candidate-decode" id="consent-decode-' + domID(qid) + '-' + c.credential_id + '"' +
               ' href="decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
               ' title="Open in decoder">Show</a>' +
           '</div>' +
-        '</div>' + untrustedAuthorityNote(c) + unboundNote(c) +
+        '</div>' + untrustedAuthorityNote(c, rowID + '-untrusted') + unboundNote(c) +
         mismatchNote(c, 'consent-mismatch-' + qid + '-' + c.credential_id) + '</div>';
     }
 
     function editScreenHtml() {
       let html = headerHtml() +
-        '<div class="consent-selection-row">Selection' +
+        '<div class="consent-selection-row" id="consent-selection-edit-row">Selection' +
         (isAutoSelection() ? '' : '<button class="link-btn" id="consent-selection-reset">reset to auto</button>') +
         '<button class="btn" id="consent-selection-done">Done</button></div>';
 
       (options.sets || []).forEach((set, i) => {
         if (set.options.length === 1 && !set.optional) return;
-        html += '<div class="consent-sets" id="consent-set-' + i + '" data-set="' + i + '"><span class="consent-section-label">The verifier accepts one of</span>';
+        html += '<div class="consent-sets" id="consent-set-' + i + '" data-set="' + i + '"><span class="consent-section-label" id="consent-set-' + i + '-label">The verifier accepts one of</span>';
         set.options.forEach((opt, j) => {
-          html += '<label class="consent-set-option">' +
+          html += '<label class="consent-set-option" id="consent-set-' + i + '-option-' + j + '-label">' +
             '<input type="radio" id="consent-set-' + i + '-option-' + j + '" name="consent-set-' + i + '" value="' + j + '"' + (selection.setChoices[i] === j ? ' checked' : '') + '>' +
-            opt.map(id => '<span class="query-chip">' + escHtml(id) + '</span>').join(' + ') +
+            opt.map((id, k) => '<span class="query-chip" id="consent-set-' + i + '-option-' + j + '-query-' + k + '">' + escHtml(id) + '</span>').join(' + ') +
             ((set.unmatched || []).includes(j)
               ? ' <span class="mismatch-chip" id="consent-set-' + i + '-option-' + j + '-nomatch">no match</span>'
-              : (j === 0 ? ' <span class="auto-chip">auto</span>' : '')) +
+              : (j === 0 ? ' <span class="auto-chip" id="consent-set-' + i + '-option-' + j + '-auto">auto</span>' : '')) +
           '</label>';
         });
         if (set.optional) {
           // A presentation needs at least one credential, so the last selected set cannot
           // be skipped.
           const othersAnswered = selection.setChoices.some((c, j) => j !== i && c !== -1);
-          html += '<label class="consent-set-option">' +
+          html += '<label class="consent-set-option" id="consent-set-' + i + '-none-label">' +
             '<input type="radio" id="consent-set-' + i + '-none" name="consent-set-' + i + '" value="-1"' +
             (selection.setChoices[i] === -1 ? ' checked' : '') +
             (othersAnswered ? '' : ' disabled') +
-            '><span class="query-chip">none</span></label>';
+            '><span class="query-chip" id="consent-set-' + i + '-none-query">none</span></label>';
         }
         html += '</div>';
       });
@@ -2610,11 +2623,11 @@
         const q = queryById(qid);
         // A query that sets multiple accepts any number of its candidates, at least one.
         const multi = !!q.multiple;
-        html += '<div class="consent-credential" id="consent-query-' + escHtml(qid) + '" data-query-id="' + escHtml(qid) + '"' +
+        html += '<div class="consent-credential" id="consent-query-' + domID(qid) + '" data-query-id="' + domID(qid) + '"' +
           (multi ? ' data-multiple="true" role="group" aria-label="Credentials answering ' : ' role="radiogroup" aria-label="Credential answering ') + escHtml(qid) + '">' +
-          '<div class="consent-credential-header">' +
-            '<span class="query-id-label">' + escHtml(qid) + '</span>' +
-            '<span class="candidate-count">' + (q.candidates.length === 0 ? 'no credential matches' : q.candidates.length +
+          '<div class="consent-credential-header" id="consent-query-' + domID(qid) + '-header">' +
+            '<span class="query-id-label" id="consent-query-' + domID(qid) + '-label">' + escHtml(qid) + '</span>' +
+            '<span class="candidate-count" id="consent-query-' + domID(qid) + '-count">' + (q.candidates.length === 0 ? 'no credential matches' : q.candidates.length +
               (q.candidates.length === 1 ? ' credential matches' : ' of your credentials match')) +
               (multi ? ' · send one or more' : '') + '</span>' +
           '</div>';
@@ -2625,10 +2638,10 @@
           const forced = others.some(c => selection.picks[qid].includes(c.credential_id)) || q.candidates.length === 0;
           const open = forced || selection.showNonMatching[qid];
           if (forced) {
-            html += '<div class="consent-nonmatching-label" id="consent-nonmatching-label-' + escHtml(qid) + '">' +
+            html += '<div class="consent-nonmatching-label" id="consent-nonmatching-label-' + domID(qid) + '">' +
               others.length + (others.length === 1 ? ' credential does not match' : ' credentials do not match') + '</div>';
           } else {
-            html += '<button type="button" class="link-btn consent-nonmatching-toggle" id="consent-show-nonmatching-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '" aria-expanded="' + open + '">' +
+            html += '<button type="button" class="link-btn consent-nonmatching-toggle" id="consent-show-nonmatching-' + domID(qid) + '" data-query="' + escHtml(qid) + '" aria-expanded="' + open + '">' +
               (open ? 'Hide ' : 'Show ') + nonMatchingLabel(others.length) + '</button>';
           }
           if (open) others.forEach((c, i) => { html += candidateRowHtml(qid, c, i, multi); });
@@ -2942,11 +2955,18 @@
       .replace(/'/g, '&#39;');
   }
 
+  // domID turns a value into an element id. Ids built from data hold only
+  // these characters, so an id can't carry markup after the DOM decodes it.
+  function domID(value) {
+    return String(value).replace(/[^A-Za-z0-9_-]/g, '_');
+  }
+
   // Escape descriptions and link only HTTP or HTTPS URLs. Escape href values to prevent
   // injected attributes.
-  function linkifyText(s) {
+  function linkifyText(s, idPrefix) {
+    let n = 0;
     return escHtml(s).replace(/https?:\/\/[^\s<>"']+/g, function (url) {
-      return '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
+      return '<a href="' + url + '" id="' + idPrefix + '-link-' + (n++) + '" target="_blank" rel="noopener">' + url + '</a>';
     });
   }
 
@@ -2958,7 +2978,9 @@
     const open = async () => {
       const resp = await fetch('api/news');
       if (!resp.ok) return;
-      document.getElementById('news-content').innerHTML = (await resp.json()).html;
+      const content = document.getElementById('news-content');
+      content.innerHTML = (await resp.json()).html;
+      content.querySelectorAll('*').forEach((el, i) => { if (!el.id) el.id = 'news-content-' + i; });
       newsOverlay.classList.add('active');
       try { localStorage.setItem('news-seen', id); } catch (e) { /* Storage may be unavailable in private browsing. */ }
     };
@@ -2976,10 +2998,8 @@
   });
 
   let demoMode = false;
-  // The wallet derives the registrations of its built-in parties from its
-  // templates and overwrites changes, so the list offers no edits for them.
-  // On the public demo their certificates are locked too (protectedParties).
-  let builtInParties = new Set();
+  // protectedParties are the registrations visitors of the public demo can't
+  // change.
   let protectedParties = new Set();
   // Wait for configuration before deciding to open consent automatically. Demo mode uses
   // different ownership rules.
@@ -3010,7 +3030,6 @@
         document.getElementById('tls-row').hidden = true;
       }
       demoMode = !!(config.demo && config.demo.enabled);
-      builtInParties = new Set(config.built_in_relying_parties || []);
       protectedParties = new Set(config.protected_relying_parties || []);
       document.getElementById('sponsor-info').hidden = !demoMode;
       renderAutoAccept(!!config.auto_accept);
@@ -3208,10 +3227,7 @@
     return m + ' minutes';
   }
 
-  // The trust dialog shows each published list with the providers added to
-  // it, then the external lists and the CAs of their operators.
   const TRUSTED_LIST_CA = 'trusted-list-ca';
-  const trustDomID = value => String(value).replace(/[^A-Za-z0-9_-]/g, '-');
   let trustEntityLists = [];
 
   function trustRemoveButton(id, label, data) {
@@ -3222,9 +3238,10 @@
     button.title = 'Remove';
     button.setAttribute('aria-label', 'Remove ' + label);
     button.innerHTML = '&times;';
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const path = data.entity ? 'api/trust/entities/' + encodeURIComponent(data.entity) : 'api/trust/lists?url=' + encodeURIComponent(data.list);
-      changeTrust('DELETE', path, null, document.getElementById('trust-error'));
+      await changeTrust('DELETE', path, null, document.getElementById('trust-error'));
+      document.getElementById('trust-title').focus();
     });
     return button;
   }
@@ -3235,7 +3252,7 @@
     list.id = id;
     entities.forEach(e => {
       const item = document.createElement('li');
-      item.id = 'trust-entity-' + trustDomID(e.id);
+      item.id = 'trust-entity-' + domID(e.id);
       const name = document.createElement('span');
       name.id = item.id + '-name';
       name.textContent = e.name;
@@ -3282,12 +3299,12 @@
       return detail;
     };
     [...groups.keys()].sort().forEach(category => {
-      const detail = group(category, trustDomID(category.toLowerCase()));
+      const detail = group(category, domID(category.toLowerCase()));
       groups.get(category).forEach(entry => {
         const url = entry.advertised_url || entry.url ||
           (entry.path ? window.location.origin + entry.path : '');
         if (!url) return;
-        const prefix = 'trust-list-' + trustDomID(entry.id || 'list');
+        const prefix = 'trust-list-' + domID(entry.id || 'list');
         const links = document.createElement('span');
         links.className = 'trust-links';
         links.id = prefix;
@@ -3403,7 +3420,7 @@
   }
   document.getElementById('trust-add-provider').addEventListener('click', () => {
     const select = document.getElementById('trust-entity-list');
-    select.innerHTML = trustEntityLists.map(id => '<option value="' + escHtml(id) + '" id="trust-entity-list-' + trustDomID(id) + '">' +
+    select.innerHTML = trustEntityLists.map(id => '<option value="' + escHtml(id) + '" id="trust-entity-list-' + domID(id) + '">' +
       escHtml(id === TRUSTED_LIST_CA ? TRUSTED_LIST_CA + ' (CA of a list operator, for external lists)' : id) + '</option>').join('');
     openTrustPopup(trustProviderOverlay, 'trust-entity-list');
   });
@@ -3437,9 +3454,11 @@
     document.getElementById('trust-error').textContent = '';
     loadTrustLists();
     trustOverlay.classList.add('active');
+    document.getElementById('trust-title').focus();
   });
   document.getElementById('trust-close').addEventListener('click', () => {
     trustOverlay.classList.remove('active');
+    document.getElementById('trust-link').focus();
   });
 
   const registrarValue = id => document.getElementById(id).value.trim();
@@ -3467,7 +3486,6 @@
 
   // Element IDs contain the registrar identifier, so tests can find a party by
   // the identifier from the API response.
-  const registrarDomID = value => String(value).replace(/[^A-Za-z0-9_-]/g, '_');
 
   // A service provider counts as a verifier even before it has intended uses.
   function relyingPartyRoles(rp) {
@@ -3510,15 +3528,14 @@
     const type = registeredCredentialType(credential);
     const claims = registeredClaims(credential).join(', ');
     const count = (credential.claims || []).length;
-    const head = '<span class="registrar-credential-type">' + escHtml(type) + '</span>' +
-      '<span class="registrar-credential-meta">' + escHtml(credential.format || '') +
+    const head = '<span class="registrar-credential-type" id="' + id + '-type">' + escHtml(type) + '</span>' +
+      '<span class="registrar-credential-meta" id="' + id + '-meta">' + escHtml(credential.format || '') +
       (count > 0 ? ' · ' + count + (count === 1 ? ' claim' : ' claims') : '') + '</span>';
     if (count === 0) return '<li id="' + id + '">' + head + '</li>';
-    return '<li id="' + id + '"><details><summary>' + head + '</summary>' +
+    return '<li id="' + id + '"><details id="' + id + '-details"><summary id="' + id + '-summary">' + head + '</summary>' +
       '<div class="registrar-credential-claims" id="' + id + '-claims">' + escHtml(claims) + '</div></details></li>';
   }
 
-  // A list of more than four credentials shows three and a button for the rest.
   function registeredCredentialList(credentials, listID, itemID) {
     return '<ul class="registrar-use-credentials" id="' + listID + '">' +
       credentials.map((c, i) => registeredCredentialItem(c, itemID + '-' + i)).join('') +
@@ -3631,7 +3648,7 @@
   }
 
   function providerRow(identifier, prefix, service) {
-    const servicePrefix = prefix + '-service-' + registrarDomID(service.serviceIdentifier || 'default');
+    const servicePrefix = prefix + '-service-' + domID(service.serviceIdentifier || 'default');
     const status = providerStatus(identifier, service.serviceIdentifier || '');
     const issuerInfo = storedInfo(identifier, s => !s.intendedUse && (s.service || '') === (service.serviceIdentifier || ''), 'issuerInfo');
     const entitlements = (service.entitlements || []).map(entitlementLabel).filter(Boolean);
@@ -3648,9 +3665,8 @@
       (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-revoke" title="' +
         (status === 'revoked' ? 'Makes the certificate valid.' : 'Revokes the certificate on the status list.') +
         '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
-      (builtInParties.has(identifier) ? '' :
-        '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-edit">Edit attestation types</button>' +
-        '<button type="button" class="btn btn-danger btn-sm" id="' + servicePrefix + '-delete" title="Removes it from the registration and revokes it.">Delete</button>') +
+      '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-edit">Edit attestation types</button>' +
+      '<button type="button" class="btn btn-danger btn-sm" id="' + servicePrefix + '-delete" title="Removes it from the registration and revokes it.">Delete</button>' +
     '</span>';
     row.innerHTML =
       '<div class="registrar-use-kind" id="' + servicePrefix + '-kind" title="Lists the attestation types this issuer may issue (ETSI TS 119 475). The issuer publishes it in issuer_info.">Issuer registration certificate</div>' +
@@ -3663,7 +3679,7 @@
       (issuerInfo === undefined ? '' :
         '<div class="registrar-use-result" id="' + servicePrefix + '-result">' +
           '<div class="registrar-result-head" id="' + servicePrefix + '-result-head">' +
-            '<label class="consent-purpose-label" for="' + servicePrefix + '-issuer-info">issuer_info</label>' +
+            '<label class="consent-purpose-label" id="' + servicePrefix + '-issuer-info-label" for="' + servicePrefix + '-issuer-info">issuer_info</label>' +
             '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-copy">Copy</button>' +
           '</div>' +
           '<textarea class="form-input form-textarea" id="' + servicePrefix + '-issuer-info" readonly></textarea>' +
@@ -3705,7 +3721,7 @@
 
   // useRow shows one intended use with its certificate and actions.
   function useRow(identifier, prefix, service, use) {
-    const usePrefix = prefix + '-use-' + registrarDomID(use.intendedUseIdentifier);
+    const usePrefix = prefix + '-use-' + domID(use.intendedUseIdentifier);
     const status = intendedUseStatus(identifier, use.intendedUseIdentifier);
     const [badgeClass, badgeText, badgeTitle] = USE_STATUS_BADGES[status];
     const verifierInfo = storedInfo(identifier, s => s.intendedUse === use.intendedUseIdentifier, 'verifierInfo');
@@ -3727,7 +3743,7 @@
           (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + usePrefix + '-revoke" title="' +
             (status === 'revoked' ? 'Makes the certificate valid.' : 'Revokes the certificate on the status list.') +
             '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
-          (builtInParties.has(identifier) ? '' : '<button type="button" class="btn btn-danger btn-sm" id="' + usePrefix + '-delete" title="Removes the intended use from the registration and revokes its certificates.">Delete</button>') +
+          '<button type="button" class="btn btn-danger btn-sm" id="' + usePrefix + '-delete" title="Removes the intended use from the registration and revokes its certificates.">Delete</button>' +
         '</span>') +
       '</div>' +
       '<div class="cred-pills registrar-pills" id="' + usePrefix + '-pills">' +
@@ -3737,7 +3753,7 @@
       (verifierInfo === undefined ? '' :
         '<div class="registrar-use-result" id="' + usePrefix + '-result">' +
           '<div class="registrar-result-head" id="' + usePrefix + '-result-head">' +
-            '<label class="consent-purpose-label" for="' + usePrefix + '-verifier-info">verifier_info</label>' +
+            '<label class="consent-purpose-label" id="' + usePrefix + '-verifier-info-label" for="' + usePrefix + '-verifier-info">verifier_info</label>' +
             '<button type="button" class="btn btn-sm" id="' + usePrefix + '-copy">Copy</button>' +
           '</div>' +
           '<textarea class="form-input form-textarea" id="' + usePrefix + '-verifier-info" readonly></textarea>' +
@@ -3768,8 +3784,6 @@
     return row;
   }
 
-  // The list shows one line for each certificate. Its details and actions
-  // open in their own dialog, so the list stays short.
   const registrarCertOverlay = document.getElementById('registrar-cert-overlay');
   let registrarDetail = null;
   const providerEntitlements = () => new Set(categories.map(c => c.entitlement).filter(Boolean));
@@ -3796,7 +3810,7 @@
         registrarCertOverlay.classList.remove('active');
         registrarPartiesOverlay.classList.add('active');
       }
-      registrarFocusID = 'registrar-party-' + registrarDomID(detail.identifier) + '-add-use';
+      registrarFocusID = 'registrar-party-' + domID(detail.identifier) + '-add-use';
     });
   }
 
@@ -3811,7 +3825,7 @@
       '<span class="status-badge ' + badgeClass + '" id="' + rowPrefix + '-summary-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>' +
       '<span class="registrar-cert-actions">' +
         '<button type="button" class="btn btn-sm" id="' + rowPrefix + '-details">Details</button>' +
-        (builtInParties.has(detail.identifier) ? '' : '<button type="button" class="btn btn-danger btn-sm" id="' + rowPrefix + '-summary-delete" title="Removes it from the registration and revokes it.">Delete</button>') +
+        (protectedParties.has(detail.identifier) ? '' : '<button type="button" class="btn btn-danger btn-sm" id="' + rowPrefix + '-summary-delete" title="Removes it from the registration and revokes it.">Delete</button>') +
       '</span>';
     const removeButton = line.querySelector('#' + rowPrefix + '-summary-delete');
     if (removeButton) removeButton.addEventListener('click', () => removeRegistrationCertificate(removeButton, detail));
@@ -3831,7 +3845,7 @@
     body.innerHTML = '';
     const entry = registrarEntries.find(e => ((e.rp.identifier || [])[0] || {}).identifier === registrarDetail.identifier);
     const rp = entry && entry.rp;
-    const prefix = 'registrar-party-' + registrarDomID(registrarDetail.identifier);
+    const prefix = 'registrar-party-' + domID(registrarDetail.identifier);
     let row = null;
     (rp ? rp.services || [] : []).forEach(service => {
       if (registrarDetail.use) {
@@ -3865,8 +3879,8 @@
     const shown = matching.slice(registrarPage * REGISTRAR_PAGE_SIZE, (registrarPage + 1) * REGISTRAR_PAGE_SIZE);
     shown.forEach(({ rp }) => {
       const identifier = (rp.identifier || [])[0] ? rp.identifier[0].identifier : '';
-      const prefix = 'registrar-party-' + registrarDomID(identifier);
-      const locked = builtInParties.has(identifier);
+      const prefix = 'registrar-party-' + domID(identifier);
+      const locked = protectedParties.has(identifier);
       const card = document.createElement('div');
       card.className = 'registrar-party';
       card.id = prefix;
@@ -3882,24 +3896,21 @@
           relyingPartyRoles(rp).map(role =>
             '<span class="status-badge status-role-' + role + '" id="' + prefix + '-role-' + role + '">' +
             (role === 'verifier' ? 'Verifier' : 'Issuer') + '</span>').join('') +
-          (locked ? '<span class="status-badge status-none" id="' + prefix + '-protected" title="' +
-            (protectedParties.has(identifier) ? 'Visitors of the public demo share this registration and can\'t change it.' : 'The wallet registers it from its templates and overwrites changes to it. Its certificates can be issued and revoked.') +
-            '">' + LOCK_SVG + 'Pre-registered</span>' : '') +
+          (locked ? '<span class="status-badge status-none" id="' + prefix + '-protected" title="Visitors of the public demo share this registration and can\'t change it.">' + LOCK_SVG + 'Pre-registered</span>' : '') +
           '<code class="registrar-party-identifier" id="' + prefix + '-identifier">' + escHtml(identifier) + '</code>' +
         '</div>';
-      // An issuer's card lists its issuer certificate first, then its
-      // intended uses. Both belong to one registration (CIR (EU) 2025/848 Annex I).
+      // Both roles belong to one registration (CIR (EU) 2025/848 Annex I).
       const services = rp.services || [];
       services.filter(service => (service.providesAttestations || []).length > 0).forEach(service => {
         const entitlements = (service.entitlements || []).map(entitlementLabel).filter(Boolean);
-        card.appendChild(certSummary(prefix + '-service-' + registrarDomID(service.serviceIdentifier || 'default'), 'Issuer registration certificate',
+        card.appendChild(certSummary(prefix + '-service-' + domID(service.serviceIdentifier || 'default'), 'Issuer registration certificate',
           entitlements.join(', ') || 'Attestation provider',
           PROVIDER_STATUS_BADGES[providerStatus(identifier, service.serviceIdentifier || '')],
           { identifier: identifier, service: service.serviceIdentifier || '' }));
       });
       services.forEach(service => {
         (service.intendedUses || []).forEach(use => {
-          const usePrefix = prefix + '-use-' + registrarDomID(use.intendedUseIdentifier);
+          const usePrefix = prefix + '-use-' + domID(use.intendedUseIdentifier);
           card.appendChild(certSummary(usePrefix, 'Verifier registration certificate',
             ((use.purpose || [])[0] || {}).content || use.intendedUseIdentifier,
             USE_STATUS_BADGES[intendedUseStatus(identifier, use.intendedUseIdentifier)],
@@ -4152,16 +4163,15 @@
     const targetName = registrarTarget ? (registrarTarget.tradeName || registrarTarget.identifier[0].identifier) : '';
     const addsIssuer = !!registrarTarget && registrarMode === 'issuer';
     const targetIssues = !!registrarTarget && !addsIssuer && relyingPartyRoles(registrarTarget).includes('issuer');
-    if (registrarTarget) document.getElementById('registrar-purpose').value = targetIssues ? 'Identity check before issuance' : '';
-    if (targetIssues) {
-      registrarCredentials.innerHTML = '';
-      addRegistrarCredential('dc+sd-jwt', 'urn:eudi:pid:1', 'given_name, family_name');
-    }
-    if (registrarEditService) {
-      registrarAttestations.innerHTML = '';
-      (registrarEditService.providesAttestations || []).forEach(a => addRegistrarAttestation(a.format, a.type));
-      document.getElementById('registrar-entitlement').value = '';
-    }
+    // Every open fills the purpose, credentials and attestation types for
+    // what it opens, so nothing of an earlier open carries over.
+    document.getElementById('registrar-purpose').value = !registrarTarget ? 'Age check before checkout' : targetIssues ? 'Identity check before issuance' : '';
+    registrarCredentials.innerHTML = '';
+    addRegistrarCredential('dc+sd-jwt', 'urn:eudi:pid:1', targetIssues ? 'given_name, family_name' : 'age_equal_or_over.18');
+    registrarAttestations.innerHTML = '';
+    const attestations = registrarEditService ? (registrarEditService.providesAttestations || []) : [{ format: 'dc+sd-jwt', type: 'urn:example:diploma:1' }];
+    attestations.forEach(a => addRegistrarAttestation(a.format, a.type));
+    document.getElementById('registrar-entitlement').value = '';
     const targetHint = document.getElementById('registrar-target-hint');
     targetHint.hidden = !registrarTarget;
     targetHint.textContent = registrarEditService
@@ -4235,7 +4245,6 @@
     credentialPlaceholders(row);
     registrarCredentials.appendChild(row);
   }
-  addRegistrarCredential('dc+sd-jwt', 'urn:eudi:pid:1', 'age_equal_or_over.18');
   function firstCredentialTypeField() {
     const field = registrarCredentials.querySelector('[data-field="type"]');
     if (field) return field;
@@ -4268,7 +4277,6 @@
     credentialPlaceholders(row);
     registrarAttestations.appendChild(row);
   }
-  addRegistrarAttestation('dc+sd-jwt', 'urn:example:diploma:1');
   document.getElementById('registrar-add-attestation').addEventListener('click', () => {
     addRegistrarAttestation('dc+sd-jwt', '');
     registrarAttestations.lastElementChild.querySelector('[data-field="type"]').focus();
@@ -4652,12 +4660,12 @@
       const row = document.createElement('div');
       row.className = 'catalog-filter-row';
       row.id = 'registrar-catalog-filter-' + group;
-      row.innerHTML = '<span class="catalog-filter-label">' + label + '</span>';
+      row.innerHTML = '<span class="catalog-filter-label" id="' + row.id + '-label">' + label + '</span>';
       shown.forEach(([value, text]) => {
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.className = 'filter-chip';
-        chip.id = 'registrar-catalog-filter-' + group + '-' + registrarDomID(value);
+        chip.id = 'registrar-catalog-filter-' + group + '-' + domID(value);
         chip.textContent = text;
         chip.setAttribute('aria-pressed', String(catalogFilters[group].has(value)));
         chip.addEventListener('click', () => {
@@ -4693,7 +4701,7 @@
     catalogList.innerHTML = '';
     matching.forEach(entry => {
       const schema = entry.schema || {};
-      const prefix = 'registrar-catalog-entry-' + registrarDomID(schema.id);
+      const prefix = 'registrar-catalog-entry-' + domID(schema.id);
       const trust = (schema.trustedAuthorities || [])[0];
       const card = document.createElement('div');
       card.className = 'registrar-party';
@@ -4868,7 +4876,7 @@
       await loadCatalogEntries();
       catalogSearch.value = '';
       renderCatalog();
-      const card = document.getElementById('registrar-catalog-entry-' + registrarDomID(added.schema.id));
+      const card = document.getElementById('registrar-catalog-entry-' + domID(added.schema.id));
       if (card) {
         card.scrollIntoView({ block: 'nearest' });
         (card.querySelector('button') || document.getElementById('registrar-catalog-title')).focus();

@@ -476,3 +476,13 @@ func convertCBORValue(v any) any {
 		return v
 	}
 }
+
+// StatusClaims returns the status of the MSO in the shape of a JWT status
+// claim, {"status": {"status_list": ...}}, or nil without one (ISO 18013-5
+// with the Token Status List draft §6.3).
+func (d *Document) StatusClaims() map[string]any {
+	if d == nil || d.IssuerAuth == nil || d.IssuerAuth.MSO == nil || d.IssuerAuth.MSO.Status == nil {
+		return nil
+	}
+	return map[string]any{"status": d.IssuerAuth.MSO.Status}
+}

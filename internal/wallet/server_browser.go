@@ -205,16 +205,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 
 		matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
 
-		if result.SelectedClaims != nil {
-			for i, m := range matches {
-				if selectedKeys, ok := result.SelectedClaims[m.CredentialID]; ok {
-					matches[i].SelectedKeys = selectedKeys
-					cred, _ := reqServer.wallet.GetCredential(m.CredentialID)
-					matches[i].Claims = filterClaims(cred, selectedKeys)
-					reqServer.log("    - %s: disclosing %v", shortID(m.CredentialID), selectedKeys)
-				}
-			}
-		}
+		matches = reqServer.wallet.applySelectedClaims(matches, result.SelectedClaims)
 
 		submission := reqServer.writeBrowserPresentationResult(w, authReq, protocol, matches)
 		consentReq.SubmissionCh <- submission

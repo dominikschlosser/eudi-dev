@@ -18,6 +18,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -111,7 +112,7 @@ func TestOnlyCurrentIssuanceServicesAreAnchors(t *testing.T) {
 		{ServiceType: "http://uri.etsi.org/19602/SvcType/PubEAA/Issuance", ServiceStatus: "http://uri.etsi.org/19602/PubEAAProvidersList/SvcStatus/withdrawn", Certificates: []trustlist.CertInfo{cert("withdrawn")}},
 		{ServiceType: "http://uri.etsi.org/19602/SvcType/PubEAA/Revocation", Certificates: []trustlist.CertInfo{cert("revocation")}},
 	}}}}
-	if got := serviceAnchors(list, issuanceServices); len(got) != 1 || got[0].Subject != "notified" {
+	if got := trustlist.ServiceCertificates(list, trustlist.IssuanceServices); len(got) != 1 || got[0].Subject != "notified" {
 		t.Errorf("anchors %+v, want the notified issuance service", got)
 	}
 }
@@ -339,5 +340,22 @@ func TestAFailedListIsReusedForAMinute(t *testing.T) {
 	}
 	if got := fetches.Load(); got != 1 {
 		t.Errorf("fetched %d times, want once", got)
+	}
+}
+
+// Any visitor can name a list URL, so the list cache stays bounded.
+func TestTheTrustedListCacheIsBounded(t *testing.T) {
+	w := generateTestWallet(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		_, _ = rw.Write([]byte("list"))
+	}))
+	defer srv.Close()
+	for i := range maxCachedLists + 5 {
+		if _, err := w.rawTrustedList(fmt.Sprintf("%s/list-%d", srv.URL, i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := len(w.listCache); n > maxCachedLists {
+		t.Errorf("cached lists = %d, want at most %d", n, maxCachedLists)
 	}
 }

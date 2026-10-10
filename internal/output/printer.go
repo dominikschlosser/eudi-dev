@@ -900,7 +900,7 @@ func PrintAuthorizationRequest(req *oid4vc.AuthorizationRequest, opts Options) {
 
 func BuildTrustListJSON(tl *trustlist.TrustList) map[string]any {
 	out := map[string]any{
-		"format": "trustlist",
+		"format": "trusted-list",
 		"header": tl.Header,
 	}
 	if tl.SchemeInfo != nil {

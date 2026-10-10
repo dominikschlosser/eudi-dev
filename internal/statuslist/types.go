@@ -102,6 +102,10 @@ type CheckOptions struct {
 	// signature is still verified: "Relying Parties MUST reject JWTs with an
 	// invalid signature" (§5.1).
 	TrustListCerts []TrustCert
+	// CandidateAnchors anchor the token when its chain verifies to one of
+	// them, such as the CA of a local wallet. Otherwise the key comes from the
+	// token, as without TrustListCerts.
+	CandidateAnchors []TrustCert
 
 	// Keys are public keys resolved out of band. Section 11.3 leaves key
 	// resolution to the ecosystem, so a caller can supply the Status Issuer's key

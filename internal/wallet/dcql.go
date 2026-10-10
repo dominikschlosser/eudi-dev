@@ -1603,9 +1603,11 @@ func parseTrustListAnchors(tlRaw string) ([]trustlist.CertInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing the trusted list: %w", err)
 	}
-	certs := trustlist.ExtractPublicKeys(tl)
+	// The issuance services anchor credentials (ETSI TS 119 602 V1.1.1 Table
+	// D.3).
+	certs := trustlist.ServiceCertificates(tl, trustlist.IssuanceServices)
 	if len(certs) == 0 {
-		return nil, fmt.Errorf("the trusted list contains no certificates")
+		return nil, fmt.Errorf("the trusted list names no issuance service")
 	}
 	return certs, nil
 }

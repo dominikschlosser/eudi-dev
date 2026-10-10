@@ -4,7 +4,7 @@ Developers use this tool to check whether issuers, verifiers and wallets follow 
 
 Conformance takes priority over features and convenience. Before each change, confirm what the specification requires. After the change, verify the result against it.
 
-## What checking means
+## Checking
 
 Read the published document. A summary or a claim in the surrounding code does not count.
 

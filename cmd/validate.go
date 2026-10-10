@@ -30,6 +30,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
 var (
@@ -103,7 +104,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		pubKeys = append(pubKeys, key)
 	}
 
-	var tlCerts []trustlist.CertInfo
+	// The issuance services of a trusted list anchor credentials, its
+	// revocation services their status lists (ETSI TS 119 602 V1.1.1 Table
+	// D.3).
+	var tlCerts, statusCerts []trustlist.CertInfo
 	if trustListFile != "" {
 		tlRaw, err := format.ReadInput(trustListFile)
 		if err != nil {
@@ -113,10 +117,21 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("parsing trusted list: %w", err)
 		}
-		tlCerts = trustlist.ExtractPublicKeys(tl)
+		tlCerts = trustlist.ServiceCertificates(tl, trustlist.IssuanceServices)
+		statusCerts = trustlist.ServiceCertificates(tl, trustlist.RevocationServices)
 		for _, ci := range tlCerts {
 			pubKeys = append(pubKeys, ci.PublicKey)
 		}
+	}
+
+	// Without a supplied key or trusted list, the trusted list of the
+	// credential's catalogue entry is the trust source. Its revocation
+	// services anchor the status list when they sign it.
+	anchoring, catalogued := catalogueAnchoring(raw)
+	var statusCandidates []trustlist.CertInfo
+	if keyFile == "" && trustListFile == "" && anchoring.AnchoredBy != "" {
+		tlCerts = trustlist.CertInfos(anchoring.IssuanceAnchors)
+		statusCandidates = trustlist.CertInfos(anchoring.StatusAnchors)
 	}
 
 	detected := format.Detect(raw)
@@ -167,10 +182,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		reportCatalogueTrust(raw, report)
+		reportCatalogueTrust(anchoring, catalogued, report)
 
 		if statusListFlag {
-			if err := checkStatus(token.ResolvedClaims, statuslist.FormatJWT, tlCerts, report); err != nil {
+			if err := checkStatus(token.ResolvedClaims, statuslist.FormatJWT, statusCerts, statusCandidates, report); err != nil {
 				return err
 			}
 		}
@@ -221,7 +236,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 
 		if statusListFlag {
-			if err := checkStatus(token.ResolvedClaims, statuslist.FormatJWT, tlCerts, report); err != nil {
+			if err := checkStatus(token.ResolvedClaims, statuslist.FormatJWT, statusCerts, statusCandidates, report); err != nil {
 				return err
 			}
 		}
@@ -279,12 +294,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		reportCatalogueTrust(raw, report)
+		reportCatalogueTrust(anchoring, catalogued, report)
 
 		// ExtractStatusRef expects {"status": {"status_list": ...}} and
 		// MSO.Status is the inner map.
-		if statusListFlag && doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil && doc.IssuerAuth.MSO.Status != nil {
-			if err := checkStatus(map[string]any{"status": doc.IssuerAuth.MSO.Status}, statuslist.FormatCWT, tlCerts, report); err != nil {
+		if statusListFlag && doc.StatusClaims() != nil {
+			if err := checkStatus(doc.StatusClaims(), statuslist.FormatCWT, statusCerts, statusCandidates, report); err != nil {
 				return err
 			}
 		}
@@ -296,19 +311,23 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// reportCatalogueTrust validates the credential with the trusted lists of its
-// entry in the wallet's attestation catalogue. The result is informational, so
-// it leaves the exit code alone. Without a wallet there is no catalogue, and
-// validate creates none.
-func reportCatalogueTrust(raw string, report jsonReport) {
+// catalogueAnchoring validates the credential with the trusted lists of its
+// entry in the wallet's attestation catalogue. Without a wallet there is no
+// catalogue, and validate creates none.
+func catalogueAnchoring(raw string) (wallet.CatalogueAnchoring, bool) {
 	if store, err := openStore(); err != nil || !store.Exists() {
-		return
+		return wallet.CatalogueAnchoring{}, false
 	}
 	w, _, err := loadWallet()
 	if err != nil {
-		return
+		return wallet.CatalogueAnchoring{}, false
 	}
-	anchoring, found := w.CheckCatalogueAnchoring(raw)
+	return w.CheckCatalogueAnchoring(raw)
+}
+
+// reportCatalogueTrust reports the catalogue result. It is informational and
+// leaves the exit code alone.
+func reportCatalogueTrust(anchoring wallet.CatalogueAnchoring, found bool, report jsonReport) {
 	if !found {
 		return
 	}
@@ -353,7 +372,7 @@ func verifyWithBestKey[T any](pubKeys []crypto.PublicKey, x5cKey crypto.PublicKe
 	return best
 }
 
-func checkStatus(claims map[string]any, prefer string, tlCerts []trustlist.CertInfo, report jsonReport) error {
+func checkStatus(claims map[string]any, prefer string, tlCerts, candidates []trustlist.CertInfo, report jsonReport) error {
 	ref := statuslist.ExtractStatusRef(claims)
 	if ref == nil {
 		return nil
@@ -364,9 +383,10 @@ func checkStatus(claims map[string]any, prefer string, tlCerts []trustlist.CertI
 
 	checkOpts := statuslist.CheckOptions{Prefer: prefer}
 	for _, ci := range tlCerts {
-		if len(ci.Raw) > 0 {
-			checkOpts.TrustListCerts = append(checkOpts.TrustListCerts, statuslist.TrustCert{Raw: ci.Raw})
-		}
+		checkOpts.TrustListCerts = append(checkOpts.TrustListCerts, statuslist.TrustCert{Raw: ci.Raw})
+	}
+	for _, ci := range candidates {
+		checkOpts.CandidateAnchors = append(checkOpts.CandidateAnchors, statuslist.TrustCert{Raw: ci.Raw})
 	}
 
 	// Every failed section 8.3 step returns an error, so a printed status is

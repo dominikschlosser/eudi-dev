@@ -305,44 +305,6 @@ func TestRenewalKeepsBatchMembership(t *testing.T) {
 	}
 }
 
-func TestPresentationCloneAdvancesRotationOnTheRealWallet(t *testing.T) {
-	w := generateTestWallet(t)
-	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}
-	storeTestBatch(t, w, keys)
-
-	// Auto-accept and ISO-transcript presentations run on a clone. The rotation
-	// still advances on the real wallet because that one gets saved.
-	clone, err := cloneWalletForPresentation(w, presentationRequestOptions{AutoAccept: true})
-	if err != nil {
-		t.Fatalf("cloning for presentation: %v", err)
-	}
-	matches := clone.EvaluateDCQL(batchTestQuery())
-	if len(matches) != 1 {
-		t.Fatalf("a batch should match once, got %d", len(matches))
-	}
-	if _, err := clone.CreateVPTokenMap(matches, PresentationParams{Nonce: "n", ClientID: "https://verifier.example"}); err != nil {
-		t.Fatalf("presenting on the clone: %v", err)
-	}
-
-	presentedID := matches[0].CredentialID
-	found := false
-	for _, c := range w.GetCredentials() {
-		if c.ID != presentedID {
-			continue
-		}
-		found = true
-		if c.Uses != 1 {
-			t.Fatalf("the real wallet copy shows %d uses, want 1: the clone did not carry the rotation back", c.Uses)
-		}
-	}
-	if !found {
-		t.Fatalf("the presented copy %s is not on the real wallet", presentedID)
-	}
-	if !w.takeBatchStateDirty() {
-		t.Fatal("the real wallet was not marked for saving after the clone presented a copy")
-	}
-}
-
 func TestBatchCopyHolderBindingReadsAsHeld(t *testing.T) {
 	w := generateTestWallet(t)
 	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}

@@ -363,6 +363,16 @@ func resolveKeys(certs []*x509.Certificate, embedded []crypto.PublicKey, named s
 		}, nil
 	}
 
+	if len(opts.CandidateAnchors) > 0 && len(certs) > 0 {
+		if leaf, err := verifyChain(certs, opts.CandidateAnchors); err == nil {
+			return &keyCandidates{
+				keys:     []crypto.PublicKey{leaf.PublicKey},
+				info:     fmt.Sprintf("x5c chain valid, signed by %s", leaf.Subject.CommonName),
+				anchored: true,
+			}, nil
+		}
+	}
+
 	if len(certs) > 0 {
 		return &keyCandidates{
 			keys:    []crypto.PublicKey{certs[0].PublicKey},

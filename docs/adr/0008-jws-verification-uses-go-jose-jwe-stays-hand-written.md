@@ -2,7 +2,7 @@
 
 All JWS verification uses `jws.Verify`, a wrapper around go-jose. Each caller passes the allowed algorithms when parsing, so the token cannot choose them. This gives `sdjwt`, `statuslist`, `wallet` and `demorp` the same signature checks.
 
-## Why go-jose cannot do the JWE
+## go-jose and the JWE
 
 When go-jose encrypts, it derives the ECDH-ES key with empty `apu` and `apv` (`DeriveECDHES(algID, []byte{}, []byte{}, ...)` in its key generator). It has no option to set them. ISO 18013-7 Annex B requires the mdoc generated nonce in `apu` and the request nonce in `apv`. This wallet sends both for mdoc presentations. With go-jose, the header would carry the nonces but the key would come from empty values. The verifier could not decrypt any of these presentations.
 

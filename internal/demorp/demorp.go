@@ -41,7 +41,7 @@ const (
 	// entryTTL is how long offers, tokens and verification requests stay valid.
 	entryTTL = 10 * time.Minute
 	// maxEntries caps each state map. Anonymous visitors could otherwise grow
-	// memory without limit between TTL sweeps.
+	// memory without limit between TTL sweeps (see makeRoom).
 	maxEntries   = 500
 	maxBodyBytes = 64 << 10
 )
@@ -62,7 +62,7 @@ type DemoRP struct {
 
 	mu       sync.Mutex
 	offers   map[string]*offerState
-	tokens   map[string]*offerState
+	tokens   map[string]*tokenState
 	requests map[string]*requestState
 	// authRequests holds pushed authorization requests by request_uri. codes
 	// holds the codes issued from them after the user signs in.
@@ -86,7 +86,7 @@ func New(w *wallet.Wallet, baseURL func() string) *DemoRP {
 		wallet:       w,
 		baseURL:      func() string { return strings.TrimRight(baseURL(), "/") },
 		offers:       make(map[string]*offerState),
-		tokens:       make(map[string]*offerState),
+		tokens:       make(map[string]*tokenState),
 		requests:     make(map[string]*requestState),
 		authRequests: make(map[string]*authRequestState),
 		codes:        make(map[string]*authRequestState),
@@ -237,4 +237,19 @@ func writeJSON(w http.ResponseWriter, status int, doc any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(doc)
+}
+
+// makeRoom evicts the entries that expire first until a state map has room
+// for one more. Visitors share the maps, so a full map must not lock out
+// everyone else.
+func makeRoom[V any](m map[string]V, expires func(V) time.Time) {
+	for len(m) >= maxEntries {
+		first, at := "", time.Time{}
+		for key, value := range m {
+			if e := expires(value); first == "" || e.Before(at) {
+				first, at = key, e
+			}
+		}
+		delete(m, first)
+	}
 }

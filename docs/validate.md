@@ -38,7 +38,7 @@ eudi validate credential.txt
 
 When a credential carries a status reference, `validate` fetches the Status List Token and reads the entry. It accepts both `application/statuslist+jwt` and `application/statuslist+cwt`.
 
-The token's signature is always verified. If the check cannot complete, validation fails with an error. The signing key is trusted through `--trusted-list` when the token's certificate chain ends in one of its CAs. Otherwise the key comes from the token itself (`x5c` / `x5chain`, or a header `jwk`) and the output notes that the key is unanchored. The token's `sub` must equal the `uri` in the credential's status claim. `typ`, `iat` and `exp` are checked too.
+The token's signature is always verified. If the check cannot complete, validation fails with an error. The revocation services of a trusted list anchor the token (ETSI TS 119 602 V1.1.1 Table D.3). With `--trusted-list`, the token's chain must end in one of them. Without it, the list of the credential's catalogue entry anchors the token when its chain ends there. Otherwise the key comes from the token itself (`x5c` / `x5chain`, or a header `jwk`) and the output notes that the key is unanchored. The token's `sub` must equal the `uri` in the credential's status claim. `typ`, `iat` and `exp` are checked too.
 
 The status is reported by name (VALID, INVALID, SUSPENDED, an application specific value, or unknown) with the raw value. For multi-bit lists, the full value is reported.
 
@@ -46,14 +46,14 @@ The status is reported by name (VALID, INVALID, SUSPENDED, an application specif
 
 When a trusted list is given and the credential contains an x5c (SD-JWT/JWT) or x5chain (mdoc) chain, the chain is validated against the trusted list before the signature is verified:
 
-1. The trusted list contains **CA certificates** (trust anchors)
+1. The issuance services of the trusted list hold the **CA certificates** (trust anchors)
 2. The credential's x5c/x5chain contains `[leaf, ...intermediates]`
 3. The leaf certificate is verified to chain up to a trusted list CA via any intermediates
 4. The leaf certificate's public key is used to verify the credential signature
 
 Wallet-issued SD-JWT credentials follow the same model. The header contains a deterministic `kid` and an `x5c` chain with the leaf and any intermediate certificates (without the root). The wallet trusted list publishes signing certificates and their provider CAs. The wallet also publishes JWT VC issuer metadata at `/.well-known/jwt-vc-issuer`.
 
-The web decoder (`eudi serve` and the wallet's embedded decoder) also uses the local wallet's CA as an implicit trust anchor when no key or trusted list is given.
+Without a key or a trusted list, `validate` and the web decoder use the trusted list of the credential's catalogue entry. Its issuance service anchors the credential, and its revocation service the status list.
 
 ## Catalogue trust
 

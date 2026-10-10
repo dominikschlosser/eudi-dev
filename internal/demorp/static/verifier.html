@@ -130,13 +130,13 @@
 <body>
   <div class="card">
     <div class="page-header">
-      <img src="../logo.svg" alt="" class="page-logo">
+      <img src="../logo.svg" alt="" class="page-logo" id="header-logo">
       <div>
-        <h1>EUDI Test Demo Verifier</h1>
-        <div class="subtitle" style="margin-bottom:0">A minimal OpenID4VP verifier for demo purposes</div>
+        <h1 id="header-title">EUDI Test Demo Verifier</h1>
+        <div class="subtitle" id="header-subtitle" style="margin-bottom:0">A minimal OpenID4VP verifier for demo purposes</div>
       </div>
     </div>
-    <p>
+    <p id="intro">
       This verifier asks for a presentation over OpenID4VP, following HAIP 1.0: a
       signed request object behind <code>request_uri</code>, an
       <code>x509_hash</code> client id, <code>dcql_query</code> and
@@ -144,67 +144,67 @@
       response: issuer signature, revocation, key binding, <code>sd_hash</code>,
       nonce and audience.
     </p>
-    <div class="format-row">
-      <span class="format-label">Credential</span>
+    <div class="format-row" id="credential-row">
+      <span class="format-label" id="credential-label">Credential</span>
       <div class="toggle" id="credential-toggle" role="radiogroup" aria-label="Credential to request">
-        <button type="button" class="toggle-option selected" data-credential="ticket" role="radio" aria-checked="true">Demo ticket</button>
-        <button type="button" class="toggle-option" data-credential="pid" role="radio" aria-checked="false">PID</button>
-        <button type="button" class="toggle-option" data-credential="pid-de" role="radio" aria-checked="false">German PID</button>
-        <button type="button" class="toggle-option" data-credential="pid-ticket" role="radio" aria-checked="false">Demo ticket + PID</button>
-        <button type="button" class="toggle-option" data-credential="custom" role="radio" aria-checked="false">Custom</button>
+        <button type="button" class="toggle-option selected" id="credential-ticket" data-credential="ticket" role="radio" aria-checked="true">Demo ticket</button>
+        <button type="button" class="toggle-option" id="credential-pid" data-credential="pid" role="radio" aria-checked="false">PID</button>
+        <button type="button" class="toggle-option" id="credential-pid-de" data-credential="pid-de" role="radio" aria-checked="false">German PID</button>
+        <button type="button" class="toggle-option" id="credential-pid-ticket" data-credential="pid-ticket" role="radio" aria-checked="false">Demo ticket + PID</button>
+        <button type="button" class="toggle-option" id="credential-custom" data-credential="custom" role="radio" aria-checked="false">Custom</button>
       </div>
     </div>
     <div class="format-row" id="format-row" hidden>
-      <span class="format-label">PID format</span>
+      <span class="format-label" id="format-label">PID format</span>
       <div class="toggle" id="format-toggle" role="radiogroup" aria-label="Requested PID format">
-        <button type="button" class="toggle-option selected" data-format="both" role="radio" aria-checked="true">Both</button>
-        <button type="button" class="toggle-option" data-format="sd-jwt" role="radio" aria-checked="false">SD-JWT</button>
-        <button type="button" class="toggle-option" data-format="mdoc" role="radio" aria-checked="false">mdoc</button>
+        <button type="button" class="toggle-option selected" id="format-both" data-format="both" role="radio" aria-checked="true">Both</button>
+        <button type="button" class="toggle-option" id="format-sd-jwt" data-format="sd-jwt" role="radio" aria-checked="false">SD-JWT</button>
+        <button type="button" class="toggle-option" id="format-mdoc" data-format="mdoc" role="radio" aria-checked="false">mdoc</button>
       </div>
     </div>
     <p class="format-hint" id="format-hint" hidden>
       The request asks for either format and the wallet answers with the one it holds.
     </p>
     <div class="format-row" id="ticket-row" hidden>
-      <span class="format-label">Ticket</span>
+      <span class="format-label" id="ticket-label">Ticket</span>
       <div class="toggle" id="ticket-toggle" role="radiogroup" aria-label="How the request asks for the ticket">
-        <button type="button" class="toggle-option selected" data-ticket="combined" role="radio" aria-checked="true">With the PID</button>
-        <button type="button" class="toggle-option" data-ticket="optional" role="radio" aria-checked="false">Optional</button>
+        <button type="button" class="toggle-option selected" id="ticket-combined" data-ticket="combined" role="radio" aria-checked="true">With the PID</button>
+        <button type="button" class="toggle-option" id="ticket-optional" data-ticket="optional" role="radio" aria-checked="false">Optional</button>
       </div>
     </div>
     <p class="format-hint" id="ticket-hint" hidden></p>
     <div class="format-row" id="multiple-row">
-      <label class="multiple-option"><input type="checkbox" id="request-multiple"> multiple (the wallet may send several credentials per query)</label>
+      <label class="multiple-option" id="request-multiple-label"><input type="checkbox" id="request-multiple"> multiple (the wallet may send several credentials per query)</label>
     </div>
     <div id="custom-panel" hidden>
-      <p class="format-hint">
+      <p class="format-hint" id="custom-hint">
         Build a DCQL query by hand. Each path selects a claim. A path onto an
         array of selectively disclosable elements (such as
         <code>nationalities</code>) discloses an empty array, so end it with
         <code>[*]</code> for all elements or <code>[n]</code> for one. Nest with
         dots (<code>address.locality</code>).
       </p>
-      <div class="format-row">
-        <span class="format-label">Client ID scheme</span>
+      <div class="format-row" id="scheme-row">
+        <span class="format-label" id="scheme-label">Client ID scheme</span>
         <div class="toggle" id="scheme-toggle" role="radiogroup" aria-label="Client identifier scheme">
-          <button type="button" class="toggle-option selected" data-scheme="x509_hash" role="radio" aria-checked="true">x509_hash</button>
-          <button type="button" class="toggle-option" data-scheme="x509_san_dns" role="radio" aria-checked="false">x509_san_dns</button>
-          <button type="button" class="toggle-option" data-scheme="redirect_uri" role="radio" aria-checked="false">redirect_uri</button>
-          <button type="button" class="toggle-option" data-scheme="pre-registered" role="radio" aria-checked="false">pre-registered</button>
+          <button type="button" class="toggle-option selected" id="scheme-x509-hash" data-scheme="x509_hash" role="radio" aria-checked="true">x509_hash</button>
+          <button type="button" class="toggle-option" id="scheme-x509-san-dns" data-scheme="x509_san_dns" role="radio" aria-checked="false">x509_san_dns</button>
+          <button type="button" class="toggle-option" id="scheme-redirect-uri" data-scheme="redirect_uri" role="radio" aria-checked="false">redirect_uri</button>
+          <button type="button" class="toggle-option" id="scheme-pre-registered" data-scheme="pre-registered" role="radio" aria-checked="false">pre-registered</button>
         </div>
       </div>
       <p class="format-hint" id="scheme-hint">
         The request object is signed and delivered behind <code>request_uri</code>.
       </p>
       <div class="format-row" id="client-id-row" hidden>
-        <span class="format-label">Client ID</span>
+        <span class="format-label" id="client-id-label">Client ID</span>
         <input type="text" id="client-id-input" class="type-input" placeholder="eudi-dev-demo-verifier">
       </div>
       <div id="credentials-list"></div>
       <button type="button" class="btn" id="add-credential">+ Add credential</button>
     </div>
-    <div class="format-row">
-      <span class="format-label">Verifier identity</span>
+    <div class="format-row" id="identity-row">
+      <span class="format-label" id="identity-label">Verifier identity</span>
       <div class="toggle" id="identity-toggle" role="radiogroup" aria-label="Verifier identity">
         <button type="button" class="toggle-option selected" id="identity-registered" data-identity="registered" role="radio" aria-checked="true">Registered</button>
         <button type="button" class="toggle-option" id="identity-unregistered" data-identity="unregistered" role="radio" aria-checked="false">Not registered</button>
@@ -220,9 +220,9 @@
     </div>
     <button class="btn primary" id="create-request">Create request</button>
     <div class="result" id="request-box">
-      <div class="label">Open in the wallet on this host</div>
+      <div class="label" id="wallet-link-label">Open in the wallet on this host</div>
       <pre><a href="#" id="wallet-link">…</a></pre>
-      <div class="label">Authorization request (custom scheme, for any wallet)</div>
+      <div class="label" id="scheme-uri-label">Authorization request (custom scheme, for any wallet)</div>
       <pre><a href="#" id="scheme-uri">…</a></pre>
     </div>
     <div class="result" id="result-box">
@@ -234,21 +234,21 @@
       <pre id="presentation-box" hidden><a href="#" id="presentation-link" target="_blank" rel="noopener">Open in the decoder</a></pre>
     </div>
     <div class="links">
-      <a href="../">Wallet UI</a>
-      <a href="../issuer/">Demo Issuer</a>
-      <a href="../decoder/">Decoder</a>
+      <a href="../" id="wallet-ui-link">Wallet UI</a>
+      <a href="../issuer/" id="issuer-link">Demo Issuer</a>
+      <a href="../decoder/" id="decoder-link">Decoder</a>
       <a href="../imprint" id="imprint-link" hidden>Imprint</a>
     </div>
     <footer>
       <div class="sponsor-info" id="sponsor-info" hidden>
-        <span>Enjoying eudi-dev?</span>
-        <a href="https://github.com/sponsors/dominikschlosser" target="_blank" rel="noopener">
+        <span id="sponsor-text">Enjoying eudi-dev?</span>
+        <a href="https://github.com/sponsors/dominikschlosser" id="sponsor-link" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>
           Support its development
         </a>
       </div>
     </footer>
-    <div class="disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
+    <div class="disclaimer" id="disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </div>
   <script src="../claim-path.js"></script>
   <script src="verifier.js"></script>

@@ -208,14 +208,13 @@ func (s *Server) setupRoutes() {
 	s.routeFunc("GET /api/trustlist/history/{sequence}", s.withFreshStore(s.handleTrustListHistory))
 	s.routeFunc("GET /api/trustlists/{id}/history", s.withFreshStore(s.handleTrustListHistory))
 	s.routeFunc("GET /api/trustlists/{id}/history/{sequence}", s.withFreshStore(s.handleTrustListHistory))
-	// The demo registrations follow the catalogue, and a deleted one comes
-	// back, so every registrar change updates them.
+	// On a public demo the demo registrations follow the catalogue.
 	registrarAPI := &registrar.Server{Registrar: func() *registrar.Registrar { return s.wallet.Registrar() }, Mutate: func(change func() bool) {
 		s.saveMutation(change)
 		if err := s.syncDemoRegistrations(); err != nil {
 			s.log("  WARNING: updating the demo registrations: %v", err)
 		}
-	}, BuiltIn: builtInRelyingParty, Protected: s.protectedRelyingParty, KeepTemplateEntries: func() bool { return s.demo != nil }}
+	}, Protected: s.protectedRelyingParty, KeepTemplateEntries: func() bool { return s.demo != nil }}
 	for pattern, handler := range registrarAPI.Routes() {
 		s.routeFunc(pattern, s.withFreshStore(handler))
 	}

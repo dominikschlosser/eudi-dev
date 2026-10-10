@@ -56,7 +56,7 @@ func TestACreatedRegistrationCertificatePassesTheWalletsChecks(t *testing.T) {
 	if got := purposeStrings(certs[0]["purpose"]); len(got) != 1 || got[0] != "Age check" {
 		t.Errorf("purpose %v, want Age check", got)
 	}
-	if certs[0]["sub"] != rp.Identifier[0].Identifier || certs[0]["registry_uri"] != rp.RegistryURI {
+	if certs[0]["sub"] != semanticIdentifier(t, rp) || certs[0]["registry_uri"] != rp.RegistryURI {
 		t.Errorf("sub %v, registry_uri %v, want the registration's", certs[0]["sub"], certs[0]["registry_uri"])
 	}
 	// ETSI TS 119 475 V1.2.1 Table 7 and OVR-6.1.3-01.
@@ -97,7 +97,7 @@ func TestTheRegistrationCertificateMatchesTheAccessCertificate(t *testing.T) {
 	}
 	// An intermediary's certificate names the relying party in act.sub (ETSI
 	// TS 119 475 GEN-5.2.4-09).
-	intermediary := map[string]any{"sub": "LEIXG-INTERMEDIARY", "act": map[string]any{"sub": rp.Identifier[0].Identifier}}
+	intermediary := map[string]any{"sub": "LEIXG-INTERMEDIARY", "act": map[string]any{"sub": semanticIdentifier(t, rp)}}
 	if got := registrationBindingFindings(intermediary, accessCert, "ARF RPRC_17a"); len(got) != 0 {
 		t.Errorf("findings %v for an intermediary acting for the relying party, want none", got)
 	}

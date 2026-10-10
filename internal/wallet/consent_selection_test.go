@@ -17,6 +17,7 @@ package wallet
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -183,5 +184,24 @@ func TestApproveRejectsAnInvalidSelectionAndKeepsTheRequestPending(t *testing.T)
 	}
 	if pending, _ := w.GetRequest(consentReq.ID); pending.Status != "pending" {
 		t.Errorf("request status = %q, want it still pending", pending.Status)
+	}
+}
+
+// Strict mode discloses only requested claims, so a selection can withhold a
+// claim but not add one. Debug mode sends the selection as it is.
+func TestASelectionAddsClaimsOnlyInDebugMode(t *testing.T) {
+	for _, mode := range []ValidationMode{ValidationModeStrict, ValidationModeDebug} {
+		w := generateTestWallet(t)
+		if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+			t.Fatal(err)
+		}
+		w.ValidationMode = mode
+		cred := w.GetCredentials()[0]
+		matches := []CredentialMatch{{CredentialID: cred.ID, SelectedKeys: []string{"given_name"}}}
+		got := w.applySelectedClaims(matches, map[string][]string{cred.ID: {"given_name", "birthdate"}})
+		added := slices.Contains(got[0].SelectedKeys, "birthdate")
+		if added != (mode == ValidationModeDebug) {
+			t.Errorf("%s: disclosed %v", mode, got[0].SelectedKeys)
+		}
 	}
 }

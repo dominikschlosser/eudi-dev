@@ -20,8 +20,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -602,7 +601,7 @@ func TestValidate_MDOCStatusWrapping(t *testing.T) {
 		},
 	}
 
-	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: false})[0]
+	result := checkMDOCStatus(doc, credentialTrust{}, ValidateOpts{CheckStatus: false})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when CheckStatus=false, got %s", result.Status)
 	}
@@ -618,7 +617,7 @@ func TestValidate_MDOCStatusNoStatus(t *testing.T) {
 		},
 	}
 
-	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: true})[0]
+	result := checkMDOCStatus(doc, credentialTrust{}, ValidateOpts{CheckStatus: true})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when no status in MSO, got %s", result.Status)
 	}
@@ -670,7 +669,7 @@ func TestValidate_SignatureSkippedNoKey(t *testing.T) {
 		Payload: map[string]any{"sub": "user"},
 	}
 
-	result := checkSDJWTSignature(token, ValidateOpts{})
+	result := checkSDJWTSignature(token, credentialTrust{}, ValidateOpts{})
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when no key, got %s", result.Status)
 	}
@@ -701,49 +700,12 @@ func TestValidate_SignatureSkippedWhenIssuerMetadataLookupFails(t *testing.T) {
 		t.Fatalf("sdjwt.Parse: %v", err)
 	}
 
-	result := checkSDJWTSignature(token, ValidateOpts{})
+	result := checkSDJWTSignature(token, credentialTrust{}, ValidateOpts{})
 	if result.Status != "skipped" {
 		t.Fatalf("expected skipped when issuer metadata lookup fails, got %s (%s)", result.Status, result.Detail)
 	}
 	if result.Detail == "" || result.Detail == "No key provided" {
 		t.Fatalf("expected issuer metadata lookup detail, got %q", result.Detail)
-	}
-}
-
-func TestValidate_SignatureUsesLocalWalletFallback(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	walletDir := filepath.Join(home, ".oid4vc-dev", "wallet")
-	if err := os.MkdirAll(walletDir, 0700); err != nil {
-		t.Fatalf("mkdir wallet dir: %v", err)
-	}
-
-	store := wallet.NewWalletStore("")
-	w, err := store.LoadOrCreate()
-	if err != nil {
-		t.Fatalf("LoadOrCreate: %v", err)
-	}
-
-	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
-		Issuer:    "https://localhost:1",
-		VCT:       "urn:test",
-		ExpiresIn: time.Hour,
-		Claims:    map[string]any{"given_name": "Erika"},
-		Key:       w.IssuerKey,
-	})
-	if err != nil {
-		t.Fatalf("GenerateSDJWT: %v", err)
-	}
-
-	token, err := sdjwt.Parse(raw)
-	if err != nil {
-		t.Fatalf("sdjwt.Parse: %v", err)
-	}
-
-	result := checkSDJWTSignature(token, ValidateOpts{})
-	if result.Status != "pass" {
-		t.Fatalf("expected local wallet fallback pass, got %s (%s)", result.Status, result.Detail)
 	}
 }
 
@@ -842,7 +804,7 @@ func TestHandleValidate_SDJWTValidExpiry(t *testing.T) {
 func TestValidate_MDOCStatusNilIssuerAuth(t *testing.T) {
 	doc := &mdoc.Document{}
 
-	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: true})[0]
+	result := checkMDOCStatus(doc, credentialTrust{}, ValidateOpts{CheckStatus: true})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when no issuerAuth, got %s", result.Status)
 	}
@@ -860,7 +822,7 @@ func TestValidate_MDOCExpiryNilIssuerAuth(t *testing.T) {
 func TestValidate_MDOCSignatureSkippedNoKey(t *testing.T) {
 	doc := &mdoc.Document{}
 
-	result := checkMDOCSignature(doc, ValidateOpts{})
+	result := checkMDOCSignature(doc, credentialTrust{}, ValidateOpts{})
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when no key, got %s", result.Status)
 	}
@@ -908,7 +870,7 @@ func TestValidate_SDJWTStatusSkippedNotRequested(t *testing.T) {
 		},
 	}
 
-	result := checkSDJWTStatus(token, ValidateOpts{CheckStatus: false})[0]
+	result := checkSDJWTStatus(token, credentialTrust{}, ValidateOpts{CheckStatus: false})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped, got %s", result.Status)
 	}
@@ -922,11 +884,51 @@ func TestValidate_SDJWTStatusNoRef(t *testing.T) {
 		ResolvedClaims: map[string]any{"sub": "user"},
 	}
 
-	result := checkSDJWTStatus(token, ValidateOpts{CheckStatus: true})[0]
+	result := checkSDJWTStatus(token, credentialTrust{}, ValidateOpts{CheckStatus: true})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when no status ref, got %s", result.Status)
 	}
 	if result.Detail != "No status list reference in credential" {
 		t.Errorf("expected 'No status list reference in credential', got %q", result.Detail)
+	}
+}
+
+// The revocation service of the wallet's trusted list that anchors a
+// credential anchors its status list (ETSI TS 119 602 V1.1.1 Table D.3).
+func TestTheDecoderAnchorsAStatusListInTheRevocationServiceOfItsList(t *testing.T) {
+	store := wallet.NewWalletStore(t.TempDir())
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(wallet.NewServer(w, 0, nil).Handler())
+	defer ts.Close()
+	w.IssuerURL = ts.URL
+	w.BaseURL = ts.URL
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, cred := range w.GetCredentials() {
+		result, err := Validate(cred.Raw, ValidateOpts{Wallet: w, CheckStatus: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, c := range result["validation"].(map[string]any)["checks"].([]CheckResult) {
+			switch c.Name {
+			case "status list signature":
+				found = true
+				if c.Status != "pass" || !strings.Contains(c.Detail, "revocation service of the trusted list "+ts.URL+"/api/trustlists/pid") {
+					t.Errorf("%s: status list signature = %+v, want it anchored by the revocation service of the PID list", cred.Format, c)
+				}
+			case "signature":
+				if c.Status != "pass" || !strings.Contains(c.Detail, "the trusted list "+ts.URL+"/api/trustlists/pid of the catalogue entry") {
+					t.Errorf("%s: signature = %+v, want it anchored by the PID list of its catalogue entry", cred.Format, c)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: no status list signature check", cred.Format)
+		}
 	}
 }

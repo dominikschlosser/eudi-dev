@@ -112,11 +112,13 @@ func portNumber(port string) uint16 {
 var extraBlockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"), // CGNAT
 	netip.MustParsePrefix("fc00::/7"),      // IPv6 unique-local
+	// NAT64 (RFC 6052) embeds any IPv4 address, private ones too.
+	netip.MustParsePrefix("64:ff9b::/96"),
 }
 
 // BlockPrivateAddresses is a FetchPolicy that rejects connections to
 // loopback, private (RFC 1918), link-local (including cloud metadata
-// endpoints), CGNAT, unique-local, unspecified and multicast addresses.
+// endpoints), CGNAT, unique-local, NAT64, unspecified and multicast addresses.
 // A host that fetches visitor-supplied URLs and can reach internal networks
 // needs it.
 func BlockPrivateAddresses(network, address string) error {

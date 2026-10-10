@@ -101,9 +101,7 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 			}
 			flusher.Flush()
 		case walletErr := <-errCh:
-			// Send failures to the flow's browser. Errors from unowned flows remain
-			// visible to everyone.
-			if walletErr.Owner != "" && !ownedBy(owners, walletErr.Owner) {
+			if !s.showsError(owners, walletErr) {
 				continue
 			}
 			data, err := json.Marshal(walletErr)

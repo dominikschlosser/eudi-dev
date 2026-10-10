@@ -344,7 +344,7 @@ func parityCases() []parityCase {
 		}},
 		{method: "RegisterRelyingParty", observe: func(t *testing.T, s walletService) any {
 			rp := registerParityRelyingParty(t, s)
-			return []any{rp.TradeName, len(rp.Services[0].IntendedUses), strings.HasPrefix(rp.Identifier[0].Identifier, "NTR")}
+			return []any{rp.TradeName, len(rp.Services[0].IntendedUses), strings.Contains(rp.Identifier[0].Identifier, "TEST.")}
 		}},
 		{method: "RegistrarRecords", observe: func(t *testing.T, s walletService) any {
 			registerParityRelyingParty(t, s)

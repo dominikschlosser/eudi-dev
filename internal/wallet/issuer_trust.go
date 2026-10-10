@@ -94,6 +94,20 @@ type CatalogueAnchoring struct {
 	// AnchoredBy is the list whose issuance service anchors the credential.
 	AnchoredBy string   `json:"anchored_by,omitempty"`
 	Findings   []string `json:"findings,omitempty"`
+	// IssuanceAnchors and StatusAnchors are the certificates of the issuance
+	// and revocation services of that list. The revocation service anchors
+	// the credential's status list (ETSI TS 119 602 V1.1.1 Tables D.3 and
+	// H.3).
+	IssuanceAnchors []*x509.Certificate `json:"-"`
+	StatusAnchors   []*x509.Certificate `json:"-"`
+}
+
+// StatusListAnchors returns the anchors of a credential's status list: the
+// revocation service of the trusted list that anchors the credential. It is
+// empty when no list of the credential's catalogue entry anchors it.
+func (w *Wallet) StatusListAnchors(raw string) []*x509.Certificate {
+	anchoring, _ := w.CheckCatalogueAnchoring(raw)
+	return anchoring.StatusAnchors
 }
 
 // CheckCatalogueAnchoring validates a raw SD-JWT VC or mdoc with the trusted
@@ -149,9 +163,11 @@ func (w *Wallet) catalogueAnchoring(cred StoredCredential) (CatalogueAnchoring, 
 			continue
 		}
 		read = true
-		err := validateWithAnchors(cred, serviceAnchors(c.List, issuanceServices))
+		err := validateWithAnchors(cred, trustlist.ServiceCertificates(c.List, trustlist.IssuanceServices))
 		if err == nil {
 			result.AnchoredBy = c.URL
+			result.IssuanceAnchors = parsedAnchors(trustlist.ServiceCertificates(c.List, trustlist.IssuanceServices))
+			result.StatusAnchors = parsedAnchors(trustlist.ServiceCertificates(c.List, trustlist.RevocationServices))
 			return result, true
 		}
 		problems = append(problems, fmt.Sprintf("%s (%v)", c.URL, err))
@@ -225,7 +241,7 @@ func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
 		return errors.New("the trusted list's signature does not verify")
 	}
 	if err := verifyToAnchor(chain, operators); err != nil {
-		return fmt.Errorf("the list's signer does not chain to a trusted list CA. Add the CA of the list operator on trusted-list-ca, or start the wallet with --trusted-list-ca: %w", err)
+		return fmt.Errorf("the list's signer does not chain to a trusted list CA. Add the list operator's CA to trusted-list-ca, or start the wallet with --trusted-list-ca: %w", err)
 	}
 	return nil
 }

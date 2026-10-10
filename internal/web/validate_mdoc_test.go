@@ -115,7 +115,7 @@ func TestCheckMDOCSignature(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := checkMDOCSignature(doc, ValidateOpts{Key: string(jwk)})
+		got := checkMDOCSignature(doc, resolveTrust("", ValidateOpts{Key: string(jwk), Offline: true}), ValidateOpts{Key: string(jwk)})
 		if got.Status != "pass" {
 			t.Errorf("status = %q (%s), want pass", got.Status, got.Detail)
 		}
@@ -130,14 +130,14 @@ func TestCheckMDOCSignature(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := checkMDOCSignature(doc, ValidateOpts{Key: string(jwk)})
+		got := checkMDOCSignature(doc, resolveTrust("", ValidateOpts{Key: string(jwk), Offline: true}), ValidateOpts{Key: string(jwk)})
 		if got.Status != "fail" {
 			t.Errorf("status = %q (%s), want fail", got.Status, got.Detail)
 		}
 	})
 
 	t.Run("a key that does not parse", func(t *testing.T) {
-		got := checkMDOCSignature(doc, ValidateOpts{Key: "not a key"})
+		got := checkMDOCSignature(doc, resolveTrust("", ValidateOpts{Key: "not a key", Offline: true}), ValidateOpts{Key: "not a key"})
 		if got.Status != "fail" {
 			t.Errorf("status = %q (%s), want fail", got.Status, got.Detail)
 		}
@@ -147,15 +147,15 @@ func TestCheckMDOCSignature(t *testing.T) {
 	})
 }
 
-func TestResolveKeysErrors(t *testing.T) {
+func TestSuppliedTrustErrors(t *testing.T) {
 	t.Run("a key that does not parse", func(t *testing.T) {
-		if _, _, err := resolveKeys(ValidateOpts{Key: "nonsense"}); err == nil {
+		if _, _, _, err := suppliedTrust(ValidateOpts{Key: "nonsense"}); err == nil {
 			t.Error("an unparseable key was accepted")
 		}
 	})
 
 	t.Run("a trusted list that does not parse", func(t *testing.T) {
-		_, _, err := resolveKeys(ValidateOpts{TrustListRaw: "not a trusted list"})
+		_, _, _, err := suppliedTrust(ValidateOpts{TrustListRaw: "not a trusted list"})
 		if err == nil || !strings.Contains(err.Error(), "parsing trusted list") {
 			t.Errorf("error = %v, want a trusted list parse failure", err)
 		}
@@ -167,7 +167,7 @@ func TestResolveKeysErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, _, err := resolveKeys(ValidateOpts{TrustListURL: srv.URL})
+		_, _, _, err := suppliedTrust(ValidateOpts{TrustListURL: srv.URL})
 		if err == nil {
 			t.Error("a trusted list URL that answers 404 was accepted")
 		}
@@ -179,16 +179,16 @@ func TestResolveKeysErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, _, err := resolveKeys(ValidateOpts{TrustListURL: srv.URL})
+		_, _, _, err := suppliedTrust(ValidateOpts{TrustListURL: srv.URL})
 		if err == nil || !strings.Contains(err.Error(), "parsing trusted list") {
 			t.Errorf("error = %v, want a trusted list parse failure", err)
 		}
 	})
 
 	t.Run("nothing to resolve", func(t *testing.T) {
-		pubKeys, tlCerts, err := resolveKeys(ValidateOpts{})
+		pubKeys, tlCerts, _, err := suppliedTrust(ValidateOpts{})
 		if err != nil {
-			t.Fatalf("resolveKeys: %v", err)
+			t.Fatalf("suppliedTrust: %v", err)
 		}
 		if len(pubKeys) != 0 || len(tlCerts) != 0 {
 			t.Errorf("keys = %d, certs = %d, want none", len(pubKeys), len(tlCerts))

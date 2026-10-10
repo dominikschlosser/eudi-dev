@@ -88,10 +88,17 @@ func ResolveJWTIssuerMetadataKey(token *sdjwt.Token, tlCerts []trustlist.CertInf
 		return nil, "", err
 	}
 
+	// With trust anchors, the metadata key counts only when its x5c chains
+	// to them. A bare key from the issuer's host is not anchored.
 	if len(tlCerts) > 0 {
-		if key, err := extractAndValidateJWKX5C(jwk, tlCerts); err == nil && key != nil {
-			return key, "issuer metadata (x5c chain verified)", nil
+		key, err := extractAndValidateJWKX5C(jwk, tlCerts)
+		if err != nil {
+			return nil, "", fmt.Errorf("the issuer metadata key does not chain to the trusted list: %w", err)
 		}
+		if key == nil {
+			return nil, "", fmt.Errorf("the issuer metadata key has no x5c to chain to the trusted list")
+		}
+		return key, "issuer metadata (x5c chain verified)", nil
 	}
 
 	jwkJSON, err := json.Marshal(jwk)
@@ -196,7 +203,7 @@ func fetchIssuerMetadataDocument(metadataURL string, clients ...*http.Client) (m
 	}
 
 	var doc map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+	if _, err := format.DecodeRemoteJSON(resp.Body, "issuer metadata", &doc); err != nil {
 		return nil, fmt.Errorf("parsing issuer metadata: %w", err)
 	}
 	return doc, nil

@@ -321,7 +321,7 @@ test.describe("Demo mode consent visibility", () => {
     await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
   });
 
-  // Reading an error does not clear it. Another flow must clear it before consent opens.
+  // A failed flow without an owner doesn't open in a browser's next issuance.
   test("an earlier failure does not reopen on the next issuance", async ({ page }) => {
     const dead = "openid-credential-offer://?credential_offer=" + encodeURIComponent(JSON.stringify({
       credential_issuer: "https://issuer.invalid",
@@ -330,8 +330,8 @@ test.describe("Demo mode consent visibility", () => {
     }));
     await postJSON("/api/offers", { uri: dead });
     await expect
-      .poll(async () => (await (await fetch(`${BASE}/api/error`)).json())?.message ?? "")
-      .not.toBe("");
+      .poll(async () => JSON.stringify(await (await fetch(`${BASE}/api/log`)).json()))
+      .toContain("issuer.invalid");
 
     const { body: offer } = await postJSON("/issuer/api/offers", {});
     const offerDoc = await (await fetch(offer.offer_uri)).json();
@@ -1324,11 +1324,12 @@ test.describe("Demo mode hardening", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, credentials: [{ format: "dc+sd-jwt", type: `urn:example:${Date.now()}:1` }] }),
     })).json();
+    expect(added.schema.id).toBeTruthy();
     await page.goto(BASE);
     await page.locator("#registrar-menu-toggle").click();
     await page.locator("#registrar-parties-link").click();
     await page.locator("#registrar-search").fill("EUDI Dev Demo Verifier");
-    const card = "#registrar-party-NTRNL-00000001";
+    const card = "#registrar-party-NLTEST_00000001";
     await expect(page.locator(card + "-protected")).toHaveText("Pre-registered");
     await expect(page.locator(card + "-delete")).toHaveCount(0);
     await expect(page.locator(card + "-add-use")).toHaveCount(0);
@@ -1345,7 +1346,6 @@ test.describe("Demo mode hardening", () => {
     await expect(entry("EUDI PID").locator('[id$="-delete"]')).toHaveCount(0);
     await entry(name).locator('[id$="-delete"]').click();
     await expect(entry(name)).toHaveCount(0);
-    expect(added.schema.id).toBeTruthy();
   });
 
   test("the decoder links back to the wallet it is mounted on", async ({ page }) => {

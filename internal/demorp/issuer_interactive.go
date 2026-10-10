@@ -62,20 +62,15 @@ func normalizeAuthorizationMode(value string) string {
 // presentation session holds the request to verify. A browser session holds
 // the data needed to repeat the auth_via_web answer.
 type interactiveSession struct {
-	id            string
-	clientID      string
-	scope         string
-	codeChallenge string
-	issuerState   string
-	request       *requestState
-	expires       time.Time
+	id string
+	authGrant
+	request *requestState
+	expires time.Time
 
 	// browser marks an auth_via_web session (§6.2.1.2). The sign-in finishes
 	// at the authorization endpoint. A wallet that comes back here with this
 	// auth_session gets the interaction again.
-	browser     bool
-	redirectURI string
-	state       string
+	browser bool
 }
 
 // challengeEndpoint is the advertised URL. Every presentation made through it
@@ -126,17 +121,28 @@ func (d *DemoRP) startInteractiveAuthorization(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	grant, errResp := d.resolveAuthGrant(authGrant{
+		clientID:      clientID,
+		codeChallenge: codeChallenge,
+		redirectURI:   r.PostFormValue("redirect_uri"),
+		state:         r.PostFormValue("state"),
+		issuerState:   r.PostFormValue("issuer_state"),
+	}, r.PostFormValue("scope"), r.PostFormValue("authorization_details"))
+	if errResp != nil {
+		writeJSON(w, http.StatusBadRequest, errResp)
+		return
+	}
+
 	// Use auth_via_web if the wallet supports it (OpenID4VCI 1.1 §6.2.1.2).
 	// Other wallets get redirect_to_web from first-party-apps §5.2.2.1.1,
 	// which needs no advertised interaction type.
-	issuerState := r.PostFormValue("issuer_state")
 	offered := r.PostFormValue("interaction_types_supported")
-	if d.offerAuthorization(issuerState) == authorizationBrowser {
+	if grant.settings.authorization == authorizationBrowser {
 		if offersInteractionType(offered, interactionTypeAuthViaWeb) {
-			d.startAuthViaWebInteraction(w, r, clientID, codeChallenge, issuerState)
+			d.startAuthViaWebInteraction(w, grant)
 			return
 		}
-		d.redirectChallengeToWeb(w, r, clientID, codeChallenge, issuerState)
+		d.redirectChallengeToWeb(w, grant)
 		return
 	}
 
@@ -147,34 +153,36 @@ func (d *DemoRP) startInteractiveAuthorization(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// The challenge response carries the code, so no redirect_uri belongs to
+	// it, and the token request has none (RFC 6749 §4.1.3).
+	grant.redirectURI, grant.state = "", ""
 	request := d.newInteractivePIDRequest()
 	session := &interactiveSession{
-		id:            randToken(),
-		clientID:      clientID,
-		scope:         r.PostFormValue("scope"),
-		codeChallenge: codeChallenge,
-		issuerState:   r.PostFormValue("issuer_state"),
-		request:       request,
-		expires:       time.Now().Add(entryTTL),
+		id:        randToken(),
+		authGrant: grant,
+		request:   request,
+		expires:   time.Now().Add(entryTTL),
 	}
 
 	d.mu.Lock()
 	d.pruneLocked()
-	if len(d.interactive) >= maxEntries {
-		d.mu.Unlock()
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open authorization sessions, try again later"})
-		return
-	}
+	makeRoom(d.interactive, func(s *interactiveSession) time.Time { return s.expires })
+	makeRoom(d.requests, func(r *requestState) time.Time { return r.expires })
 	d.interactive[session.id] = session
 	d.requests[request.id] = request
 	d.mu.Unlock()
 
+	presentationRequest, err := d.interactivePresentationRequest(request)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, oauthError("server_error", err.Error()))
+		return
+	}
 	log.Printf("[Demo issuer] interactive authorization: asking %q for a PID before issuing", clientID)
 	writeJSON(w, http.StatusForbidden, map[string]any{
 		"error":                     "insufficient_authorization",
 		"interaction_type_required": interactionTypePresentation,
 		"auth_session":              session.id,
-		"openid4vp_request":         d.interactivePresentationRequest(request),
+		"openid4vp_request":         presentationRequest,
 	})
 }
 
@@ -235,16 +243,14 @@ func (d *DemoRP) continueInteractiveAuthorization(w http.ResponseWriter, r *http
 
 	code := randToken()
 	granted := &authRequestState{
-		clientID:      session.clientID,
-		scope:         session.scope,
-		codeChallenge: session.codeChallenge,
-		issuerState:   session.issuerState,
-		code:          code,
-		subject:       presentedHolder(claims),
-		holderClaims:  claims,
-		expires:       time.Now().Add(entryTTL),
+		authGrant:    session.authGrant,
+		code:         code,
+		subject:      presentedHolder(claims),
+		holderClaims: requestedClaims(claims, session.request.want),
+		expires:      time.Now().Add(entryTTL),
 	}
 	d.mu.Lock()
+	makeRoom(d.codes, func(r *authRequestState) time.Time { return r.expires })
 	d.codes[code] = granted
 	delete(d.interactive, sessionID)
 	d.mu.Unlock()
@@ -253,51 +259,28 @@ func (d *DemoRP) continueInteractiveAuthorization(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, map[string]any{"authorization_code": code})
 }
 
-// An unknown issuer_state gets browser sign-in, which every wallet supports.
-func (d *DemoRP) offerAuthorization(issuerState string) string {
-	if issuerState == "" {
-		return authorizationBrowser
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	for _, offer := range d.offers {
-		if offer.issuerState == issuerState {
-			return normalizeAuthorizationMode(offer.authorization)
-		}
-	}
-	return authorizationBrowser
-}
-
 // pushChallengeAuthRequest stores a pushed authorization request for browser
-// sign-in. It uses the same entry limit as the PAR endpoint.
-func (d *DemoRP) pushChallengeAuthRequest(clientID, codeChallenge, issuerState, redirectURI, state, scope string) (*authRequestState, bool) {
+// sign-in, like the PAR endpoint.
+func (d *DemoRP) pushChallengeAuthRequest(grant authGrant) *authRequestState {
 	request := &authRequestState{
-		requestURI:    requestURIPrefix + randToken(),
-		clientID:      clientID,
-		redirectURI:   redirectURI,
-		state:         state,
-		scope:         scope,
-		codeChallenge: codeChallenge,
-		issuerState:   issuerState,
-		expires:       time.Now().Add(authRequestTTL),
+		requestURI: requestURIPrefix + randToken(),
+		authGrant:  grant,
+		expires:    time.Now().Add(authRequestTTL),
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.pruneLocked()
-	if len(d.authRequests) >= maxEntries {
-		return nil, false
-	}
+	makeRoom(d.authRequests, func(r *authRequestState) time.Time { return r.expires })
 	d.authRequests[request.requestURI] = request
-	return request, true
+	return request
 }
 
 // startAuthViaWebInteraction answers with the browser interaction of
 // §6.2.1.2. The wallet uses the request_uri for an authorization request
 // (RFC 9126 §4). The authorization code arrives with the redirect from the
 // authorization endpoint.
-func (d *DemoRP) startAuthViaWebInteraction(w http.ResponseWriter, r *http.Request, clientID, codeChallenge, issuerState string) {
-	redirectURI := r.PostFormValue("redirect_uri")
-	if redirectURI == "" {
+func (d *DemoRP) startAuthViaWebInteraction(w http.ResponseWriter, grant authGrant) {
+	if grant.redirectURI == "" {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request",
 			"the auth_via_web interaction continues at the authorization endpoint, which needs a redirect_uri in the authorization challenge request"))
 		return
@@ -307,23 +290,14 @@ func (d *DemoRP) startAuthViaWebInteraction(w http.ResponseWriter, r *http.Reque
 	// request. A wallet that abandoned the sign-in and comes back gets the
 	// interaction again.
 	session := &interactiveSession{
-		id:            randToken(),
-		clientID:      clientID,
-		scope:         r.PostFormValue("scope"),
-		codeChallenge: codeChallenge,
-		issuerState:   issuerState,
-		expires:       time.Now().Add(entryTTL),
-		browser:       true,
-		redirectURI:   redirectURI,
-		state:         r.PostFormValue("state"),
+		id:        randToken(),
+		authGrant: grant,
+		expires:   time.Now().Add(entryTTL),
+		browser:   true,
 	}
 	d.mu.Lock()
 	d.pruneLocked()
-	if len(d.interactive) >= maxEntries {
-		d.mu.Unlock()
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open authorization sessions, try again later"})
-		return
-	}
+	makeRoom(d.interactive, func(s *interactiveSession) time.Time { return s.expires })
 	d.interactive[session.id] = session
 	d.mu.Unlock()
 
@@ -334,11 +308,7 @@ func (d *DemoRP) startAuthViaWebInteraction(w http.ResponseWriter, r *http.Reque
 // answerAuthViaWeb answers a browser session with the Interaction Required
 // Response of §6.2.1.2. Each answer pushes a fresh authorization request.
 func (d *DemoRP) answerAuthViaWeb(w http.ResponseWriter, session *interactiveSession) {
-	request, ok := d.pushChallengeAuthRequest(session.clientID, session.codeChallenge, session.issuerState, session.redirectURI, session.state, session.scope)
-	if !ok {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open authorization requests, try again later"})
-		return
-	}
+	request := d.pushChallengeAuthRequest(session.authGrant)
 	writeJSON(w, http.StatusForbidden, map[string]any{
 		"error":                     "insufficient_authorization",
 		"interaction_type_required": interactionTypeAuthViaWeb,
@@ -351,19 +321,14 @@ func (d *DemoRP) answerAuthViaWeb(w http.ResponseWriter, session *interactiveSes
 // redirectChallengeToWeb answers a wallet without auth_via_web support. It
 // returns redirect_to_web with a pushed authorization request for the
 // browser sign-in.
-func (d *DemoRP) redirectChallengeToWeb(w http.ResponseWriter, r *http.Request, clientID, codeChallenge, issuerState string) {
-	redirectURI := r.PostFormValue("redirect_uri")
-	if redirectURI == "" {
+func (d *DemoRP) redirectChallengeToWeb(w http.ResponseWriter, grant authGrant) {
+	if grant.redirectURI == "" {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request",
 			"this offer is redeemed with a browser sign-in, which needs a redirect_uri in the authorization challenge request"))
 		return
 	}
 
-	request, ok := d.pushChallengeAuthRequest(clientID, codeChallenge, issuerState, redirectURI, r.PostFormValue("state"), r.PostFormValue("scope"))
-	if !ok {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open authorization requests, try again later"})
-		return
-	}
+	request := d.pushChallengeAuthRequest(grant)
 	log.Printf("[Demo issuer] interactive authorization: this offer wants the browser sign-in, answering redirect_to_web")
 	writeJSON(w, http.StatusForbidden, map[string]any{
 		"error":       "redirect_to_web",
@@ -394,7 +359,7 @@ func (d *DemoRP) newInteractivePIDRequest() *requestState {
 // OpenID4VCI 1.1 §6.2.1.1 uses the Digital Credentials API request form. The
 // request is signed with an x509_hash client ID. Without signing material it
 // is sent unsigned.
-func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]any {
+func (d *DemoRP) interactivePresentationRequest(req *requestState) (map[string]any, error) {
 	sdjwtCred := map[string]any{
 		"id":     req.queryID,
 		"format": "dc+sd-jwt",
@@ -431,13 +396,17 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 
 	signingKey, chain, err := d.wallet.AccessSigningMaterial()
 	if err != nil || signingKey == nil || len(chain) == 0 {
-		return claims
+		return claims, nil
 	}
 
 	// The registration certificate of the identity check goes in
 	// verifier_info (OpenID4VP 1.0 §5.1). Its intended use registers the
 	// requested claims (ARF RPRC_21).
-	if info, err := d.wallet.DemoIdentityCheckVerifierInfo(); err == nil {
+	info, err := d.wallet.DemoIdentityCheckVerifierInfo()
+	if err != nil {
+		return nil, err
+	}
+	if info != nil {
 		claims["verifier_info"] = info
 	}
 
@@ -446,9 +415,9 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 	jar, jerr := wallet.SignRequestObjectJWT(claims, signingKey, chain)
 	if jerr != nil {
 		delete(claims, "client_id")
-		return claims
+		return claims, nil
 	}
-	return map[string]any{"request": jar}
+	return map[string]any{"request": jar}, nil
 }
 
 // trustAnchorAKI is the base64url key identifier of the issuer CA. Wallets
@@ -491,6 +460,19 @@ func offersInteractionType(list, want string) bool {
 
 // presentedHolder is the name from the presented PID. The credential is
 // issued to that person.
+// requestedClaims are the presented claims the identity check asks for. The
+// issued credential takes them over its template, and nothing else of the
+// presented credential, such as its vct.
+func requestedClaims(claims map[string]any, names []string) map[string]any {
+	requested := map[string]any{}
+	for _, name := range names {
+		if value, ok := claims[name]; ok {
+			requested[name] = value
+		}
+	}
+	return requested
+}
+
 func presentedHolder(claims map[string]any) string {
 	given, _ := claims["given_name"].(string)
 	family, _ := claims["family_name"].(string)

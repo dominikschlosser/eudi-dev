@@ -341,6 +341,38 @@ func TestCheckWithOptions_UntrustedCert(t *testing.T) {
 	}
 }
 
+// A candidate anchor, such as the CA of a local wallet, anchors a token whose
+// chain reaches it. A token from elsewhere is still checked with its own
+// certificate.
+func TestCheckWithOptions_CandidateAnchors(t *testing.T) {
+	issuerKey, leafCert, caCert := testChain(t)
+	otherCAKey := mustGenerateKey(t)
+	otherCACert, err := mock.GenerateCACert(otherCAKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := jwtServer(t, issuerKey, 1, make([]byte, 16), []*x509.Certificate{leafCert, caCert})
+
+	for _, tc := range []struct {
+		name     string
+		anchor   *x509.Certificate
+		anchored bool
+	}{
+		{"own CA", caCert, true},
+		{"other CA", otherCACert, false},
+	} {
+		result, err := CheckWithOptions(&StatusRef{URI: srv.URL, Idx: 0}, CheckOptions{
+			CandidateAnchors: []TrustCert{{Raw: tc.anchor.Raw}},
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if result.SignatureValid == nil || !*result.SignatureValid || result.TrustAnchored != tc.anchored {
+			t.Errorf("%s: signature %v, anchored %t, want a valid signature and anchored %t", tc.name, result.SignatureValid, result.TrustAnchored, tc.anchored)
+		}
+	}
+}
+
 func TestCheckWithOptions_NoX5C(t *testing.T) {
 	key := mustGenerateKey(t)
 	caKey := mustGenerateKey(t)

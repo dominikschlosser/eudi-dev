@@ -50,10 +50,12 @@ type RegistrationCertificateContent struct {
 	// Name is the trade name. The wallet shows it (ARF RPRC_06).
 	Name    string
 	Purpose []MultiLangString
-	// Identifier is the registered legal entity identifier (sub, ARF RPRC_07).
-	// TS 119 475 §5.1.1 links it to the organizationIdentifier of the access
-	// certificate.
-	Identifier           string
+	// Identifier is the registered legal entity identifier (ARF RPRC_07).
+	Identifier string
+	// Subject is its semantics identifier, the sub of the certificate. It is
+	// the organizationIdentifier of the access certificate (ETSI TS 119 475
+	// V1.2.1 GEN-5.1.3-03).
+	Subject              string
 	LegalName            string
 	Country              string
 	Description          []MultiLangString
@@ -195,11 +197,14 @@ func providerService(rp WalletRelyingParty, serviceIdentifier string) (WalletRel
 			return service, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, serviceIdentifier)
 		}
 		if !isAttestationProvider(service) {
-			return service, fmt.Errorf("service %q is not an attestation provider. Issue its certificates per intended use", serviceIdentifier)
+			return service, fmt.Errorf("%w as an attestation provider: service %q. Issue its certificates per intended use", errRelyingPartyNotFound, serviceIdentifier)
 		}
 		return service, nil
 	}
 	providers := slices.DeleteFunc(slices.Clone(rp.Services), func(s WalletRelyingPartyService) bool { return !isAttestationProvider(s) })
+	if len(providers) == 0 {
+		return WalletRelyingPartyService{}, fmt.Errorf("%w as an attestation provider: %s", errRelyingPartyNotFound, rp.Identifier[0].Identifier)
+	}
 	if len(providers) != 1 {
 		return WalletRelyingPartyService{}, fmt.Errorf("%s has %d attestation provider services and no intended use was given, so name the service or the intended use", rp.Identifier[0].Identifier, len(providers))
 	}
@@ -272,6 +277,7 @@ func registrationContent(rp WalletRelyingParty, service WalletRelyingPartyServic
 		Name:                  service.ServiceTradeName,
 		Purpose:               use.Purpose,
 		Identifier:            rp.Identifier[0].Identifier,
+		Subject:               semanticIdentifier(rp),
 		LegalName:             rp.LegalPerson.LegalName[0],
 		Country:               rp.Country,
 		Description:           service.SrvDescription.Strings(),
@@ -334,9 +340,9 @@ func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateCo
 	if name == "" {
 		return nil, fmt.Errorf("a registration certificate needs the relying party's name")
 	}
-	identifier, legalName, country := strings.TrimSpace(req.Identifier), strings.TrimSpace(req.LegalName), strings.TrimSpace(req.Country)
+	identifier, legalName, country := strings.TrimSpace(req.Subject), strings.TrimSpace(req.LegalName), strings.TrimSpace(req.Country)
 	if identifier == "" {
-		return nil, fmt.Errorf("a registration certificate needs the relying party's identifier")
+		return nil, fmt.Errorf("a registration certificate needs the relying party's semantics identifier")
 	}
 	validity, err := registrationValidity(req.Validity)
 	if err != nil {

@@ -165,3 +165,37 @@ func TestVerifyJWTSignature_UnmatchedTrustListDoesNotFallBackToLeaf(t *testing.T
 		t.Fatal("leaf-only pass despite an explicit trust list")
 	}
 }
+
+// With a trusted list, a bare metadata key of the issuer's host is not an
+// anchor. Only a key whose x5c chains to the list counts.
+func TestVerifyJWTSignature_TrustListIgnoresAnUnanchoredMetadataKey(t *testing.T) {
+	key, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	srv := newIssuerMetadataServer(t, "", nil)
+	defer srv.Close()
+	issuer := srv.URL
+	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer": issuer,
+			"jwks":   map[string]any{"keys": []any{mock.SigningJWKMap(&key.PublicKey)}},
+		})
+	})
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{Issuer: issuer, VCT: "urn:test", ExpiresIn: time.Hour, Claims: map[string]any{"given_name": "Erika"}, Key: key})
+	if err != nil {
+		t.Fatalf("GenerateSDJWT: %v", err)
+	}
+	token, err := sdjwt.Parse(raw)
+	if err != nil {
+		t.Fatalf("sdjwt.Parse: %v", err)
+	}
+	otherCA, _, otherDER := generateCACert(t)
+	anchors := []trustlist.CertInfo{{PublicKey: otherCA.PublicKey, Raw: otherDER}}
+
+	result, source, _ := VerifyJWTSignature(token, nil, anchors)
+	if result != nil && result.SignatureValid {
+		t.Errorf("signature valid via %q, want no pass without an anchored key", source)
+	}
+}

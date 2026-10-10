@@ -14,7 +14,7 @@
   const shareBtn = document.getElementById("share-btn");
   const themeBtn = document.getElementById("theme-btn");
   const rawView = document.getElementById("raw-view");
-  const EMPTY_OUTPUT_HTML = '<div class="placeholder">Paste a credential to see decoded output</div>';
+  const EMPTY_OUTPUT_HTML = '<div class="placeholder" id="output-placeholder">Paste a credential to see decoded output</div>';
 
   let decodeTimer = null;
   let decodeDueAt = 0;
@@ -24,6 +24,7 @@
   let lastData = null;
   let lastValidation = null;
   let colorized = false;
+  let usedIds = new Set();
   // The wallet credential ID stays while the content is unchanged, so shared links can use
   // the short form.
   let walletCredential = null;
@@ -133,11 +134,35 @@
 
   let sectionRanges = [];
 
+  function idPart(text) {
+    return String(text).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "empty";
+  }
+
+  function reserveId(id) {
+    let unique = id;
+    for (let n = 2; usedIds.has(unique); n++) unique = id + "-" + n;
+    usedIds.add(unique);
+    return unique;
+  }
+
+  const SECTION_PARTS = ["header", "arrow", "title", "copy", "body"];
+
+  function reserveSection(id) {
+    const base = reserveId(id);
+    SECTION_PARTS.forEach((part) => usedIds.add(base + "-" + part));
+    return base;
+  }
+
+  function setId(el, id) {
+    el.id = reserveId(id);
+    return el.id;
+  }
+
   function updateRawView() {
     const text = input.value.trim();
     sectionRanges = [];
     if (!text) {
-      rawView.innerHTML = '<span style="color:var(--text-dim);font-style:italic">No input</span>';
+      rawView.innerHTML = '<span id="raw-view-empty" style="color:var(--text-dim);font-style:italic">No input</span>';
       return;
     }
 
@@ -148,24 +173,26 @@
     if (jwtSegments.length >= 2) {
       let html = "";
       let pos = 0;
+      let sepCount = 0;
+      const separator = (ch) => '<span class="jwt-separator" id="raw-view-sep-' + sepCount++ + '">' + ch + "</span>";
 
       sectionRanges.push({ start: pos, end: pos + jwtSegments[0].length, section: "header" });
-      html += '<span class="jwt-header" data-section="header">' + escapeHtml(jwtSegments[0]) + "</span>";
+      html += '<span class="jwt-header" id="raw-view-header" data-section="header">' + escapeHtml(jwtSegments[0]) + "</span>";
       pos += jwtSegments[0].length;
 
-      html += '<span class="jwt-separator">.</span>';
+      html += separator(".");
       pos += 1;
 
       sectionRanges.push({ start: pos, end: pos + jwtSegments[1].length, section: "payload" });
-      html += '<span class="jwt-payload" data-section="payload">' + escapeHtml(jwtSegments[1]) + "</span>";
+      html += '<span class="jwt-payload" id="raw-view-payload" data-section="payload">' + escapeHtml(jwtSegments[1]) + "</span>";
       pos += jwtSegments[1].length;
 
       if (jwtSegments.length > 2) {
-        html += '<span class="jwt-separator">.</span>';
+        html += separator(".");
         pos += 1;
         const sigText = jwtSegments.slice(2).join(".");
         sectionRanges.push({ start: pos, end: pos + sigText.length, section: "signature" });
-        html += '<span class="jwt-signature" data-section="signature">' + escapeHtml(sigText) + "</span>";
+        html += '<span class="jwt-signature" id="raw-view-signature" data-section="signature">' + escapeHtml(sigText) + "</span>";
         pos += sigText.length;
       }
 
@@ -181,28 +208,28 @@
 
       let discIdx = 0;
       for (let i = 1; i < parts.length; i++) {
-        html += '<span class="jwt-separator">~</span>';
+        html += separator("~");
         pos += 1;
         if (parts[i]) {
           if (i === kbJwtIndex) {
             const kbSegs = parts[i].split(".");
             sectionRanges.push({ start: pos, end: pos + parts[i].length, section: "kb-jwt" });
-            html += '<span data-section="kb-jwt">';
-            html += '<span class="jwt-header">' + escapeHtml(kbSegs[0]) + "</span>";
+            html += '<span id="raw-view-kb-jwt" data-section="kb-jwt">';
+            html += '<span class="jwt-header" id="raw-view-kb-jwt-header">' + escapeHtml(kbSegs[0]) + "</span>";
             if (kbSegs.length > 1) {
-              html += '<span class="jwt-separator">.</span>';
-              html += '<span class="jwt-payload">' + escapeHtml(kbSegs[1]) + "</span>";
+              html += separator(".");
+              html += '<span class="jwt-payload" id="raw-view-kb-jwt-payload">' + escapeHtml(kbSegs[1]) + "</span>";
             }
             if (kbSegs.length > 2) {
-              html += '<span class="jwt-separator">.</span>';
-              html += '<span class="jwt-signature">' + escapeHtml(kbSegs.slice(2).join(".")) + "</span>";
+              html += separator(".");
+              html += '<span class="jwt-signature" id="raw-view-kb-jwt-signature">' + escapeHtml(kbSegs.slice(2).join(".")) + "</span>";
             }
             html += "</span>";
             pos += parts[i].length;
           } else {
             const colorIdx = discIdx % DISC_COLORS;
             sectionRanges.push({ start: pos, end: pos + parts[i].length, section: "disc-" + discIdx });
-            html += '<span class="jwt-disc-' + colorIdx + '" data-section="disc-' + discIdx + '">' + escapeHtml(parts[i]) + "</span>";
+            html += '<span class="jwt-disc-' + colorIdx + '" id="raw-view-disc-' + discIdx + '" data-section="disc-' + discIdx + '">' + escapeHtml(parts[i]) + "</span>";
             pos += parts[i].length;
             discIdx++;
           }
@@ -289,6 +316,7 @@
     if (!toast) {
       toast = document.createElement("div");
       toast.className = "toast";
+      toast.id = "toast";
       document.body.appendChild(toast);
     }
     toast.textContent = msg;
@@ -422,12 +450,13 @@
   });
 
   function showError(msg) {
-    outputEl.innerHTML = '<div class="error">' + escapeHtml(msg) + "</div>";
+    outputEl.innerHTML = '<div class="error" id="output-error">' + escapeHtml(msg) + "</div>";
   }
 
   function showResult(data, opts) {
     updateBadge(data.format);
     outputEl.innerHTML = "";
+    usedIds = new Set();
 
     const summary = extractSummary(data);
     if (summary) {
@@ -447,7 +476,7 @@
     } else if (fmt === "mso_mdoc") {
       renderMDOC(data);
     } else {
-      outputEl.appendChild(renderJSON(data));
+      outputEl.appendChild(renderJSON(data, "output-json"));
     }
   }
 
@@ -473,14 +502,18 @@
   function renderSummaryLine(parts) {
     const el = document.createElement("div");
     el.className = "issuer-summary";
+    setId(el, "output-summary");
     parts.forEach((p) => {
       const chip = document.createElement("span");
       chip.className = "summary-chip";
+      const chipId = setId(chip, "output-summary-" + idPart(p.label).toLowerCase());
       const label = document.createElement("span");
       label.className = "summary-chip-label";
+      setId(label, chipId + "-label");
       label.textContent = p.label;
       const value = document.createElement("span");
       value.className = "summary-chip-value";
+      setId(value, chipId + "-value");
       value.textContent = p.value;
       value.title = p.value;
       chip.appendChild(label);
@@ -508,6 +541,7 @@
   function renderValidationBanner(checks, deviations, opts) {
     const banner = document.createElement("div");
     banner.className = "validity-banner";
+    banner.id = "output-validation";
 
     checks = checks || [];
     deviations = deviations || [];
@@ -546,25 +580,25 @@
     }
     banner.classList.add(cls);
 
-    let html = '<div class="verification-head">';
-    html += '<span class="verification-verdict">' + icon + " " + label + "</span>";
-    if (summary) html += '<span class="validity-detail">' + escapeHtml(summary) + "</span>";
+    let html = '<div class="verification-head" id="output-validation-head">';
+    html += '<span class="verification-verdict" id="output-validation-verdict">' + icon + " " + label + "</span>";
+    if (summary) html += '<span class="validity-detail" id="output-validation-summary">' + escapeHtml(summary) + "</span>";
     html += "</div>";
 
-    html += '<div class="verification-groups">';
-    html += verificationGroup("Violations", "vg-violations", "\u2717", violations);
-    html += verificationGroup("Cannot be checked", "vg-cant", "\u2014", cantCheck);
-    html += verificationGroup("Valid", "vg-valid", "\u2713", valid);
+    html += '<div class="verification-groups" id="output-validation-groups">';
+    html += verificationGroup("Violations", "vg-violations", "\u2717", violations, "output-validation-violations");
+    html += verificationGroup("Cannot be checked", "vg-cant", "\u2014", cantCheck, "output-validation-not-checked");
+    html += verificationGroup("Valid", "vg-valid", "\u2713", valid, "output-validation-valid");
     html += "</div>";
 
     const verifyLabel = sigValid ? "Re-verify signature" : "Verify signature";
-    html += '<details class="verify-details"><summary>' + verifyLabel + " with a key or trusted list</summary>";
-    html += '<div class="verify-inline">';
-    html += '<label class="verify-label">Public Key (PEM or JWK)</label>';
-    html += '<textarea class="verify-input verify-inline-key" rows="3" placeholder="Paste PEM or JWK..." spellcheck="false"></textarea>';
-    html += '<label class="verify-label">Trusted list URL</label>';
-    html += '<input class="verify-input verify-inline-tl" type="text" placeholder="https://...">';
-    html += '<button class="btn verify-btn verify-inline-btn">' + verifyLabel + "</button>";
+    html += '<details class="verify-details" id="output-verify"><summary id="output-verify-summary">' + verifyLabel + " with a key or trusted list</summary>";
+    html += '<div class="verify-inline" id="output-verify-form">';
+    html += '<label class="verify-label" id="output-verify-key-label">Public Key (PEM or JWK)</label>';
+    html += '<textarea class="verify-input verify-inline-key" id="output-verify-key" rows="3" placeholder="Paste PEM or JWK..." spellcheck="false"></textarea>';
+    html += '<label class="verify-label" id="output-verify-trusted-list-label">Trusted list URL</label>';
+    html += '<input class="verify-input verify-inline-tl" id="output-verify-trusted-list" type="text" placeholder="https://...">';
+    html += '<button class="btn verify-btn verify-inline-btn" id="output-verify-btn">' + verifyLabel + "</button>";
     html += "</div></details>";
 
     banner.innerHTML = html;
@@ -587,13 +621,14 @@
     return banner;
   }
 
-  function verificationGroup(title, cls, icon, items) {
+  function verificationGroup(title, cls, icon, items, id) {
     if (items.length === 0) return "";
-    let h = '<div class="verification-group ' + cls + '"><div class="vg-title">' + title + "</div>";
-    items.forEach((it) => {
-      h += '<div class="vg-item"><span class="vg-icon">' + icon + "</span>";
-      h += '<span class="vg-name">' + escapeHtml(it.name) + "</span>";
-      if (it.detail) h += '<span class="vg-detail">' + escapeHtml(it.detail) + "</span>";
+    let h = '<div class="verification-group ' + cls + '" id="' + id + '"><div class="vg-title" id="' + id + '-title">' + title + "</div>";
+    items.forEach((it, i) => {
+      const itemId = id + "-" + i;
+      h += '<div class="vg-item" id="' + itemId + '"><span class="vg-icon" id="' + itemId + '-icon">' + icon + "</span>";
+      h += '<span class="vg-name" id="' + itemId + '-name">' + escapeHtml(it.name) + "</span>";
+      if (it.detail) h += '<span class="vg-detail" id="' + itemId + '-detail">' + escapeHtml(it.detail) + "</span>";
       h += "</div>";
     });
     return h + "</div>";
@@ -624,14 +659,18 @@
   }
 
   function renderSDJWT(data) {
-    appendSection("Header", renderJSONBlock(data.header), data.header, "header");
-    appendSection("Payload (signed claims)", renderJSONBlock(data.payload, { timestampKeys: TIMESTAMP_FIELDS }), data.payload, "payload");
+    const header = reserveSection("output-header");
+    appendSection("Header", renderJSONBlock(data.header, null, header + "-json"), data.header, "header", header);
+    const payload = reserveSection("output-payload");
+    appendSection("Payload (signed claims)", renderJSONBlock(data.payload, { timestampKeys: TIMESTAMP_FIELDS }, payload + "-json"), data.payload, "payload", payload);
 
     if (data.disclosures && data.disclosures.length > 0) {
+      const discBase = reserveSection("output-disclosures");
       const disc = document.createElement("div");
       data.disclosures.forEach((d, idx) => {
         const item = document.createElement("div");
         item.className = "disclosure-item";
+        const itemId = setId(item, discBase + "-" + idx);
         item.setAttribute("data-disc-index", idx);
         const colorIdx = idx % DISC_COLORS;
         item.style.borderLeftColor = "var(--disc-color-" + colorIdx + ", var(--accent))";
@@ -640,16 +679,19 @@
         const truncatedDigest = d.digest ? d.digest.substring(0, 16) + "\u2026" : "";
         const nameEl = document.createElement("span");
         nameEl.className = "disclosure-name";
+        setId(nameEl, itemId + "-name");
         nameEl.textContent = name;
         item.appendChild(nameEl);
         item.appendChild(document.createTextNode(": "));
-        item.appendChild(renderInlineValue(valStr, "disclosure-value", name));
+        item.appendChild(renderInlineValue(valStr, "disclosure-value", name, itemId + "-value"));
 
         const meta = document.createElement("div");
         meta.className = "disclosure-meta";
+        setId(meta, itemId + "-meta");
         meta.appendChild(document.createTextNode("salt: " + d.salt + " | digest: "));
         const digest = document.createElement("span");
         digest.className = "digest-truncated";
+        setId(digest, itemId + "-digest");
         digest.title = d.digest;
         digest.textContent = truncatedDigest;
         meta.appendChild(digest);
@@ -660,6 +702,7 @@
         } else if (d.referenced === false) {
           const bad = document.createElement("span");
           bad.className = "disclosure-unreferenced";
+          setId(bad, itemId + "-unreferenced");
           bad.textContent = " \u00b7 NOT REFERENCED BY THE CREDENTIAL";
           meta.appendChild(bad);
         }
@@ -670,9 +713,10 @@
         renderNote(
           "One entry per selectively disclosable claim. The credential signs a digest of each. " +
           "Recomputing it from the salt and value is what ties the claim to the signature, and " +
-          "withholding a disclosure withholds the claim without breaking it."),
+          "withholding a disclosure withholds the claim without breaking it.",
+          discBase + "-note"),
         disc.firstChild);
-      appendSection("Disclosures (" + data.disclosures.length + ")", disc, data.disclosures, "disclosures");
+      appendSection("Disclosures (" + data.disclosures.length + ")", disc, data.disclosures, "disclosures", discBase);
 
       disc.querySelectorAll(".disclosure-item[data-disc-index]").forEach((item) => {
         const idx = item.getAttribute("data-disc-index");
@@ -699,29 +743,33 @@
           if (d.name) disclosedNames.add(d.name);
         });
       }
-      appendSection("Resolved Claims", renderResolvedClaims(data.resolvedClaims, disclosedNames), data.resolvedClaims);
+      const resolved = reserveSection("output-resolved-claims");
+      appendSection("Resolved Claims", renderResolvedClaims(data.resolvedClaims, disclosedNames, resolved), data.resolvedClaims, undefined, resolved);
     }
 
     if (data.keyBindingJWT) {
+      const kbBase = reserveSection("output-kb-jwt");
       const kb = document.createElement("div");
-      kb.appendChild(createSubSection("Header", renderJSONBlock(data.keyBindingJWT.header)));
-      kb.appendChild(createSubSection("Payload", renderJSONBlock(data.keyBindingJWT.payload, { timestampKeys: TIMESTAMP_FIELDS })));
-      appendSection("Key Binding JWT", kb, data.keyBindingJWT, "kb-jwt");
+      kb.appendChild(createSubSection("Header", renderJSONBlock(data.keyBindingJWT.header, null, kbBase + "-header-block-json"), kbBase + "-header-block"));
+      kb.appendChild(createSubSection("Payload", renderJSONBlock(data.keyBindingJWT.payload, { timestampKeys: TIMESTAMP_FIELDS }, kbBase + "-payload-block-json"), kbBase + "-payload-block"));
+      appendSection("Key Binding JWT", kb, data.keyBindingJWT, "kb-jwt", kbBase);
     }
 
     if (data.warnings && data.warnings.length > 0) {
+      const notes = reserveSection("output-notes");
       const w = document.createElement("div");
-      data.warnings.forEach((msg) => {
+      data.warnings.forEach((msg, i) => {
         const p = document.createElement("div");
+        setId(p, notes + "-" + i);
         p.style.color = "var(--yellow)";
         p.textContent = "\u26A0 " + msg;
         w.appendChild(p);
       });
-      appendSection("Notes", w);
+      appendSection("Notes", w, undefined, undefined, notes);
     }
   }
 
-  function renderResolvedClaims(claims, disclosedNames) {
+  function renderResolvedClaims(claims, disclosedNames, base) {
     const el = document.createElement("div");
     el.className = "resolved-claims-list";
 
@@ -741,41 +789,47 @@
     if (disclosed.length > 0) {
       const label = document.createElement("div");
       label.className = "resolved-group-label disclosed";
+      setId(label, base + "-disclosed-label");
       label.textContent = "Disclosed (" + disclosed.length + ")";
       el.appendChild(label);
       disclosed.forEach((c) => {
-        el.appendChild(renderClaimCard(c.key, c.value, "disclosed"));
+        el.appendChild(renderClaimCard(c.key, c.value, "disclosed", base + "-" + idPart(c.key)));
       });
     }
 
     if (standard.length > 0) {
       const label = document.createElement("div");
       label.className = "resolved-group-label";
+      setId(label, base + "-standard-label");
       label.textContent = "Standard (" + standard.length + ")";
       el.appendChild(label);
       standard.forEach((c) => {
-        el.appendChild(renderClaimCard(c.key, c.value, "standard"));
+        el.appendChild(renderClaimCard(c.key, c.value, "standard", base + "-" + idPart(c.key)));
       });
     }
 
     return el;
   }
 
-  function renderClaimCard(key, value, type) {
+  function renderClaimCard(key, value, type, id) {
     const item = document.createElement("div");
     item.className = "claim-item" + (type === "disclosed" ? " claim-disclosed" : "");
+    const itemId = setId(item, id);
     const name = document.createElement("span");
     name.className = "claim-name";
+    setId(name, itemId + "-name");
     name.textContent = key;
     item.appendChild(name);
     item.appendChild(document.createTextNode(": "));
-    item.appendChild(renderInlineValue(value, "claim-value", key));
+    item.appendChild(renderInlineValue(value, "claim-value", key, itemId + "-value"));
     return item;
   }
 
   function renderJWT(data) {
-    appendSection("Header", renderJSONBlock(data.header), data.header, "header");
-    appendSection("Payload", renderJSONBlock(data.payload, { timestampKeys: TIMESTAMP_FIELDS }), data.payload, "payload");
+    const header = reserveSection("output-header");
+    appendSection("Header", renderJSONBlock(data.header, null, header + "-json"), data.header, "header", header);
+    const payload = reserveSection("output-payload");
+    appendSection("Payload", renderJSONBlock(data.payload, { timestampKeys: TIMESTAMP_FIELDS }, payload + "-json"), data.payload, "payload", payload);
   }
 
   const MDOC_NOTES = {
@@ -793,128 +847,139 @@
       "The holder's own signature over this presentation, covering the session transcript of the request it answers. A bare credential has none.",
   };
 
-  function renderNote(text) {
+  function renderNote(text, id) {
     const el = document.createElement("div");
     el.className = "format-note";
+    setId(el, id);
     el.textContent = text;
     return el;
   }
 
   function renderMDOC(data) {
+    const infoBase = reserveSection("output-document-info");
     const info = document.createElement("div");
-    info.appendChild(renderNote(MDOC_NOTES.structure));
-    info.appendChild(renderKV("DocType", data.docType));
+    info.appendChild(renderNote(MDOC_NOTES.structure, infoBase + "-note"));
+    info.appendChild(renderKV("DocType", data.docType, infoBase + "-doctype"));
     if (data.isDeviceResponse) {
-      info.appendChild(renderKV("Container", "DeviceResponse"));
-      if (data.responseVersion) info.appendChild(renderKV("version", data.responseVersion));
-      if (data.responseStatus !== undefined) info.appendChild(renderKV("status", data.responseStatus));
+      info.appendChild(renderKV("Container", "DeviceResponse", infoBase + "-container"));
+      if (data.responseVersion) info.appendChild(renderKV("version", data.responseVersion, infoBase + "-version"));
+      if (data.responseStatus !== undefined) info.appendChild(renderKV("status", data.responseStatus, infoBase + "-status"));
     } else {
-      info.appendChild(renderKV("Container", "IssuerSigned"));
+      info.appendChild(renderKV("Container", "IssuerSigned", infoBase + "-container"));
     }
-    appendSection("Document Info", info, { docType: data.docType });
+    appendSection("Document Info", info, { docType: data.docType }, undefined, infoBase);
 
     if (data.issuerSignedItems) {
       Object.keys(data.issuerSignedItems).sort().forEach((ns) => {
         const items = data.issuerSignedItems[ns];
+        const nsBase = reserveSection("output-namespace-" + idPart(ns));
         const el = document.createElement("div");
-        el.appendChild(renderNote(MDOC_NOTES.items));
+        el.appendChild(renderNote(MDOC_NOTES.items, nsBase + "-note"));
         items.forEach((item) => {
-          el.appendChild(renderIssuerSignedItem(item));
+          el.appendChild(renderIssuerSignedItem(item, nsBase + "-" + idPart(item.elementIdentifier)));
         });
-        appendSection("issuerSigned.nameSpaces \u2192 " + ns + " (" + items.length + " elements)", el, items);
+        appendSection("issuerSigned.nameSpaces \u2192 " + ns + " (" + items.length + " elements)", el, items, undefined, nsBase);
       });
     }
 
     if (data.issuerAuth) {
+      const base = reserveSection("output-issuer-auth");
       const el = document.createElement("div");
-      el.appendChild(renderNote(MDOC_NOTES.issuerAuth));
-      el.appendChild(renderKV("Structure", data.issuerAuth.structure));
+      el.appendChild(renderNote(MDOC_NOTES.issuerAuth, base + "-note"));
+      el.appendChild(renderKV("Structure", data.issuerAuth.structure, base + "-structure"));
       if (data.issuerAuth.protected) {
-        el.appendChild(createSubSection("protected header (signed)", renderJSONBlock(data.issuerAuth.protected)));
+        el.appendChild(createSubSection("protected header (signed)", renderJSONBlock(data.issuerAuth.protected, null, base + "-protected-json"), base + "-protected"));
       }
       if (data.issuerAuth.unprotected) {
-        el.appendChild(createSubSection("unprotected header (not signed)", renderJSONBlock(data.issuerAuth.unprotected)));
+        el.appendChild(createSubSection("unprotected header (not signed)", renderJSONBlock(data.issuerAuth.unprotected, null, base + "-unprotected-json"), base + "-unprotected"));
       }
       const payload = document.createElement("div");
-      payload.appendChild(renderKV("payload", data.issuerAuth.payload + " (" + data.issuerAuth.payloadBytes + " bytes)"));
-      payload.appendChild(renderKV("signature", data.issuerAuth.signatureBytes + " bytes"));
+      payload.appendChild(renderKV("payload", data.issuerAuth.payload + " (" + data.issuerAuth.payloadBytes + " bytes)", base + "-payload"));
+      payload.appendChild(renderKV("signature", data.issuerAuth.signatureBytes + " bytes", base + "-signature"));
       el.appendChild(payload);
-      appendSection("issuerSigned.issuerAuth (COSE_Sign1)", el, data.issuerAuth);
+      appendSection("issuerSigned.issuerAuth (COSE_Sign1)", el, data.issuerAuth, undefined, base);
     }
 
     if (data.mso) {
       const mso = data.mso;
+      const base = reserveSection("output-mso");
       const el = document.createElement("div");
-      el.appendChild(renderNote(MDOC_NOTES.mso));
+      el.appendChild(renderNote(MDOC_NOTES.mso, base + "-note"));
       // Keep the MSO field order from ISO 18013-5.
-      if (mso.version) el.appendChild(renderKV("version", mso.version));
-      if (mso.digestAlgorithm) el.appendChild(renderKV("digestAlgorithm", mso.digestAlgorithm));
+      if (mso.version) el.appendChild(renderKV("version", mso.version, base + "-version"));
+      if (mso.digestAlgorithm) el.appendChild(renderKV("digestAlgorithm", mso.digestAlgorithm, base + "-digest-algorithm"));
       if (mso.valueDigests) {
-        el.appendChild(createSubSection("valueDigests (one per element)", renderJSONBlock(mso.valueDigests)));
+        el.appendChild(createSubSection("valueDigests (one per element)", renderJSONBlock(mso.valueDigests, null, base + "-value-digests-json"), base + "-value-digests"));
       }
-      el.appendChild(renderKV("deviceKeyInfo", "shown as its own section below"));
-      if (mso.docType) el.appendChild(renderKV("docType", mso.docType));
+      el.appendChild(renderKV("deviceKeyInfo", "shown as its own section below", base + "-device-key-info"));
+      if (mso.docType) el.appendChild(renderKV("docType", mso.docType, base + "-doctype"));
       if (mso.validityInfo) {
         const vi = mso.validityInfo;
         const validity = document.createElement("div");
-        if (vi.signed) validity.appendChild(renderKV("signed", vi.signed));
-        if (vi.validFrom) validity.appendChild(renderKV("validFrom", vi.validFrom));
-        if (vi.validUntil) validity.appendChild(renderKV("validUntil", vi.validUntil));
-        el.appendChild(createSubSection("validityInfo", validity));
+        if (vi.signed) validity.appendChild(renderKV("signed", vi.signed, base + "-validity-signed"));
+        if (vi.validFrom) validity.appendChild(renderKV("validFrom", vi.validFrom, base + "-validity-valid-from"));
+        if (vi.validUntil) validity.appendChild(renderKV("validUntil", vi.validUntil, base + "-validity-valid-until"));
+        el.appendChild(createSubSection("validityInfo", validity, base + "-validity"));
       }
       if (mso.status) {
-        el.appendChild(createSubSection("status", renderJSONBlock(mso.status)));
+        el.appendChild(createSubSection("status", renderJSONBlock(mso.status, null, base + "-status-json"), base + "-status"));
       }
-      appendSection("issuerAuth.payload \u2192 Mobile Security Object", el, mso);
+      appendSection("issuerAuth.payload \u2192 Mobile Security Object", el, mso, undefined, base);
     }
 
     if (data.deviceKey) {
+      const base = reserveSection("output-device-key");
       const el = document.createElement("div");
-      el.appendChild(renderNote(MDOC_NOTES.deviceKey));
+      el.appendChild(renderNote(MDOC_NOTES.deviceKey, base + "-note"));
       if (!data.deviceKey.bound) {
-        el.appendChild(renderKV("Bound to a holder key", "no"));
+        el.appendChild(renderKV("Bound to a holder key", "no", base + "-bound"));
       } else if (data.deviceKey.error) {
-        el.appendChild(renderKV("Bound to a holder key", "yes"));
-        el.appendChild(renderKV("Key", "unreadable: " + data.deviceKey.error));
+        el.appendChild(renderKV("Bound to a holder key", "yes", base + "-bound"));
+        el.appendChild(renderKV("Key", "unreadable: " + data.deviceKey.error, base + "-key"));
       } else {
-        el.appendChild(renderKV("Type", data.deviceKey.type + " " + data.deviceKey.curve));
-        el.appendChild(renderKV("Thumbprint", data.deviceKey.thumbprint));
+        el.appendChild(renderKV("Type", data.deviceKey.type + " " + data.deviceKey.curve, base + "-type"));
+        el.appendChild(renderKV("Thumbprint", data.deviceKey.thumbprint, base + "-thumbprint"));
       }
       if (data.deviceKey.coseKey) {
-        el.appendChild(createSubSection("COSE_Key", renderJSONBlock(data.deviceKey.coseKey)));
+        el.appendChild(createSubSection("COSE_Key", renderJSONBlock(data.deviceKey.coseKey, null, base + "-cose-key-json"), base + "-cose-key"));
       }
-      appendSection("mso.deviceKeyInfo \u2192 device key", el, data.deviceKey);
+      appendSection("mso.deviceKeyInfo \u2192 device key", el, data.deviceKey, undefined, base);
     }
 
+    const authBase = reserveSection("output-device-auth");
     const deviceAuth = document.createElement("div");
-    deviceAuth.appendChild(renderNote(MDOC_NOTES.deviceAuth));
+    deviceAuth.appendChild(renderNote(MDOC_NOTES.deviceAuth, authBase + "-note"));
     if (data.deviceAuth) {
-      if (data.deviceAuthType) deviceAuth.appendChild(renderKV("Type", data.deviceAuthType));
-      deviceAuth.appendChild(createSubSection("COSE", renderJSONBlock(data.deviceAuth)));
+      if (data.deviceAuthType) deviceAuth.appendChild(renderKV("Type", data.deviceAuthType, authBase + "-type"));
+      deviceAuth.appendChild(createSubSection("COSE", renderJSONBlock(data.deviceAuth, null, authBase + "-cose-json"), authBase + "-cose"));
     } else {
-      deviceAuth.appendChild(renderKV("Present", "no (this is a credential, not a presentation)"));
+      deviceAuth.appendChild(renderKV("Present", "no (this is a credential, not a presentation)", authBase + "-present"));
     }
-    appendSection("deviceSigned.deviceAuth", deviceAuth, data.deviceAuth || {});
+    appendSection("deviceSigned.deviceAuth", deviceAuth, data.deviceAuth || {}, undefined, authBase);
   }
 
-  function renderIssuerSignedItem(item) {
+  function renderIssuerSignedItem(item, id) {
     const wrap = document.createElement("div");
     wrap.className = "mdoc-item";
+    const itemId = setId(wrap, id);
 
     const head = document.createElement("div");
     head.className = "claim-item";
+    setId(head, itemId + "-claim");
     const name = document.createElement("span");
     name.className = "claim-name";
+    setId(name, itemId + "-name");
     name.textContent = item.elementIdentifier;
     head.appendChild(name);
     head.appendChild(document.createTextNode(": "));
     const val = item.elementValue;
     const valStr = typeof val === "object" && val !== null ? JSON.stringify(val, null, 2) : String(val);
-    head.appendChild(renderInlineValue(valStr, "claim-value", item.elementIdentifier));
+    head.appendChild(renderInlineValue(valStr, "claim-value", item.elementIdentifier, itemId + "-value"));
     wrap.appendChild(head);
 
     const meta = document.createElement("div");
     meta.className = "mdoc-item-meta";
+    setId(meta, itemId + "-meta");
     const parts = [
       "digestID " + item.digestID,
       "salt " + item.randomBytes + " bytes",
@@ -933,19 +998,23 @@
     return wrap;
   }
 
-  function appendSection(title, contentEl, copyData, sectionId) {
+  function appendSection(title, contentEl, copyData, sectionId, id) {
     const section = document.createElement("div");
     section.className = "section";
+    section.id = id;
     if (sectionId) section.setAttribute("data-section", sectionId);
 
     const header = document.createElement("div");
     header.className = "section-header";
+    header.id = id + "-header";
 
     const arrow = document.createElement("span");
     arrow.className = "arrow";
+    arrow.id = id + "-arrow";
     arrow.textContent = "\u25BC";
 
     const titleSpan = document.createElement("span");
+    titleSpan.id = id + "-title";
     titleSpan.textContent = title;
 
     header.appendChild(arrow);
@@ -954,6 +1023,7 @@
     if (copyData !== undefined) {
       const copyBtn = document.createElement("button");
       copyBtn.className = "copy-btn";
+      copyBtn.id = id + "-copy";
       copyBtn.textContent = "Copy";
       copyBtn.title = "Copy section as JSON";
       copyBtn.addEventListener("click", (e) => {
@@ -975,6 +1045,7 @@
 
     const body = document.createElement("div");
     body.className = "section-body";
+    body.id = id + "-body";
     body.appendChild(contentEl);
 
     header.addEventListener("click", (e) => {
@@ -1014,10 +1085,12 @@
     outputEl.appendChild(section);
   }
 
-  function createSubSection(title, contentEl) {
+  function createSubSection(title, contentEl, id) {
     const wrap = document.createElement("div");
+    const wrapId = setId(wrap, id);
     wrap.style.margin = "6px 0";
     const label = document.createElement("div");
+    setId(label, wrapId + "-label");
     label.style.color = "var(--cyan)";
     label.style.fontWeight = "600";
     label.style.marginBottom = "4px";
@@ -1027,33 +1100,36 @@
     return wrap;
   }
 
-  function renderKV(key, value) {
+  function renderKV(key, value, id) {
     const line = document.createElement("div");
     line.className = "json-line";
+    const lineId = setId(line, id);
     const keyEl = document.createElement("span");
     keyEl.className = "json-key";
+    setId(keyEl, lineId + "-key");
     keyEl.textContent = key;
     line.appendChild(keyEl);
     line.appendChild(document.createTextNode(": "));
-    line.appendChild(renderInlineValue(String(value), "json-string"));
+    line.appendChild(renderInlineValue(String(value), "json-string", undefined, lineId + "-value"));
     return line;
   }
 
-  function renderJSONBlock(obj, opts) {
+  function renderJSONBlock(obj, opts, id) {
     const el = document.createElement("pre");
     el.className = "json-block";
-    appendJSONValue(el, obj, 0, opts || {}, null);
+    const blockId = setId(el, id);
+    appendJSONValue(el, obj, 0, opts || {}, null, blockId);
     return el;
   }
 
-  function appendJSONValue(parent, value, depth, opts, currentKey) {
+  function appendJSONValue(parent, value, depth, opts, currentKey, path) {
     if (Array.isArray(value)) {
       parent.appendChild(document.createTextNode("["));
       if (value.length > 0) {
         parent.appendChild(document.createTextNode("\n"));
         value.forEach((entry, index) => {
           parent.appendChild(document.createTextNode("  ".repeat(depth + 1)));
-          appendJSONValue(parent, entry, depth + 1, opts, currentKey);
+          appendJSONValue(parent, entry, depth + 1, opts, currentKey, path + "-" + index);
           if (index < value.length - 1) {
             parent.appendChild(document.createTextNode(","));
           }
@@ -1072,9 +1148,10 @@
         parent.appendChild(document.createTextNode("\n"));
         entries.forEach(([key, entry], index) => {
           parent.appendChild(document.createTextNode("  ".repeat(depth + 1)));
-          appendJSONToken(parent, "json-key", JSON.stringify(key));
+          const entryPath = path + "-" + idPart(key);
+          appendJSONToken(parent, "json-key", JSON.stringify(key), "", entryPath + "-key");
           parent.appendChild(document.createTextNode(": "));
-          appendJSONValue(parent, entry, depth + 1, opts, key);
+          appendJSONValue(parent, entry, depth + 1, opts, key, entryPath);
           if (index < entries.length - 1) {
             parent.appendChild(document.createTextNode(","));
           }
@@ -1087,32 +1164,33 @@
     }
 
     if (typeof value === "string") {
-      parent.appendChild(createEmbeddedValueElement(value, { quoted: true }));
+      parent.appendChild(createEmbeddedValueElement(value, { quoted: true, id: path + "-value" }));
       return;
     }
 
     if (typeof value === "number") {
       const title = timestampTitle(value, currentKey, opts);
-      appendJSONToken(parent, title ? "json-number timestamp-hover" : "json-number", String(value), title);
+      appendJSONToken(parent, title ? "json-number timestamp-hover" : "json-number", String(value), title, path + "-value");
       return;
     }
 
     if (typeof value === "boolean") {
-      appendJSONToken(parent, "json-bool", String(value));
+      appendJSONToken(parent, "json-bool", String(value), "", path + "-value");
       return;
     }
 
     if (value === null) {
-      appendJSONToken(parent, "json-null", "null");
+      appendJSONToken(parent, "json-null", "null", "", path + "-value");
       return;
     }
 
-    appendJSONToken(parent, "json-null", JSON.stringify(value));
+    appendJSONToken(parent, "json-null", JSON.stringify(value), "", path + "-value");
   }
 
-  function appendJSONToken(parent, className, text, title) {
+  function appendJSONToken(parent, className, text, title, id) {
     const span = document.createElement("span");
     span.className = className;
+    setId(span, id);
     span.textContent = text;
     if (title) span.title = title;
     parent.appendChild(span);
@@ -1132,16 +1210,17 @@
     return iso + " (" + relativeTime(date) + ")";
   }
 
-  function renderInlineValue(value, className, key) {
+  function renderInlineValue(value, className, key, id) {
     const wrap = document.createElement("span");
     wrap.className = className;
+    const wrapId = setId(wrap, id);
     const title = timestampTitle(Number(value), key, { timestampKeys: TIMESTAMP_FIELDS });
     if (title) {
       wrap.className = className + " timestamp-hover";
       wrap.title = title;
     }
     if (typeof value === "string") {
-      wrap.appendChild(createEmbeddedValueElement(value, { quoted: false, plainStringClass: className }));
+      wrap.appendChild(createEmbeddedValueElement(value, { quoted: false, plainStringClass: className, id: wrapId + "-token" }));
     } else {
       wrap.textContent = String(value);
     }
@@ -1157,9 +1236,10 @@
     const token = quoted ? JSON.stringify(value) : value;
     const el = createValueToken(value, token, quoted, opts);
     if (token.length <= MAX_INLINE_VALUE_CHARS) {
+      setId(el, opts.id);
       return el;
     }
-    return wrapLongValue(el, token, value);
+    return wrapLongValue(el, token, value, opts.id);
   }
 
   function createValueToken(value, token, quoted, opts) {
@@ -1185,9 +1265,11 @@
     return button;
   }
 
-  function wrapLongValue(el, token, value) {
+  function wrapLongValue(el, token, value, id) {
     const wrap = document.createElement("span");
     wrap.className = "long-value";
+    const wrapId = setId(wrap, id);
+    setId(el, wrapId + "-text");
 
     const head = token.slice(0, MAX_INLINE_VALUE_CHARS) + "…";
     el.classList.add("long-value-token");
@@ -1197,6 +1279,7 @@
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "long-value-toggle";
+    setId(toggle, wrapId + "-toggle");
     const showAll = "Show all " + token.length + " characters";
     toggle.textContent = showAll;
     let expanded = false;
@@ -1213,6 +1296,7 @@
     if (image) {
       const img = document.createElement("img");
       img.className = "value-image";
+      setId(img, wrapId + "-image");
       img.src = image;
       img.alt = "";
       img.loading = "lazy";
@@ -1337,8 +1421,8 @@
     });
   }
 
-  function renderJSON(obj) {
-    return renderJSONBlock(obj);
+  function renderJSON(obj, id) {
+    return renderJSONBlock(obj, null, id);
   }
 
   // Escape quotes too because values appear in HTML attributes.
@@ -1390,7 +1474,7 @@
         prefill(data.credential);
       })
       .catch((e) => {
-        outputEl.innerHTML = '<div class="placeholder">Could not load credential ' +
+        outputEl.innerHTML = '<div class="placeholder" id="output-placeholder">Could not load credential ' +
           escapeHtml(id) + ": " + escapeHtml(e.message) + "</div>";
       });
   }

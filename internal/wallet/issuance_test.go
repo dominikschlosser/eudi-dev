@@ -480,6 +480,9 @@ func TestParseIssuerMetadataResponse_SignedJWT(t *testing.T) {
 	}
 	trustSignedIssuerMetadataFrom(t, w)
 
+	if _, err := w.RegisterMissingDemoParties(); err != nil {
+		t.Fatal(err)
+	}
 	raw, err := signCredentialIssuerMetadataJWT(w, w.IssuerURL, time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatalf("signing issuer metadata: %v", err)

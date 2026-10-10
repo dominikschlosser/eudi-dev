@@ -24,7 +24,7 @@ If the offer requires a transaction code and none is given, issuance fails befor
 
 After storing a credential, the wallet calls the issuer's Notification Endpoint if the issuer publishes one. The endpoint is optional (OpenID4VCI 1.0 §11). A rejected call logs a warning and the credential stays in the wallet. The warning quotes the response and compares it with §11.3 (an Authorization Error Response for a rejected token, a 400 for a bad `notification_id`).
 
-The purpose and privacy policy in the presentation consent dialog come from the verifier's registration certificate. The certificate must belong to the access certificate of the signed request (see [what the wallet checks](registrar.md#what-the-wallet-checks)). `--arf` checks the registration certificate (see [ARF checks](presenting.md#arf-checks)).
+The purpose and privacy policy in the presentation consent dialog come from the verifier's registration certificate. The certificate must belong to the access certificate of the signed request (see [what the wallet checks](registrar.md#wallet-checks)). `--arf` checks the registration certificate (see [ARF checks](presenting.md#arf-checks)).
 
 The presentation dialog starts with the wallet's automatic credential selection. The user can choose a credential-set option and a credential for each query. Auto-accept submits the automatic selection without a dialog.
 
@@ -83,7 +83,7 @@ To serve the wallet under a path prefix on a shared host, include the prefix in 
 
 For a local https origin without an external TLS terminator, add `--serve-tls`. The wallet then also listens on the base URL's port with its own TLS certificate. The plain HTTP port stays open. `--serve-tls` requires an https `--base-url` with an explicit port. The [demo issuer and verifier conformance run](../conformance-run-demorp.md) needs it because the OIDF suite requires https endpoints.
 
-The demo verifier accepts a credential when its certificate chains to an issuance service on a credential provider list of the wallet's [list of trusted lists](#trusted-lists). That includes the wallet's own issuers, added providers and the providers on external lists. A status list may also chain to a revocation service. `--demo-verifier-issuer-ca <pem>` (repeatable) adds more CAs directly (for example, the OIDF conformance suite signs its credentials under its own CAs).
+The demo verifier accepts a credential when its certificate chains to an issuance service on a credential provider list of the wallet's [list of trusted lists](#trusted-lists). That includes the wallet's own issuers, added providers and the providers on external lists. Its status list chains to a revocation service of such a list (ETSI TS 119 602 V1.1.1 Table D.3). `--demo-verifier-issuer-ca <pem>` (repeatable) adds more CAs directly (for example, the OIDF conformance suite signs its credentials under its own CAs).
 
 ### Trusted lists
 
@@ -147,7 +147,7 @@ eudi wallet trust rm-ca fc390242d2ad08ab
 eudi wallet trust rm-list https://lists.example/pid
 ```
 
-`add-ca` takes a PEM file with CA certificates and one of the list IDs above. The wallet adds the CA to that list as a provider with an issuance and a revocation service, and signs the list. The CA is then a trust anchor for certificates issued under it and for their status lists. Adding the same certificates to the same list again replaces the earlier entry. The name defaults to the CA's common name. `trusted-list-ca` is no published list. Its CAs may sign trusted lists, like those from `--trusted-list-ca`, so the wallet accepts external lists signed under them.
+`add-ca` takes a PEM file with CA certificates and one of the list IDs above. The wallet adds the CA to that list as a provider with an issuance and a revocation service, and signs the list. The CA is then a trust anchor for certificates issued under it and for their status lists. Adding the same certificates to the same list again replaces the earlier entry. The name defaults to the CA's common name. The wallet doesn't publish the `trusted-list-ca` list. Its CAs may sign trusted lists, like those from `--trusted-list-ca`, so the wallet accepts external lists signed under them.
 
 `add-list` puts an external list of trusted entities on the list of trusted lists. With `--arf` the providers on the external list are trust anchors for the checks of its list type. For example, a PID provider list anchors the checks of received PIDs. The list signer must chain to the wallet CA or to a CA from `--trusted-list-ca`. In `--mode strict` the wallet refuses an unreadable list. In `--mode debug` it adds the list and reports the reason. `wallet serve --trusted-list <url>` (repeatable) adds lists at startup. They can't be removed through the API.
 

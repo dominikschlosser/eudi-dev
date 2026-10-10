@@ -2,7 +2,7 @@
 
 This example runs a local OpenID4VCI issuance flow from Keycloak into `eudi-dev`.
 
-## How It Works
+## Flow
 
 1. `docker compose up -d --force-recreate` starts Keycloak `26.7.2`, enables OID4VCI, and imports `realm/oid4vc-demo-realm.json`.
 2. `./scripts/bootstrap.sh` waits for the imported realm, assigns the `membership-credential` to `alice` through the admin API (Keycloak 26.7.2 creates an offer only for a credential already assigned to the user), and prints the issuer endpoints.
@@ -95,7 +95,7 @@ eudi wallet accept "$OFFER_URI"
 | Wallet directory | `~/.eudi-dev/wallet` |
 | Input | `openid-credential-offer://?credential_offer=...` |
 
-### Why Inline `credential_offer`
+### Inline `credential_offer`
 
 This example uses the OpenID4VCI by-value `credential_offer` form.
 

@@ -92,7 +92,7 @@ const (
 
 var (
 	errCatalogNotFound = errors.New("attestation not in the catalogue")
-	errCatalogTemplate = errors.New("this entry belongs to a predefined credential template and can't be changed or deleted")
+	errCatalogTemplate = errors.New("this entry belongs to a predefined credential template and can't be changed")
 	errCatalogFull     = errors.New("the catalogue holds the maximum number of attestations")
 	semanticVersion    = regexp.MustCompile(`^\d+\.\d+(\.\d+)?$`)
 
@@ -164,8 +164,9 @@ func (r *Registrar) CheckCatalogAttestation(entry CatalogAttestation) error {
 // checkNewCatalogEntryLocked keeps names and types unique. The wallet finds
 // the trusted list of a received credential by its type.
 func (r *Registrar) checkNewCatalogEntryLocked(entry CatalogAttestation, fromTemplates []CatalogAttestation) error {
+	removed := r.removedTemplateIDsLocked()
 	for _, existing := range append(fromTemplates, r.state.Catalog...) {
-		if existing.Removed || r.removedTemplateIDsLocked()[existing.Schema.ID] {
+		if existing.Removed || removed[existing.Schema.ID] {
 			continue
 		}
 		if strings.EqualFold(existing.Name, entry.Name) {
@@ -177,7 +178,9 @@ func (r *Registrar) checkNewCatalogEntryLocked(entry CatalogAttestation, fromTem
 			}
 		}
 	}
-	if len(r.state.Catalog) >= maxCatalogEntries {
+	// The markers of removed template entries don't take a place.
+	added := len(r.state.Catalog) - len(removed)
+	if added >= maxCatalogEntries {
 		return errCatalogFull
 	}
 	return nil

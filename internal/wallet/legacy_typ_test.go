@@ -60,7 +60,7 @@ func TestImportSDJWT_LegacyType(t *testing.T) {
 	t.Run("debug keeps it", func(t *testing.T) {
 		w := generateTestWallet(t)
 		w.ValidationMode = ValidationModeDebug
-		if _, err := w.importSDJWT(legacyTypeCredential(t, w), "", ""); err != nil {
+		if _, err := w.parseSDJWTEntry(legacyTypeCredential(t, w), "", ""); err != nil {
 			t.Fatalf("debug import refused the credential: %v", err)
 		}
 	})
@@ -68,7 +68,7 @@ func TestImportSDJWT_LegacyType(t *testing.T) {
 	t.Run("strict refuses it", func(t *testing.T) {
 		w := generateTestWallet(t)
 		w.ValidationMode = ValidationModeStrict
-		if _, err := w.importSDJWT(legacyTypeCredential(t, w), "", ""); err == nil {
+		if _, err := w.parseSDJWTEntry(legacyTypeCredential(t, w), "", ""); err == nil {
 			t.Fatal("strict import accepted a credential on the earlier typ")
 		}
 	})

@@ -250,7 +250,7 @@ func TestOneShotPresentationSendsTheARFRefusalToTheVerifier(t *testing.T) {
 	}
 	rp, err := w.Registrar().RegisterRelyingParty(registrar.WalletRelyingParty{
 		TradeName:  "Example Shop",
-		Identifier: []registrar.Identifier{{Type: "http://data.europa.eu/eudi/id/LEI", Identifier: "LEIXG-5299000J2N45DDNE4Y28"}},
+		Identifier: []registrar.Identifier{{Type: "http://data.europa.eu/eudi/id/LEI", Identifier: "5299000J2N45DDNE4Y28"}},
 		Services: []registrar.WalletRelyingPartyService{{IntendedUses: []registrar.IntendedUse{{
 			Purpose:     []registrar.MultiLangString{{Lang: "en", Content: "Age check"}},
 			Credentials: []registrar.RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{"urn:eudi:pid:1"}}, Claims: []registrar.RegisteredClaim{{Path: []any{"age_over_18"}}}}},

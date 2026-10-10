@@ -2,7 +2,7 @@
 
 URL handlers, `wallet accept`, `wallet scan`, the web UI and the HTTP endpoints all call the same issuance or presentation flow. Entry points handle input and interaction. The shared flow handles the protocol.
 
-## What an entry point may do
+## Entry point duties
 
 Recognise the input and pass it to the flow. A scan also decodes an image into a URI, and a prompt may collect something the user has to type.
 
@@ -14,7 +14,7 @@ An entry point that already holds a copy of the offer passes it on in `OfferOpti
 
 The flow decides which credentials match and whether consent is required. Entry points pass user settings such as `--haip`, validation mode and `--auto-accept` as options.
 
-## Where the transaction code comes from
+## Transaction code
 
 A transaction code is delivered out of band, so the wallet has to ask the user for it. The consent dialog asks whenever an interactive wallet with a UI handles the offer. That covers the handler, a remote wallet, and a scan or a link routed to a running instance. For non-interactive issuance, including `--auto-accept` and API calls, the caller must supply the code. If the offer requires `tx_code` and none was supplied, the wallet rejects it before using the pre-authorized code. The error explains how to supply it.
 

@@ -28,6 +28,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 )
 
 // RegistrationStatusClient fetches the status lists of registration
@@ -83,21 +84,21 @@ func (w *Wallet) PrepareARFChecks(params *AuthorizationRequestParams) {
 // issuance services of the lists of access certificate providers (ARF RPA_04
 // and PPNot_06, ETSI TS 119 602 V1.1.1 Annex F).
 func (w *Wallet) RelyingPartyCAs() []*x509.Certificate {
-	return w.listAnchors(accessCAListType, issuanceServices)
+	return w.listAnchors(accessCAListType, trustlist.IssuanceServices)
 }
 
 // RegistrarCAs are the anchors --arf trusts for registration certificates:
 // the issuance services of the lists of registration certificate providers
 // (ARF RPRC_02a and RPACANot_04, ETSI TS 119 602 V1.1.1 Annex G).
 func (w *Wallet) RegistrarCAs() []*x509.Certificate {
-	return w.listAnchors(registrarListType, issuanceServices)
+	return w.listAnchors(registrarListType, trustlist.IssuanceServices)
 }
 
 // RegistrationStatusCAs are the anchors of the status lists of registration
 // certificates: the revocation services of the same lists (ARF
 // RPACANot_03b).
 func (w *Wallet) RegistrationStatusCAs() []*x509.Certificate {
-	return w.listAnchors(registrarListType, revocationServices)
+	return w.listAnchors(registrarListType, trustlist.RevocationServices)
 }
 
 // TrustListCAs are the CAs --arf trusts for the signer of a trusted list. The

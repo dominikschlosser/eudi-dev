@@ -30,7 +30,7 @@ const (
 	FormatMDOC      CredentialFormat = "mso_mdoc"
 	FormatOID4VCI   CredentialFormat = "oid4vci"
 	FormatOID4VP    CredentialFormat = "oid4vp"
-	FormatTrustList CredentialFormat = "trustlist"
+	FormatTrustList CredentialFormat = "trusted-list"
 	FormatUnknown   CredentialFormat = "unknown"
 )
 

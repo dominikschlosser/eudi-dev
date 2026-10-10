@@ -16,6 +16,10 @@ function esc(s) {
     .replace(/'/g, "&#39;");
 }
 
+function idPart(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "x";
+}
+
 function renderResult(doc) {
   const box = document.getElementById("result-box");
   box.style.display = "block";
@@ -27,21 +31,22 @@ function renderResult(doc) {
     doc.status === "expired" ? "Request expired, create a new one" :
     "Waiting for the wallet…";
   const checks = document.getElementById("checks");
-  checks.innerHTML = (doc.checks || []).map((c) => {
+  checks.innerHTML = (doc.checks || []).map((c, i) => {
     // A protocol check can pass while reporting a profile warning.
     if (c.ok && c.warning) {
-      return `<div class="warn">! ${esc(c.name)}: ${esc(c.warning)}</div>`;
+      return `<div class="warn" id="checks-${i}">! ${esc(c.name)}: ${esc(c.warning)}</div>`;
     }
-    return `<div class="${c.ok ? "ok" : "fail"}">${c.ok ? "✓" : "✗"} ${esc(c.name)}${c.error ? ": " + esc(c.error) : ""}</div>`;
+    return `<div class="${c.ok ? "ok" : "fail"}" id="checks-${i}">${c.ok ? "✓" : "✗"} ${esc(c.name)}${c.error ? ": " + esc(c.error) : ""}</div>`;
   }).join("");
   const claims = document.getElementById("claims");
   const label = document.getElementById("claims-label");
   if (doc.status === "verified" && doc.claims) {
-    claims.innerHTML = Object.entries(doc.claims).map(([k, v]) =>
-      typeof v === "object" && v !== null
-        ? `<tr><td>${esc(k)}</td><td><div class="claim-json">${esc(JSON.stringify(v, null, 2))}</div></td></tr>`
-        : `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`
-    ).join("");
+    claims.innerHTML = Object.entries(doc.claims).map(([k, v], i) => {
+      const id = `claims-${i}-${idPart(k)}`;
+      return typeof v === "object" && v !== null
+        ? `<tr id="${id}"><td id="${id}-name">${esc(k)}</td><td id="${id}-value"><div class="claim-json" id="${id}-json">${esc(JSON.stringify(v, null, 2))}</div></td></tr>`
+        : `<tr id="${id}"><td id="${id}-name">${esc(k)}</td><td id="${id}-value">${esc(v)}</td></tr>`;
+    }).join("");
     claims.hidden = false;
     label.hidden = false;
   } else {
@@ -179,10 +184,12 @@ for (const option of document.querySelectorAll("#scheme-toggle .toggle-option"))
   });
 }
 
-function addClaimRow(container, value) {
+function addClaimRow(container, value, id) {
   const row = document.createElement("div");
   row.className = "claim-row";
+  row.id = id;
   const input = document.createElement("input");
+  input.id = id + "-input";
   input.type = "text";
   input.className = "claim-input";
   input.placeholder = "given_name or nationalities[*]";
@@ -190,6 +197,7 @@ function addClaimRow(container, value) {
   const remove = document.createElement("button");
   remove.type = "button";
   remove.className = "btn icon small";
+  remove.id = id + "-remove";
   remove.textContent = "×";
   remove.setAttribute("aria-label", "Remove claim");
   remove.addEventListener("click", () => row.remove());
@@ -197,20 +205,28 @@ function addClaimRow(container, value) {
   container.append(row);
 }
 
+let credentialCount = 0;
+
 function addCredential(seed) {
   const list = document.getElementById("credentials-list");
   const cred = document.createElement("div");
   cred.className = "cred";
+  cred.id = "credentials-list-" + credentialCount++;
+  let claimCount = 0;
+  const nextClaimID = () => cred.id + "-claim-" + claimCount++;
 
   const head = document.createElement("div");
   head.className = "cred-head";
+  head.id = cred.id + "-head";
   const toggle = document.createElement("div");
   toggle.className = "toggle format-select";
+  toggle.id = cred.id + "-format";
   for (const fmt of ["dc+sd-jwt", "mso_mdoc"]) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "toggle-option" + (fmt === (seed?.format || "dc+sd-jwt") ? " selected" : "");
     b.dataset.format = fmt;
+    b.id = toggle.id + "-" + idPart(fmt);
     b.textContent = fmt;
     b.addEventListener("click", () => {
       for (const other of toggle.children) other.classList.toggle("selected", other === b);
@@ -221,35 +237,42 @@ function addCredential(seed) {
   const typeInput = document.createElement("input");
   typeInput.type = "text";
   typeInput.className = "type-input";
+  typeInput.id = cred.id + "-type";
   typeInput.placeholder = (seed?.format === "mso_mdoc") ? "doctype, e.g. eu.europa.ec.eudi.pid.1" : "vct, e.g. urn:eudi:pid:1";
   typeInput.value = seed?.type || "";
   const removeCred = document.createElement("button");
   removeCred.type = "button";
   removeCred.className = "btn icon small";
+  removeCred.id = cred.id + "-remove";
   removeCred.textContent = "×";
   removeCred.setAttribute("aria-label", "Remove credential");
   removeCred.addEventListener("click", () => cred.remove());
   // OpenID4VP 1.0 §6.1 multiple: the wallet may answer with several credentials.
   const multipleLabel = document.createElement("label");
   multipleLabel.className = "multiple-option";
+  multipleLabel.id = cred.id + "-multiple-label";
   const multiple = document.createElement("input");
   multiple.type = "checkbox";
   multiple.className = "multiple-input";
+  multiple.id = cred.id + "-multiple";
   multiple.checked = !!seed?.multiple;
   multipleLabel.append(multiple, " multiple");
   head.append(toggle, typeInput, multipleLabel, removeCred);
 
   const claimsLabel = document.createElement("div");
   claimsLabel.className = "claims-label";
+  claimsLabel.id = cred.id + "-claims-label";
   claimsLabel.textContent = "Claims";
   const claims = document.createElement("div");
   claims.className = "claims";
-  for (const c of seed?.claims || [""]) addClaimRow(claims, c);
+  claims.id = cred.id + "-claims";
+  for (const c of seed?.claims || [""]) addClaimRow(claims, c, nextClaimID());
   const addClaim = document.createElement("button");
   addClaim.type = "button";
   addClaim.className = "btn small";
+  addClaim.id = cred.id + "-add-claim";
   addClaim.textContent = "+ Claim";
-  addClaim.addEventListener("click", () => addClaimRow(claims, ""));
+  addClaim.addEventListener("click", () => addClaimRow(claims, "", nextClaimID()));
 
   cred.append(head, claimsLabel, claims, addClaim);
   list.append(cred);

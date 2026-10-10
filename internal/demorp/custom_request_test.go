@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -222,5 +223,54 @@ func TestVerifierCustomRequestRedirectURIUnsigned(t *testing.T) {
 	cred, _ := claims["cred_0"].(map[string]any)
 	if cred["given_name"] == nil {
 		t.Errorf("disclosed claims = %v, want given_name", cred)
+	}
+}
+
+// The verifier checks the status list of an mdoc as it does for an SD-JWT VC.
+func TestTheVerifierRejectsARevokedMDoc(t *testing.T) {
+	w := customTestWallet(t)
+	_, ts := serveDemoStack(t, w)
+	for _, cred := range w.GetCredentials() {
+		w.RemoveCredential(cred.ID)
+	}
+	created := postJSONTo(t, ts.URL+"/issuer/api/offers?credential=pid-mdoc&status=true", "")
+	result := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(created["scheme_uri"].(string))+`}`)
+	id, _ := result["credential_id"].(string)
+	if id == "" {
+		t.Fatalf("issuing the mdoc: %v", result)
+	}
+	if _, ok := w.SetCredentialStatus(id, 1); !ok {
+		t.Fatal("the mdoc has no entry on the wallet's status list")
+	}
+
+	request := createCustom(t, ts, `{"type":"custom","credentials":[{"format":"mso_mdoc","doctype":"`+PIDDocType+`","claims":[["`+PIDDocType+`","given_name"]]}]}`)
+	status := getJSONFrom(t, ts.URL+"/verifier/api/requests/"+request)
+	if status["status"] != "failed" || !strings.Contains(fmt.Sprint(status["checks"]), "revoked") {
+		t.Errorf("status = %v, want failed on the revocation check (checks %v)", status["status"], status["checks"])
+	}
+}
+
+// A DCQL claims path points into the disclosed claims (OpenID4VP 1.0 §7.1).
+func TestAClaimsPathPointsIntoTheClaims(t *testing.T) {
+	claims := map[string]any{
+		"address":                 map[string]any{"locality": "Berlin"},
+		"nationalities":           []any{"DE", "NL"},
+		"eu.europa.ec.eudi.pid.1": map[string]any{"given_name": "Erika"},
+	}
+	for _, tc := range []struct {
+		path []any
+		want bool
+	}{
+		{[]any{"address", "locality"}, true},
+		{[]any{"address", "street_address"}, false},
+		{[]any{"nationalities", nil}, true},
+		{[]any{"nationalities", float64(1)}, true},
+		{[]any{"nationalities", float64(2)}, false},
+		{[]any{"eu.europa.ec.eudi.pid.1", "given_name"}, true},
+		{[]any{"eu.europa.ec.eudi.pid.de.1", "given_name"}, false},
+	} {
+		if got := claimPathPresent(claims, tc.path); got != tc.want {
+			t.Errorf("%v: %t, want %t", tc.path, got, tc.want)
+		}
 	}
 }

@@ -36,6 +36,7 @@ func TestBlockPrivateAddresses(t *testing.T) {
 		{"[::ffff:10.0.0.1]:80", true}, // IPv4-mapped IPv6
 		{"100.64.0.1:80", true},        // CGNAT
 		{"[fc00::1]:80", true},         // unique-local
+		{"[64:ff9b::a00:1]:80", true},  // NAT64 for 10.0.0.1
 		{"0.0.0.0:80", true},
 		{"1.1.1.1:443", false},
 		{"93.184.216.34:443", false},

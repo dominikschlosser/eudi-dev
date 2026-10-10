@@ -179,14 +179,7 @@ func TestTLSConformanceSettingsApplyToExistingClientsAndClones(t *testing.T) {
 			} else if gotOverride != *tc.override {
 				t.Fatalf("override = %v", gotOverride)
 			}
-			clone, err := cloneWalletForPresentation(w, presentationRequestOptions{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if clone.HTTPClient() != client {
-				t.Fatal("presentation clone does not reuse the server HTTP client")
-			}
-			for _, c := range []*http.Client{client, clone.HTTPClient()} {
+			for _, c := range []*http.Client{client} {
 				resp, err := c.Get(endpoint.URL)
 				if resp != nil {
 					resp.Body.Close()
@@ -234,7 +227,7 @@ func TestTLSResetPreservesExplicitStartupOverride(t *testing.T) {
 	}
 }
 
-func TestTLSTrustSurvivesPresentationCloneAndStoreReload(t *testing.T) {
+func TestTLSTrustSurvivesStoreReload(t *testing.T) {
 	endpoint := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") }))
 	defer endpoint.Close()
 	w := generateTestWallet(t)
@@ -246,11 +239,7 @@ func TestTLSTrustSurvivesPresentationCloneAndStoreReload(t *testing.T) {
 	defer w.HTTPClient().CloseIdleConnections()
 	server := NewServer(w, 0, nil)
 	server.applyPersistedWalletState(generateTestWallet(t))
-	clone, err := cloneWalletForPresentation(w, presentationRequestOptions{AutoAccept: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, err := clone.HTTPClient().Get(endpoint.URL)
+	response, err := w.HTTPClient().Get(endpoint.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
