@@ -43,7 +43,7 @@ func TestEvaluateDCQL_ExtendingTypeAnswersForTheTypeItExtends(t *testing.T) {
 	}
 	logs := captureTestLogs(t)
 
-	matches := w.EvaluateDCQL(sdjwtVCTQuery(mock.DefaultPIDVCT))
+	matches := evaluateDCQL(t, w, sdjwtVCTQuery(mock.DefaultPIDVCT))
 	if len(matches) != 1 {
 		t.Fatalf("expected the German PID to answer, got %d matches", len(matches))
 	}
@@ -59,7 +59,7 @@ func TestEvaluateDCQL_ExtendingTypeAnswersForTheTypeItExtends(t *testing.T) {
 func TestEvaluateDCQL_ExtendedTypeDoesNotAnswerForTheExtendingOne(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	if matches := w.EvaluateDCQL(sdjwtVCTQuery(germanPIDVCT)); len(matches) != 0 {
+	if matches := evaluateDCQL(t, w, sdjwtVCTQuery(germanPIDVCT)); len(matches) != 0 {
 		t.Fatalf("the country-independent PID answered a request for the German type: %d matches", len(matches))
 	}
 }
@@ -70,12 +70,12 @@ func TestEvaluateDCQL_BothPIDTypesHeld(t *testing.T) {
 		t.Fatalf("generating the baseline: %v", err)
 	}
 
-	matches := w.EvaluateDCQL(sdjwtVCTQuery(mock.DefaultPIDVCT))
+	matches := evaluateDCQL(t, w, sdjwtVCTQuery(mock.DefaultPIDVCT))
 	if len(matches) != 1 {
 		t.Fatalf("expected exactly one credential to be presented, got %d", len(matches))
 	}
 
-	german := w.EvaluateDCQL(sdjwtVCTQuery(germanPIDVCT))
+	german := evaluateDCQL(t, w, sdjwtVCTQuery(germanPIDVCT))
 	if len(german) != 1 {
 		t.Fatalf("expected the German PID to answer its own type, got %d matches", len(german))
 	}
@@ -102,7 +102,7 @@ func TestEvaluateDCQL_AkaVCTsFromAnUnknownType(t *testing.T) {
 	// The fixture has no raw credential and so no holder binding.
 	query := sdjwtVCTQuery(mock.DefaultPIDVCT)
 	query["credentials"].([]any)[0].(map[string]any)["require_cryptographic_holder_binding"] = false
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected the aka_vcts credential to answer, got %d matches", len(matches))
 	}
@@ -133,7 +133,7 @@ func TestEvaluateDCQL_MDocPIDsShareTheirDoctype(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected the German mdoc PID to answer, got %d matches", len(matches))
 	}

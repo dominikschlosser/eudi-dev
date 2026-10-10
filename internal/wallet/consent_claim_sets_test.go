@@ -48,7 +48,7 @@ func TestDebugModeOffersEverySatisfiableClaimSet(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 	w.ValidationMode = ValidationModeDebug
 
-	matches, options := w.EvaluateDCQLWithOptions(claimSetsQuery())
+	matches, options := evaluateDCQLWithOptions(t, w, claimSetsQuery())
 
 	if len(matches) != 1 || !slices.Equal(matches[0].SelectedKeys, []string{"given_name", "family_name"}) {
 		t.Fatalf("matches %+v, want the first claim set as the automatic selection", matches)
@@ -71,7 +71,7 @@ func TestStrictModeOffersNoClaimSetChoice(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 	w.ValidationMode = ValidationModeStrict
 
-	matches, options := w.EvaluateDCQLWithOptions(claimSetsQuery())
+	matches, options := evaluateDCQLWithOptions(t, w, claimSetsQuery())
 
 	if len(matches) != 1 || len(matches[0].ClaimSets) != 0 || len(options.Queries[0].Candidates[0].ClaimSets) != 0 {
 		t.Fatalf("strict mode offers claim sets: matches %+v, options %+v", matches, options.Queries[0])
@@ -81,7 +81,7 @@ func TestStrictModeOffersNoClaimSetChoice(t *testing.T) {
 func TestAChosenClaimSetIsDisclosed(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 	w.ValidationMode = ValidationModeDebug
-	matches, options := w.EvaluateDCQLWithOptions(claimSetsQuery())
+	matches, options := evaluateDCQLWithOptions(t, w, claimSetsQuery())
 
 	choice := map[string]int{"pid": 2}
 	if err := ValidateConsentSelection(options, nil, nil, choice); err != nil {
@@ -103,7 +103,7 @@ func TestAChosenClaimSetIsDisclosed(t *testing.T) {
 func TestAClaimSetTheCredentialCannotSatisfyIsRefused(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 	w.ValidationMode = ValidationModeDebug
-	_, options := w.EvaluateDCQLWithOptions(claimSetsQuery())
+	_, options := evaluateDCQLWithOptions(t, w, claimSetsQuery())
 
 	for _, tc := range []struct {
 		name   string

@@ -38,7 +38,7 @@ func TestDebugModeOffersNonMatchingCredentialsWithTheirReasons(t *testing.T) {
 	w.ValidationMode = ValidationModeDebug
 	query := map[string]any{"credentials": []any{consentPIDQuery("pid", "dc+sd-jwt")}}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 
 	if len(matches) != 1 || matches[0].Format != "dc+sd-jwt" {
 		t.Fatalf("matches %+v, want the SD-JWT PID as the automatic selection", matches)
@@ -61,11 +61,11 @@ func TestStrictModeOffersNoNonMatchingCredentials(t *testing.T) {
 	w.ValidationMode = ValidationModeStrict
 	query := map[string]any{"credentials": []any{consentPIDQuery("pid", "dc+sd-jwt")}}
 
-	_, options := w.EvaluateDCQLWithOptions(query)
+	_, options := evaluateDCQLWithOptions(t, w, query)
 	if len(options.Queries[0].NonMatching) != 0 {
 		t.Fatalf("strict mode offers %+v", options.Queries[0].NonMatching)
 	}
-	if matches, options := w.EvaluateDCQLWithOptions(nobodyQuery()); matches != nil || options != nil {
+	if matches, options := evaluateDCQLWithOptions(t, w, nobodyQuery()); matches != nil || options != nil {
 		t.Fatalf("strict mode returns matches %+v and options %+v for a query nothing matches", matches, options)
 	}
 }
@@ -74,7 +74,7 @@ func TestANonMatchingCredentialIsSentOnlyWhenPicked(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 	w.ValidationMode = ValidationModeDebug
 
-	matches, options := w.EvaluateDCQLWithOptions(nobodyQuery())
+	matches, options := evaluateDCQLWithOptions(t, w, nobodyQuery())
 	if matches != nil {
 		t.Fatalf("matches %+v, want none", matches)
 	}
@@ -108,7 +108,7 @@ func TestSetOptionsOnlyNonMatchingCredentialsAnswerFollowTheOthers(t *testing.T)
 		},
 	}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 
 	if len(matches) != 1 || matches[0].QueryID != "pid_sdjwt" {
 		t.Fatalf("matches %+v, want the satisfiable option", matches)
@@ -199,7 +199,7 @@ func TestAnUnchangedConsentSkipsAnOptionalSetNothingMatches(t *testing.T) {
 		},
 	}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 	if len(options.Sets) != 2 || options.Sets[1].defaultChoice() != -1 {
 		t.Fatalf("sets %+v, want the optional set skipped by default", options.Sets)
 	}

@@ -371,7 +371,7 @@ func TestBatchPresentsEachCopyOnceThenReuses(t *testing.T) {
 
 	presentedOnce := make(map[string]int)
 	for round := 0; round < len(keys); round++ {
-		matches := w.EvaluateDCQL(query)
+		matches := evaluateDCQL(t, w, query)
 		if len(matches) != 1 {
 			t.Fatalf("round %d: a batch must read as one match, got %d", round, len(matches))
 		}
@@ -398,7 +398,7 @@ func TestBatchPresentsEachCopyOnceThenReuses(t *testing.T) {
 		}
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("after exhaustion a batch still presents one copy, got %d", len(matches))
 	}

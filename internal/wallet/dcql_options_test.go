@@ -49,7 +49,7 @@ func TestEvaluateDCQLWithOptions_CandidatesLeadWithTheWalletsChoice(t *testing.T
 	w := pidBaselineWallet(t)
 	query := map[string]any{"credentials": []any{consentPIDQuery("pid", "dc+sd-jwt")}}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("got %d matches, want 1", len(matches))
 	}
@@ -92,7 +92,7 @@ func TestEvaluateDCQLWithOptions_SetOptions(t *testing.T) {
 		}},
 	}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 	if len(matches) != 1 || matches[0].QueryID != "pid_sdjwt" {
 		t.Fatalf("auto selection = %+v, want the first option's query", matches)
 	}
@@ -124,7 +124,7 @@ func TestEvaluateDCQLWithOptions_MultiCredentialOption(t *testing.T) {
 		},
 	}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 	if len(matches) != 2 {
 		t.Fatalf("got %d matches, want both credentials of the first option", len(matches))
 	}
@@ -143,7 +143,7 @@ func TestEvaluateDCQLWithOptions_OptionalSet(t *testing.T) {
 		},
 	}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 	if len(matches) != 2 {
 		t.Fatalf("got %d matches, want the required and the optional set answered", len(matches))
 	}

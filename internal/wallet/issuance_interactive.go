@@ -372,7 +372,10 @@ func (w *Wallet) runPresentationInteraction(endpoint string, response map[string
 		InteractiveAuthorizationEndpoint: endpoint,
 	}
 
-	matches, credentialOptions := w.EvaluateDCQLWithOptions(authReq.DCQLQuery)
+	matches, credentialOptions, err := w.EvaluateDCQLWithOptions(authReq.DCQLQuery)
+	if err != nil {
+		return w.interactionErrorResponse(params, authorizationErrorCode(err), err.Error())
+	}
 	if len(matches) == 0 {
 		// §6.2.1.1: openid4vp_response "in the case of an error instead
 		// encodes the Authorization Error Response parameters".

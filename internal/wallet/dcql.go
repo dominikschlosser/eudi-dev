@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"log"
 	"maps"
-	"net/http"
 	"slices"
 	"sort"
 	"strconv"
@@ -37,14 +36,19 @@ import (
 
 // EvaluateDCQL matches stored credentials against a DCQL query (OID4VP 1.0 Section 6).
 // It returns matched credentials grouped by query credential ID.
-func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
-	matches, _ := w.EvaluateDCQLWithOptions(query)
-	return matches
+func (w *Wallet) EvaluateDCQL(query map[string]any) ([]CredentialMatch, error) {
+	matches, _, err := w.EvaluateDCQLWithOptions(query)
+	return matches, err
 }
 
 // EvaluateDCQLWithOptions returns matching credentials and satisfiable set options for
 // consent. The first candidate and option are the automatic selection.
-func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatch, *ConsentCredentialOptions) {
+//
+// Strict mode refuses a query with DCQLQueryFindings as invalid_request, and a
+// query whose trusted_authorities name a trusted list the wallet cannot use as
+// access_denied. Debug mode warns about both and evaluates the query as far as
+// it can.
+func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatch, *ConsentCredentialOptions, error) {
 	credentials := w.GetCredentials()
 	credQueries, _ := query["credentials"].([]any)
 	// The conformance API can change the mode while a query runs.
@@ -53,12 +57,11 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 	log.Printf("[DCQL] Evaluating query: %d credential queries against %d stored credentials", len(credQueries), len(credentials))
 
 	if findings := DCQLQueryFindings(query); len(findings) > 0 {
+		if mode == ValidationModeStrict {
+			return nil, nil, &authorizationError{Code: errorCodeInvalidRequest, Err: fmt.Errorf("invalid dcql_query: %s", strings.Join(findings, ". "))}
+		}
 		for _, finding := range findings {
 			log.Printf("[DCQL] Warning: %s", finding)
-		}
-		if mode == ValidationModeStrict {
-			log.Printf("[DCQL] Result: 0 matches (strict mode treats a malformed query as an error)")
-			return nil, nil
 		}
 	}
 
@@ -91,6 +94,14 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 
 		queryID, _ := cqMap["id"].(string)
 		queryFormat, _ := cqMap["format"].(string)
+		taList, _ := cqMap["trusted_authorities"].([]any)
+		listAnchors, listFindings := w.etsiTrustedListAnchors(taList)
+		if len(listFindings) > 0 {
+			if strict {
+				return nil, nil, &authorizationError{Code: errorCodeAccessDenied, Err: fmt.Errorf("credential query %s: %s", queryID, strings.Join(listFindings, ". "))}
+			}
+			w.warnFindings("presentation", fmt.Sprintf("The trusted lists of credential query %s", queryID), listFindings)
+		}
 		// Log skipped credentials by reason only when nothing matches.
 		matched := 0
 		skipped := make(map[string]int)
@@ -154,8 +165,8 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 			}
 
 			untrustedAuthority := false
-			if taList, ok := cqMap["trusted_authorities"].([]any); ok && len(taList) > 0 {
-				if !checkTrustedAuthorities(cred, taList, w.HTTPClient()) {
+			if len(taList) > 0 {
+				if !checkTrustedAuthorities(cred, taList, listAnchors) {
 					if mode != ValidationModeDebug {
 						skipped["not trusted by any trusted_authority"]++
 						continue
@@ -250,9 +261,9 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 
 	log.Printf("[DCQL] Result: %d matches", len(matches))
 	if matches == nil && len(nonMatching) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
-	return matches, buildConsentCredentialOptions(candidates, nonMatching, credQueries, credSets, multiple, w.PreferredFormat)
+	return matches, buildConsentCredentialOptions(candidates, nonMatching, credQueries, credSets, multiple, w.PreferredFormat), nil
 }
 
 // multipleQueries returns the ids of the credential queries that set multiple
@@ -1414,8 +1425,9 @@ func optionMatchesFormat(opt any, queryFormat map[string]string, format string) 
 
 // checkTrustedAuthorities validates that the credential's issuer certificate chain
 // is trusted by at least one of the given trusted authorities.
-// Each entry must have "type" and "values" (array) fields.
-func checkTrustedAuthorities(cred StoredCredential, taList []any, clients ...*http.Client) bool {
+// Each entry must have "type" and "values" (array) fields. listAnchors holds
+// the anchors of each etsi_tl list by URL.
+func checkTrustedAuthorities(cred StoredCredential, taList []any, listAnchors map[string][]*x509.Certificate) bool {
 	for _, taRaw := range taList {
 		taMap, ok := taRaw.(map[string]any)
 		if !ok {
@@ -1447,7 +1459,7 @@ func checkTrustedAuthorities(cred StoredCredential, taList []any, clients ...*ht
 				continue
 			}
 			for _, u := range urls {
-				if checkETSITrustList(cred, u, clients...) {
+				if checkETSITrustList(cred, u, listAnchors[u]) {
 					return true
 				}
 			}
@@ -1506,46 +1518,60 @@ func extractCredentialCertificates(cred StoredCredential) ([]*x509.Certificate, 
 	}
 }
 
-func checkETSITrustList(cred StoredCredential, trustListURL string, clients ...*http.Client) bool {
-	anchors, err := fetchTrustListCertificates(trustListURL, clients...)
-	if err == nil {
-		_, err = credentialChainKey(cred, anchors)
+func checkETSITrustList(cred StoredCredential, trustListURL string, anchors []*x509.Certificate) bool {
+	if len(anchors) == 0 {
+		return false
 	}
-	if err != nil {
-		log.Printf("[DCQL]   trusted_authorities: %v", err)
+	if _, err := credentialChainKey(cred, anchors); err != nil {
+		log.Printf("[DCQL]   trusted_authorities: %s: %v", trustListURL, err)
 		return false
 	}
 	return true
 }
 
-func fetchTrustListCertificates(trustListURL string, clients ...*http.Client) ([]*x509.Certificate, error) {
-	tlRaw, err := format.FetchURL(trustListURL, clients...)
-	// A verifier in Docker reaches the host as host.docker.internal. The wallet
-	// on the host reaches the same server as localhost.
-	if err != nil && strings.Contains(trustListURL, "host.docker.internal") {
-		fallbackURL := strings.Replace(trustListURL, "host.docker.internal", "localhost", 1)
-		log.Printf("[DCQL]   trusted_authorities: retrying with %s", fallbackURL)
-		tlRaw, err = format.FetchURL(fallbackURL, clients...)
+// etsiTrustedListAnchors reads the lists that the etsi_tl entries of
+// trusted_authorities name, the way the wallet reads its own trusted lists:
+// cached, signed by a trusted list operator and current. The issuance services
+// anchor credentials (ETSI TS 119 602 V1.1.1 Table D.3). Each list that gives
+// no anchors is a finding.
+func (w *Wallet) etsiTrustedListAnchors(taList []any) (map[string][]*x509.Certificate, []string) {
+	anchors := map[string][]*x509.Certificate{}
+	var findings []string
+	for _, entry := range taList {
+		entryMap, _ := entry.(map[string]any)
+		if t, _ := entryMap["type"].(string); t != "etsi_tl" {
+			continue
+		}
+		values, _ := entryMap["values"].([]any)
+		for _, v := range values {
+			listURL, _ := v.(string)
+			if listURL == "" {
+				continue
+			}
+			if _, read := anchors[listURL]; read {
+				continue
+			}
+			certs, err := w.issuanceAnchors(listURL)
+			if err != nil {
+				findings = append(findings, fmt.Sprintf("the trusted list %s of trusted_authorities cannot be used: %v", listURL, err))
+			}
+			anchors[listURL] = certs
+		}
 	}
-	if err != nil {
-		return nil, fmt.Errorf("fetching the trusted list %s: %w", trustListURL, err)
-	}
-	return parseTrustListAnchors(tlRaw)
+	return anchors, findings
 }
 
-func parseTrustListAnchors(tlRaw string) ([]*x509.Certificate, error) {
-	tl, err := trustlist.Parse(tlRaw)
+func (w *Wallet) issuanceAnchors(listURL string) ([]*x509.Certificate, error) {
+	list, err := w.readTrustedList(listURL)
 	if err != nil {
-		return nil, fmt.Errorf("parsing the trusted list: %w", err)
+		return nil, err
 	}
-	// The issuance services anchor credentials (ETSI TS 119 602 V1.1.1 Table
-	// D.3).
-	certs, err := trustlist.Anchors(tl, trustlist.IssuanceServices, time.Now())
+	certs, err := trustlist.Anchors(list, trustlist.IssuanceServices, time.Now())
 	if err != nil {
 		return nil, err
 	}
 	if len(certs) == 0 {
-		return nil, fmt.Errorf("the trusted list names no issuance service")
+		return nil, fmt.Errorf("the list names no issuance service")
 	}
 	return certs, nil
 }

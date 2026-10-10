@@ -59,7 +59,7 @@ func TestEvaluateDCQL_PartialFulfilmentReturnsNoCredential(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Fatalf("expected no credentials when only one of two required credential queries can be answered, got %d: %+v", len(matches), matches)
 	}
@@ -76,7 +76,7 @@ func TestEvaluateDCQL_FullFulfilmentStillReturnsCredentials(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 2 {
 		t.Fatalf("expected both credential queries answered, got %d: %+v", len(matches), matches)
 	}
@@ -103,7 +103,7 @@ func TestEvaluateDCQL_OptionalCredentialSetsWithNoSatisfiableOptionReturnNothing
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Fatalf("expected no credentials when no option of any credential set is satisfiable, got %d: %+v", len(matches), matches)
 	}
@@ -125,7 +125,7 @@ func TestEvaluateDCQL_OptionalCredentialSetSelectsSatisfiableOption(t *testing.T
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 || matches[0].QueryID != "pid" {
 		t.Fatalf("expected only the pid credential query answered, got %+v", matches)
 	}
@@ -208,7 +208,7 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 				"credentials": []any{sdjwtQuery("pid", vct, tt.claim)},
 			}
 
-			matches := w.EvaluateDCQL(query)
+			matches := evaluateDCQL(t, w, query)
 			if tt.wantMatch && len(matches) != 1 {
 				t.Fatalf("expected the credential to answer the values restriction, got %d matches", len(matches))
 			}
@@ -232,7 +232,7 @@ func TestEvaluateDCQL_ValuesFilterMDocElements(t *testing.T) {
 		"credentials": []any{mdocQuery("pid_mdoc", "eu.europa.ec.eudi.pid.1",
 			map[string]any{"path": []any{ageNamespace, "age_over_18"}, "values": []any{true}})},
 	}
-	if got := w.EvaluateDCQL(matching); len(got) != 1 {
+	if got := evaluateDCQL(t, w, matching); len(got) != 1 {
 		t.Fatalf("expected the mdoc to answer age_over_18 = true, got %d matches", len(got))
 	}
 
@@ -240,7 +240,7 @@ func TestEvaluateDCQL_ValuesFilterMDocElements(t *testing.T) {
 		"credentials": []any{mdocQuery("pid_mdoc", "eu.europa.ec.eudi.pid.1",
 			map[string]any{"path": []any{ageNamespace, "age_over_65"}, "values": []any{true}})},
 	}
-	if got := w.EvaluateDCQL(differing); len(got) != 0 {
+	if got := evaluateDCQL(t, w, differing); len(got) != 0 {
 		t.Fatalf("expected no match for age_over_65 = true, got %d: %+v", len(got), got)
 	}
 }
@@ -301,7 +301,7 @@ func TestEvaluateDCQL_ClaimsQueryHasNoRequiredMember(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Fatalf("expected no match: a claim a Verifier asks for is required, got %d: %+v", len(matches), matches)
 	}
@@ -324,7 +324,7 @@ func TestEvaluateDCQL_MDocDataElementIsNotAliased(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Fatalf("expected no match for a data element the credential does not carry, got %d: %+v", len(matches), matches)
 	}
@@ -423,7 +423,8 @@ func TestDCQLQueryFindings_WellFormedQueryHasNone(t *testing.T) {
 }
 
 // In strict mode the findings are errors. A query without a member that §6.1
-// marks REQUIRED gets no credentials.
+// marks REQUIRED is an invalid_request, even for a caller that did not
+// validate the request first.
 func TestEvaluateDCQL_StrictRejectsQueryWithoutMeta(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 	w.ValidationMode = ValidationModeStrict
@@ -438,8 +439,9 @@ func TestEvaluateDCQL_StrictRejectsQueryWithoutMeta(t *testing.T) {
 		},
 	}
 
-	if matches := w.EvaluateDCQL(query); len(matches) != 0 {
-		t.Fatalf("expected strict mode to refuse a credential query without meta, got %d: %+v", len(matches), matches)
+	_, err := w.EvaluateDCQL(query)
+	if err == nil || authorizationErrorCode(err) != errorCodeInvalidRequest || !strings.Contains(err.Error(), "missing the required meta") {
+		t.Fatalf("want an invalid_request naming the missing meta, got %v", err)
 	}
 }
 
@@ -460,7 +462,7 @@ func TestEvaluateDCQL_DebugWarnsAboutQueryWithoutMeta(t *testing.T) {
 		},
 	}
 
-	if matches := w.EvaluateDCQL(query); len(matches) != 1 {
+	if matches := evaluateDCQL(t, w, query); len(matches) != 1 {
 		t.Fatalf("expected debug mode to keep evaluating, got %d matches", len(matches))
 	}
 	if !strings.Contains(logs.String(), "missing the required meta") {

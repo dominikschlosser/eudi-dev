@@ -257,7 +257,13 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	var matches []CredentialMatch
 	var credentialOptions *ConsentCredentialOptions
 	if authReq.DCQLQuery != nil && requiresVP {
-		matches, credentialOptions = s.wallet.EvaluateDCQLWithOptions(authReq.DCQLQuery)
+		var err error
+		if matches, credentialOptions, err = s.wallet.EvaluateDCQLWithOptions(authReq.DCQLQuery); err != nil {
+			s.refuseQuery(w, authReq.Session, err, func(code, description string) {
+				s.submitAuthorizationError(w, authReq, "refused", code, description)
+			})
+			return
+		}
 	}
 
 	s.log("  Matched:       %d credential(s)", len(matches))

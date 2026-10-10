@@ -74,7 +74,7 @@ func TestPresentation_BareArrayPathDisclosesEmptyArray(t *testing.T) {
 	w := generateTestWallet(t)
 	importNationalitiesPID(t, w)
 
-	matches := w.EvaluateDCQL(nationalitiesQuery("nationalities"))
+	matches := evaluateDCQL(t, w, nationalitiesQuery("nationalities"))
 	if len(matches) != 1 {
 		t.Fatalf("want one match, got %d", len(matches))
 	}
@@ -102,7 +102,7 @@ func TestPresentation_OutOfRangeIndexIsMissingNotDisclosed(t *testing.T) {
 		},
 	}}}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("want one match in debug mode, got %d", len(matches))
 	}
@@ -118,7 +118,7 @@ func TestPresentation_OutOfRangeIndexIsMissingNotDisclosed(t *testing.T) {
 	}
 
 	w.ValidationMode = ValidationModeStrict
-	if got := w.EvaluateDCQL(query); len(got) != 0 {
+	if got := evaluateDCQL(t, w, query); len(got) != 0 {
 		t.Errorf("strict mode should not match an unsatisfiable request, got %d", len(got))
 	}
 }
@@ -137,7 +137,7 @@ func TestPresentation_UndisclosedClaimsLoggedGrouped(t *testing.T) {
 			map[string]any{"path": []any{"nationalities", float64(1)}}, // out of range, missing
 		},
 	}}}
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("want one match, got %d", len(matches))
 	}
@@ -193,7 +193,7 @@ func TestPresentation_NullArrayPathDisclosesElements(t *testing.T) {
 	w := generateTestWallet(t)
 	importNationalitiesPID(t, w)
 
-	matches := w.EvaluateDCQL(nationalitiesQuery("nationalities", nil))
+	matches := evaluateDCQL(t, w, nationalitiesQuery("nationalities", nil))
 	if len(matches) != 1 {
 		t.Fatalf("want one match, got %d", len(matches))
 	}

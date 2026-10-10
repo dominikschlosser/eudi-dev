@@ -198,7 +198,7 @@ func TestCheckTrustedAuthorities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := checkTrustedAuthorities(cred, tt.list); got != tt.want {
+			if got := checkTrustedAuthorities(cred, tt.list, nil); got != tt.want {
 				t.Errorf("checkTrustedAuthorities = %v, want %v", got, tt.want)
 			}
 		})
@@ -209,42 +209,24 @@ func TestCheckTrustedAuthorities(t *testing.T) {
 // listed CA and rejects an unrelated one.
 func TestCheckETSITrustListMDOC(t *testing.T) {
 	caCert, leafCert, _, _ := authorityChain(t)
-	tlJWT, err := generateEAATrustListJWT(mustGenerateKey(t), caCert)
-	if err != nil {
-		t.Fatalf("generateEAATrustListJWT: %v", err)
+	w := generateTestWallet(t)
+	listURL := serveTrustList(t, walletSignedList(t, w, caCert)).URL
+	anchors, findings := w.etsiTrustedListAnchors([]any{map[string]any{"type": "etsi_tl", "values": []any{listURL}}})
+	if len(findings) > 0 {
+		t.Fatalf("reading the list: %v", findings)
 	}
-	ts := serveTrustList(t, tlJWT)
 
 	otherCA, otherLeaf, _, _ := authorityChain(t)
 
 	t.Run("an mdoc chaining to the trusted list", func(t *testing.T) {
-		if !checkETSITrustList(mdocWithChain(t, leafCert, caCert), ts.URL) {
+		if !checkETSITrustList(mdocWithChain(t, leafCert, caCert), listURL, anchors[listURL]) {
 			t.Error("an mdoc whose issuer is in the trusted list was refused")
 		}
 	})
 
 	t.Run("an mdoc from another authority", func(t *testing.T) {
-		if checkETSITrustList(mdocWithChain(t, otherLeaf, otherCA), ts.URL) {
+		if checkETSITrustList(mdocWithChain(t, otherLeaf, otherCA), listURL, anchors[listURL]) {
 			t.Error("an mdoc from an authority not in the trusted list was accepted")
 		}
 	})
-}
-
-func mustGenerateKey(t *testing.T) *ecdsa.PrivateKey {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return key
-}
-
-// An etsi_tl entry with an unreachable trusted list refuses the credential.
-func TestCheckETSITrustListWithAnUnreachableList(t *testing.T) {
-	caCert, leafCert, _, _ := authorityChain(t)
-	cred := mdocWithChain(t, leafCert, caCert)
-
-	if checkETSITrustList(cred, "http://127.0.0.1:1/trustlist") {
-		t.Error("an unreachable trusted list was treated as satisfied")
-	}
 }

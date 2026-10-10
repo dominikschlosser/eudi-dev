@@ -16,11 +16,13 @@ package wallet
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,6 +48,24 @@ func captureTestLogs(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
+func evaluateDCQL(t testing.TB, w *Wallet, query map[string]any) []CredentialMatch {
+	t.Helper()
+	matches, err := w.EvaluateDCQL(query)
+	if err != nil {
+		t.Fatalf("EvaluateDCQL: %v", err)
+	}
+	return matches
+}
+
+func evaluateDCQLWithOptions(t testing.TB, w *Wallet, query map[string]any) ([]CredentialMatch, *ConsentCredentialOptions) {
+	t.Helper()
+	matches, options, err := w.EvaluateDCQLWithOptions(query)
+	if err != nil {
+		t.Fatalf("EvaluateDCQLWithOptions: %v", err)
+	}
+	return matches, options
+}
+
 func TestEvaluateDCQL_MatchesSDJWTByVCT(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
@@ -65,7 +85,7 @@ func TestEvaluateDCQL_MatchesSDJWTByVCT(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -103,7 +123,7 @@ func TestEvaluateDCQL_MatchesMDocByDocType(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -135,7 +155,7 @@ func TestEvaluateDCQL_NoMatchWrongVCT(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Errorf("expected 0 matches for wrong VCT, got %d", len(matches))
 	}
@@ -153,7 +173,7 @@ func TestEvaluateDCQL_NoMatchWrongFormat(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Errorf("expected 0 matches for wrong format, got %d", len(matches))
 	}
@@ -175,7 +195,7 @@ func TestEvaluateDCQL_NoClaims_DebugSelectsNoSDJWTClaims(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -203,7 +223,7 @@ func TestEvaluateDCQL_NoClaims_DebugSelectsNoMDocElements(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -231,7 +251,7 @@ func TestEvaluateDCQL_NoClaims_StrictSelectsNoSDJWTClaims(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -259,7 +279,7 @@ func TestEvaluateDCQL_NoClaims_StrictSelectsNoMDocElements(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -289,7 +309,7 @@ func TestEvaluateDCQL_ClaimNotFound(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Errorf("expected 0 matches when required claim not found, got %d", len(matches))
 	}
@@ -315,7 +335,7 @@ func TestEvaluateDCQL_MissingRequiredClaim_DebugModeWarnsAndMatches(t *testing.T
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match in debug mode, got %d", len(matches))
 	}
@@ -361,7 +381,7 @@ func TestEvaluateDCQL_MultipleCredentialQueries(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 matches, got %d", len(matches))
 	}
@@ -434,7 +454,7 @@ func TestEvaluateDCQL_DefaultPIDMatchesVerifierQueries(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 matches, got %d", len(matches))
 	}
@@ -489,7 +509,7 @@ func TestEvaluateDCQL_ClaimSets_StringIDs(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -524,7 +544,7 @@ func TestEvaluateDCQL_ClaimSets_FallbackToSecond(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -558,7 +578,7 @@ func TestEvaluateDCQL_ClaimSets_NoneMatchable(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Errorf("expected 0 matches when no claim_set satisfiable, got %d", len(matches))
 	}
@@ -586,7 +606,7 @@ func TestEvaluateDCQL_ClaimSets_IntegerIndicesRejected(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Errorf("expected 0 matches when claim_sets uses integer indices, got %d", len(matches))
 	}
@@ -629,7 +649,7 @@ func TestEvaluateDCQL_CredentialSets_Required(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match (first option), got %d", len(matches))
 	}
@@ -661,7 +681,7 @@ func TestEvaluateDCQL_CredentialSets_RequiredUnsatisfiable(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if matches != nil {
 		t.Errorf("expected nil for unsatisfiable required credential_set, got %d matches", len(matches))
 	}
@@ -687,7 +707,7 @@ func TestEvaluateDCQL_PartialClaimMatch_StrictModeRejected(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 0 {
 		t.Errorf("expected 0 matches for partial claim match in strict mode, got %d", len(matches))
 	}
@@ -712,7 +732,7 @@ func TestEvaluateDCQL_OptionalClaimMissing_Accepted(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match with optional claim missing, got %d", len(matches))
 	}
@@ -850,16 +870,9 @@ func serveTrustList(t *testing.T, tlJWT string) *httptest.Server {
 	return ts
 }
 
-func TestEvaluateDCQL_TrustedAuthorities_Match(t *testing.T) {
-	w := generateTestWalletWithPID(t)
-
-	tlJWT, err := generateEAATrustListJWT(w.IssuerKey, w.CertChain[len(w.CertChain)-1])
-	if err != nil {
-		t.Fatalf("generating trusted list: %v", err)
-	}
-	ts := serveTrustList(t, tlJWT)
-
-	query := map[string]any{
+// etsiTLQuery asks for the PID from an issuer on one of the trusted lists.
+func etsiTLQuery(listURLs ...any) map[string]any {
+	return map[string]any{
 		"credentials": []any{
 			map[string]any{
 				"id":     "pid",
@@ -869,13 +882,31 @@ func TestEvaluateDCQL_TrustedAuthorities_Match(t *testing.T) {
 					map[string]any{"path": []any{"given_name"}},
 				},
 				"trusted_authorities": []any{
-					map[string]any{"type": "etsi_tl", "values": []any{ts.URL}},
+					map[string]any{"type": "etsi_tl", "values": listURLs},
 				},
 			},
 		},
 	}
+}
 
-	matches := w.EvaluateDCQL(query)
+// walletSignedList is a trusted list that the wallet CA signs, so the wallet
+// trusts its operator. It lists anchor as the issuance service.
+func walletSignedList(t *testing.T, w *Wallet, anchor *x509.Certificate) string {
+	t.Helper()
+	list, err := generateTrustListJWTWithOptions(w.CAKey, w.CertChain[len(w.CertChain)-1], trustListOptions{
+		IssuanceCertificates: []string{base64.StdEncoding.EncodeToString(anchor.Raw)},
+	})
+	if err != nil {
+		t.Fatalf("generating trusted list: %v", err)
+	}
+	return list
+}
+
+func TestEvaluateDCQL_TrustedAuthorities_Match(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	ts := serveTrustList(t, walletSignedList(t, w, w.CertChain[len(w.CertChain)-1]))
+
+	matches := evaluateDCQL(t, w, etsiTLQuery(ts.URL))
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -889,41 +920,82 @@ func TestEvaluateDCQL_TrustedAuthorities_NoMatch(t *testing.T) {
 
 	otherKey, _ := mock.GenerateKey()
 	otherCACert, _ := mock.GenerateCACert(otherKey)
-	tlJWT, err := generateEAATrustListJWT(otherKey, otherCACert)
+	ts := serveTrustList(t, walletSignedList(t, w, otherCACert))
+
+	assertUntrustedAuthorityBehavior(t, w, etsiTLQuery(ts.URL))
+}
+
+// The wallet reads its own lists in process, so a query can name them even
+// when no server publishes them.
+func TestEvaluateDCQL_TrustedAuthorities_WalletOwnList(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	w.ValidationMode = ValidationModeStrict
+
+	if matches := evaluateDCQL(t, w, etsiTLQuery(w.ownTrustListURL("pid"))); len(matches) != 1 || matches[0].UntrustedAuthority {
+		t.Fatalf("want the PID anchored by the wallet's own PID list, got %+v", matches)
+	}
+}
+
+// A trusted list the wallet cannot use is a finding. Strict mode refuses the
+// request with access_denied. Debug mode warns and offers the credential as
+// untrusted.
+func TestEvaluateDCQL_TrustedAuthorities_UnusableList(t *testing.T) {
+	otherKey, _ := mock.GenerateKey()
+	otherCACert, _ := mock.GenerateCACert(otherKey)
+	foreign, err := generateEAATrustListJWT(otherKey, otherCACert)
 	if err != nil {
-		t.Fatalf("generating trusted list: %v", err)
+		t.Fatal(err)
 	}
-	ts := serveTrustList(t, tlJWT)
+	foreignList := serveTrustList(t, foreign).URL
+	for name, listURL := range map[string]string{
+		"signed by an unknown operator": foreignList,
+		"unreachable":                   "http://127.0.0.1:1/trustlist",
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := generateTestWalletWithPID(t)
+			query := etsiTLQuery(listURL)
 
-	query := map[string]any{
-		"credentials": []any{
-			map[string]any{
-				"id":     "pid",
-				"format": "dc+sd-jwt",
-				"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
-				"claims": []any{
-					map[string]any{"path": []any{"given_name"}},
-				},
-				"trusted_authorities": []any{
-					map[string]any{"type": "etsi_tl", "values": []any{ts.URL}},
-				},
-			},
-		},
+			w.ValidationMode = ValidationModeStrict
+			_, err := w.EvaluateDCQL(query)
+			if err == nil || authorizationErrorCode(err) != errorCodeAccessDenied || !strings.Contains(err.Error(), listURL) {
+				t.Fatalf("strict mode: want access_denied naming %s, got %v", listURL, err)
+			}
+
+			w.ValidationMode = ValidationModeDebug
+			matches := evaluateDCQL(t, w, query)
+			if len(matches) != 1 || !matches[0].UntrustedAuthority {
+				t.Fatalf("debug mode: want the PID offered as untrusted, got %+v", matches)
+			}
+			if !slices.ContainsFunc(w.Log, func(e LogEntry) bool { return e.Severity == severityWarning && strings.Contains(e.Detail, listURL) }) {
+				t.Errorf("debug mode: no warning names %s", listURL)
+			}
+		})
 	}
+}
 
-	assertUntrustedAuthorityBehavior(t, w, query)
+// A verifier in Docker names the host as host.docker.internal. The wallet's
+// HTTP client reaches the same list through localhost.
+func TestEvaluateDCQL_TrustedAuthorities_DockerHostList(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	w.ValidationMode = ValidationModeStrict
+	ts := serveTrustList(t, walletSignedList(t, w, w.CertChain[len(w.CertChain)-1]))
+	port := ts.URL[strings.LastIndex(ts.URL, ":")+1:]
+
+	if matches := evaluateDCQL(t, w, etsiTLQuery("http://host.docker.internal:"+port)); len(matches) != 1 {
+		t.Fatalf("want the PID anchored by the list on the Docker host, got %d matches", len(matches))
+	}
 }
 
 // Debug mode offers an untrusted match with a flag. Strict mode returns no match.
 func assertUntrustedAuthorityBehavior(t *testing.T, w *Wallet, query map[string]any) {
 	t.Helper()
 	w.ValidationMode = ValidationModeDebug
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 || !matches[0].UntrustedAuthority {
 		t.Fatalf("debug mode: want 1 match flagged UntrustedAuthority, got %d matches (flag on first: %v)", len(matches), len(matches) > 0 && matches[0].UntrustedAuthority)
 	}
 	w.ValidationMode = ValidationModeStrict
-	if strict := w.EvaluateDCQL(query); len(strict) != 0 {
+	if strict := evaluateDCQL(t, w, query); len(strict) != 0 {
 		t.Fatalf("strict mode: want 0 matches, got %d", len(strict))
 	}
 }
@@ -951,7 +1023,7 @@ func TestEvaluateDCQL_TrustedAuthorities_AKIMatch(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
@@ -988,7 +1060,7 @@ func TestEvaluateDCQL_TrustedAuthorities_TrustedIsTheDefault(t *testing.T) {
 		},
 	}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 	if len(matches) != 1 || matches[0].UntrustedAuthority {
 		t.Fatalf("auto-pick should be the trusted credential, got %d matches (untrusted first: %v)", len(matches), len(matches) > 0 && matches[0].UntrustedAuthority)
 	}
@@ -1064,8 +1136,7 @@ func TestEvaluateDCQL_TrustedAuthorities_NoCertChain(t *testing.T) {
 
 	// A credential without x5c has no chain to match against the trusted list.
 	// It is rejected even when the list contains the CA of its signer.
-	tlJWT, _ := generateEAATrustListJWT(w.IssuerKey, w.CertChain[len(w.CertChain)-1])
-	ts := serveTrustList(t, tlJWT)
+	ts := serveTrustList(t, walletSignedList(t, w, w.CertChain[len(w.CertChain)-1]))
 
 	query := map[string]any{
 		"credentials": []any{
@@ -1113,7 +1184,7 @@ func TestEvaluateDCQL_CredentialSets_MultipleRequiredSets(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 2 {
 		t.Fatalf("expected both credentials, got %d", len(matches))
 	}
@@ -1150,7 +1221,7 @@ func TestEvaluateDCQL_CredentialSets_OptionAskingForTwoCredentials(t *testing.T)
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 2 {
 		t.Fatalf("an option naming two credentials should return both, got %d", len(matches))
 	}
@@ -1181,7 +1252,7 @@ func TestEvaluateDCQL_CredentialSets_OptionalSetIsSkipped(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if matches == nil {
 		t.Fatal("an unsatisfiable optional set must not fail the whole query")
 	}
@@ -1268,7 +1339,7 @@ func TestEvaluateDCQL_OneCredentialPerQueryNewestWins(t *testing.T) {
 	addSDJWTPID(t, w, "newer", 3000)
 	addSDJWTPID(t, w, "middle", 2000)
 
-	matches := w.EvaluateDCQL(pidQuery())
+	matches := evaluateDCQL(t, w, pidQuery())
 
 	if len(matches) != 1 {
 		t.Fatalf("matches = %d, want 1 (the query asks for one credential)", len(matches))
@@ -1285,7 +1356,7 @@ func TestEvaluateDCQL_NewestWinsEvenWhenStoredFirst(t *testing.T) {
 	addSDJWTPID(t, w, "newest", 9000)
 	addSDJWTPID(t, w, "oldest", 1000)
 
-	matches := w.EvaluateDCQL(pidQuery())
+	matches := evaluateDCQL(t, w, pidQuery())
 
 	if len(matches) != 1 {
 		t.Fatalf("matches = %d, want 1", len(matches))
@@ -1301,14 +1372,14 @@ func TestEvaluateDCQL_LogsMatchesAndGroupedSkipReasons(t *testing.T) {
 		addSDJWTPID(t, w, fmt.Sprintf("pid-%d", i), int64(1000+i))
 	}
 	logs := captureTestLogs(t)
-	w.EvaluateDCQL(pidQuery())
+	evaluateDCQL(t, w, pidQuery())
 	out := logs.String()
 	if strings.Count(out, "matched, selected claims") != 3 || !strings.Contains(out, "query=pid: 2 other candidates not presented") {
 		t.Fatalf("a matching query logged:\n%s", out)
 	}
 
 	logs.Reset()
-	w.EvaluateDCQL(map[string]any{"credentials": []any{map[string]any{
+	evaluateDCQL(t, w, map[string]any{"credentials": []any{map[string]any{
 		"id": "mdl", "format": "mso_mdoc",
 		"meta":   map[string]any{"doctype_value": "org.iso.18013.5.1.mDL"},
 		"claims": []any{map[string]any{"path": []any{"org.iso.18013.5.1", "family_name"}}},
@@ -1340,7 +1411,7 @@ func TestEvaluateDCQL_DistinctQueriesEachKeepAMatch(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 
 	if len(matches) != 2 {
 		t.Fatalf("matches = %d, want 2 (one per query id)", len(matches))
@@ -1368,19 +1439,19 @@ func TestEvaluateDCQL_HolderBinding(t *testing.T) {
 	query := sdjwtVCTQuery("urn:example:bearer")
 
 	w.ValidationMode = ValidationModeStrict
-	_, options := w.EvaluateDCQLWithOptions(query)
+	_, options := evaluateDCQLWithOptions(t, w, query)
 	if candidates := options.Queries[0].Candidates; len(candidates) != 1 || candidates[0].Unbound {
 		t.Errorf("strict candidates %+v, want only the bound credential", candidates)
 	}
 
 	w.ValidationMode = ValidationModeDebug
-	_, options = w.EvaluateDCQLWithOptions(query)
+	_, options = evaluateDCQLWithOptions(t, w, query)
 	if candidates := options.Queries[0].Candidates; len(candidates) != 2 || candidates[0].Unbound || !candidates[1].Unbound {
 		t.Errorf("debug candidates %+v, want the bound credential first and the unbound one flagged", candidates)
 	}
 
 	query["credentials"].([]any)[0].(map[string]any)["require_cryptographic_holder_binding"] = false
-	_, options = w.EvaluateDCQLWithOptions(query)
+	_, options = evaluateDCQLWithOptions(t, w, query)
 	if candidates := options.Queries[0].Candidates; len(candidates) != 2 || candidates[0].Unbound || candidates[1].Unbound {
 		t.Errorf("candidates %+v, want both credentials unflagged when the query accepts unbound ones", candidates)
 	}
@@ -1412,7 +1483,7 @@ func TestEvaluateDCQL_HolderBindingOfAJWTCredential(t *testing.T) {
 		want    int
 	}{{true, 0}, {false, 1}} {
 		query := map[string]any{"credentials": []any{map[string]any{"id": "vc", "format": "jwt_vc_json", "meta": map[string]any{}, "require_cryptographic_holder_binding": tc.binding}}}
-		if matches := w.EvaluateDCQL(query); len(matches) != tc.want {
+		if matches := evaluateDCQL(t, w, query); len(matches) != tc.want {
 			t.Errorf("binding required %v: matches %v, want %d", tc.binding, matches, tc.want)
 		}
 	}
@@ -1430,11 +1501,11 @@ func TestEvaluateDCQL_UnboundMdocInStrictMode(t *testing.T) {
 	cq["require_cryptographic_holder_binding"] = false
 	query := map[string]any{"credentials": []any{cq}}
 	w.ValidationMode = ValidationModeDebug
-	if matches := w.EvaluateDCQL(query); len(matches) != 1 {
+	if matches := evaluateDCQL(t, w, query); len(matches) != 1 {
 		t.Fatalf("debug matches %v, want the unbound mdoc", matches)
 	}
 	w.ValidationMode = ValidationModeStrict
-	if matches := w.EvaluateDCQL(query); len(matches) != 0 {
+	if matches := evaluateDCQL(t, w, query); len(matches) != 0 {
 		t.Errorf("strict matches %v, want none", matches)
 	}
 }

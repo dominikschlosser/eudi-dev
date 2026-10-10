@@ -21,6 +21,8 @@ When a verifier responds to a presentation with a `redirect_uri`, the wallet pri
 
 `debug` mode matches DCQL queries loosely to help troubleshoot verifier queries. A credential that matches the requested format and metadata and at least one requested claim counts as a match with a warning, even when other required claim paths are missing. `strict` mode requires every claim path.
 
+An `etsi_tl` entry in `trusted_authorities` names a trusted list. The wallet reads it like its own trusted lists. The list must be signed by a trusted list operator and be current, and its issuance services anchor the credential. If the wallet can't read or verify the list, `strict` mode refuses the request with `access_denied`. `debug` mode logs a warning and offers the credential as untrusted.
+
 The wallet presents a `jwt_vc_json` credential without a Verifiable Presentation, so it can't prove holder binding. Such a credential answers only a query with `require_cryptographic_holder_binding: false` (OpenID4VP 1.0 Appendix B.1).
 
 ```bash

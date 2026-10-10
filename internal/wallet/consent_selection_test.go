@@ -24,7 +24,7 @@ import (
 
 func TestApplyConsentSelection(t *testing.T) {
 	w := pidBaselineWallet(t)
-	matches, options := w.EvaluateDCQLWithOptions(setsQuery())
+	matches, options := evaluateDCQLWithOptions(t, w, setsQuery())
 	alternate := options.Queries[0].Candidates[0]
 	for _, candidate := range options.Queries[0].Candidates {
 		if candidate.VCT == germanPIDVCT {
@@ -81,7 +81,7 @@ func TestApplyConsentSelection(t *testing.T) {
 				map[string]any{"options": []any{[]any{"pid_mdoc"}}, "required": false},
 			},
 		}
-		optMatches, optOptions := w.EvaluateDCQLWithOptions(optQuery)
+		optMatches, optOptions := evaluateDCQLWithOptions(t, w, optQuery)
 		got := ApplyConsentSelection(optOptions, optMatches, ConsentResult{Approved: true, SetChoices: []int{0, -1}})
 		if len(got) != 1 || got[0].QueryID != "pid_sdjwt" {
 			t.Errorf("got %+v, want only the required set answered", got)
@@ -91,7 +91,7 @@ func TestApplyConsentSelection(t *testing.T) {
 
 func TestValidateConsentSelection(t *testing.T) {
 	w := pidBaselineWallet(t)
-	_, options := w.EvaluateDCQLWithOptions(setsQuery())
+	_, options := evaluateDCQLWithOptions(t, w, setsQuery())
 	first := options.Queries[0].Candidates[0].CredentialID
 	valid := options.Queries[0].Candidates[1].CredentialID
 
@@ -145,7 +145,7 @@ func TestValidateConsentSelection(t *testing.T) {
 				map[string]any{"options": []any{[]any{"pid_mdoc"}}, "required": false},
 			},
 		}
-		matches, allOptional := w.EvaluateDCQLWithOptions(query)
+		matches, allOptional := evaluateDCQLWithOptions(t, w, query)
 		if err := ValidateConsentSelection(allOptional, nil, []int{-1, -1}, nil); err == nil || !strings.Contains(err.Error(), "at least one") {
 			t.Fatalf("error = %v, want the all-skipped selection refused", err)
 		}
@@ -160,7 +160,7 @@ func TestValidateConsentSelection(t *testing.T) {
 // correct it and approve again.
 func TestApproveRejectsAnInvalidSelectionAndKeepsTheRequestPending(t *testing.T) {
 	w := pidBaselineWallet(t)
-	matches, options := w.EvaluateDCQLWithOptions(setsQuery())
+	matches, options := evaluateDCQLWithOptions(t, w, setsQuery())
 	s := NewServer(w, 0, nil)
 
 	consentReq := &ConsentRequest{

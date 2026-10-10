@@ -143,7 +143,9 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 
 	var matches []wallet.CredentialMatch
 	if parsed.DCQLQuery != nil && requiresVP {
-		matches = w.EvaluateDCQL(parsed.DCQLQuery)
+		if matches, err = w.EvaluateDCQL(parsed.DCQLQuery); err != nil {
+			return err
+		}
 	}
 
 	if requiresVP && len(matches) == 0 {

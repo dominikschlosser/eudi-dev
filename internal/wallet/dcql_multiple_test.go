@@ -40,7 +40,7 @@ func multiplePIDQuery(id string) map[string]any {
 func TestDCQLMultiplePresentsEveryMatch(t *testing.T) {
 	w := pidBaselineWallet(t)
 
-	matches, options := w.EvaluateDCQLWithOptions(map[string]any{"credentials": []any{multiplePIDQuery("pid")}})
+	matches, options := evaluateDCQLWithOptions(t, w, map[string]any{"credentials": []any{multiplePIDQuery("pid")}})
 	if len(matches) != 2 {
 		t.Fatalf("matches = %d, want both SD-JWT PIDs", len(matches))
 	}
@@ -59,7 +59,7 @@ func TestDCQLMultiplePresentsEveryMatch(t *testing.T) {
 		t.Errorf("candidates = %d, want 2", len(options.Queries[0].Candidates))
 	}
 
-	single, singleOptions := w.EvaluateDCQLWithOptions(map[string]any{"credentials": []any{consentPIDQuery("pid", "dc+sd-jwt")}})
+	single, singleOptions := evaluateDCQLWithOptions(t, w, map[string]any{"credentials": []any{consentPIDQuery("pid", "dc+sd-jwt")}})
 	if len(single) != 1 {
 		t.Errorf("a query without multiple presents %d credentials, want 1", len(single))
 	}
@@ -77,7 +77,7 @@ func TestDCQLMultipleThroughCredentialSets(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 2 {
 		t.Fatalf("matches = %d, want both SD-JWT PIDs for the chosen option", len(matches))
 	}
@@ -98,12 +98,12 @@ func TestDCQLMultipleMustBeBoolean(t *testing.T) {
 	}
 
 	w := pidBaselineWallet(t)
-	if matches := w.EvaluateDCQL(query); len(matches) != 1 {
+	if matches := evaluateDCQL(t, w, query); len(matches) != 1 {
 		t.Errorf("debug mode presents %d credentials for a non-boolean multiple, want 1", len(matches))
 	}
 	w.ValidationMode = ValidationModeStrict
-	if matches := w.EvaluateDCQL(query); matches != nil {
-		t.Errorf("strict mode answered a malformed query with %d matches", len(matches))
+	if _, err := w.EvaluateDCQL(query); err == nil || authorizationErrorCode(err) != errorCodeInvalidRequest {
+		t.Errorf("strict mode answered a malformed query with %v, want invalid_request", err)
 	}
 }
 
@@ -130,7 +130,7 @@ func TestDCQLMultiplePresentsOneCopyPerBatch(t *testing.T) {
 
 	query := batchTestQuery()
 	query["credentials"].([]any)[0].(map[string]any)["multiple"] = true
-	matches := w.EvaluateDCQL(query)
+	matches := evaluateDCQL(t, w, query)
 	if len(matches) != 2 {
 		t.Fatalf("matches = %d, want one batch copy and the standalone credential", len(matches))
 	}
@@ -159,7 +159,7 @@ func TestDCQLMultiplePresentsOneCopyPerBatch(t *testing.T) {
 
 func TestApplyConsentSelectionMultiple(t *testing.T) {
 	w := pidBaselineWallet(t)
-	matches, options := w.EvaluateDCQLWithOptions(map[string]any{"credentials": []any{multiplePIDQuery("pid")}})
+	matches, options := evaluateDCQLWithOptions(t, w, map[string]any{"credentials": []any{multiplePIDQuery("pid")}})
 	candidates := options.Queries[0].Candidates
 
 	t.Run("no picks presents every candidate", func(t *testing.T) {
@@ -174,7 +174,7 @@ func TestApplyConsentSelectionMultiple(t *testing.T) {
 			"credentials":     []any{multiplePIDQuery("pid")},
 			"credential_sets": []any{map[string]any{"options": []any{[]any{"pid"}}}},
 		}
-		setMatches, setOptions := w.EvaluateDCQLWithOptions(sets)
+		setMatches, setOptions := evaluateDCQLWithOptions(t, w, sets)
 		got := ApplyConsentSelection(setOptions, setMatches, ConsentResult{Approved: true, SetChoices: []int{0}})
 		if len(got) != 2 {
 			t.Errorf("got %d credentials, want 2", len(got))
@@ -215,7 +215,7 @@ func TestApplyConsentSelectionMultiple(t *testing.T) {
 
 func TestCreateVPTokenMapMultiple(t *testing.T) {
 	w := pidBaselineWallet(t)
-	matches := w.EvaluateDCQL(map[string]any{"credentials": []any{multiplePIDQuery("pid")}})
+	matches := evaluateDCQL(t, w, map[string]any{"credentials": []any{multiplePIDQuery("pid")}})
 	params := PresentationParams{Nonce: "nonce-1", ClientID: "https://verifier.example", ResponseURI: "https://verifier.example/response"}
 
 	result, err := w.CreateVPTokenMap(matches, params)
@@ -371,7 +371,7 @@ func TestDCQLMultipleCombinedWithAnotherQueryInOneOption(t *testing.T) {
 		},
 	}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 	byQuery := map[string]int{}
 	for _, m := range matches {
 		byQuery[m.QueryID]++
@@ -406,7 +406,7 @@ func TestDCQLMultipleWithAnOptionalSet(t *testing.T) {
 		},
 	}
 
-	matches, options := w.EvaluateDCQLWithOptions(query)
+	matches, options := evaluateDCQLWithOptions(t, w, query)
 	if len(matches) != 3 {
 		t.Fatalf("matches = %d, want both SD-JWT PIDs and the optional mdoc", len(matches))
 	}

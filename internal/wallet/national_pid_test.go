@@ -67,7 +67,7 @@ func TestNationalPIDsAnswerARequestForTheEUDIPID(t *testing.T) {
 			if _, err := w.IssueCredential(IssueOptions{Template: name}); err != nil {
 				t.Fatalf("issuing: %v", err)
 			}
-			matches := w.EvaluateDCQL(map[string]any{
+			matches := evaluateDCQL(t, w, map[string]any{
 				"credentials": []any{map[string]any{
 					"id":     "pid",
 					"format": "dc+sd-jwt",

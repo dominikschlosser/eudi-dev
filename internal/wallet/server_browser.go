@@ -124,7 +124,13 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	var matches []CredentialMatch
 	var credentialOptions *ConsentCredentialOptions
 	if authReq.DCQLQuery != nil && requiresVP {
-		matches, credentialOptions = s.wallet.EvaluateDCQLWithOptions(authReq.DCQLQuery)
+		var err error
+		if matches, credentialOptions, err = s.wallet.EvaluateDCQLWithOptions(authReq.DCQLQuery); err != nil {
+			s.refuseQuery(w, requestOwner(r), err, func(code, description string) {
+				s.writeBrowserAuthorizationError(w, authReq, protocol, code, description, http.StatusOK)
+			})
+			return
+		}
 	}
 
 	s.log("  Matched:       %d credential(s)", len(matches))
