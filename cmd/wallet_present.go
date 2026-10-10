@@ -168,7 +168,7 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 
 	dim := color.New(color.Faint)
 
-	// Start the server so the verifier can fetch the trust list.
+	// Start the server so the verifier can fetch the trusted list.
 	setLocalPresentationIssuerURL(w, port, docker)
 	srv := wallet.NewServer(w, port, nil)
 	if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
@@ -720,7 +720,7 @@ func navigatesHere(browserWaiting bool) bool {
 }
 
 // applyARFOptions applies --arf, the PEM files of --relying-party-ca and
-// --trust-list-ca, and the --trusted-list URLs.
+// --trusted-list-ca, and the --trusted-list URLs.
 func applyARFOptions(w *wallet.Wallet, arf bool, relyingPartyCAs, trustListCAs, trustedLists []string) error {
 	if arf {
 		w.RequireARF = true
@@ -735,7 +735,7 @@ func applyARFOptions(w *wallet.Wallet, arf bool, relyingPartyCAs, trustListCAs, 
 	if w.RelyingPartyCAPEM, err = loadPEMCertificates("relying-party-ca", relyingPartyCAs); err != nil {
 		return err
 	}
-	w.TrustListCAPEM, err = loadPEMCertificates("trust-list-ca", trustListCAs)
+	w.TrustListCAPEM, err = loadPEMCertificates("trusted-list-ca", trustListCAs)
 	return err
 }
 

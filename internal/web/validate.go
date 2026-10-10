@@ -575,7 +575,7 @@ func resolveKeys(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, e
 	if opts.TrustListRaw != "" {
 		tl, err := trustlist.Parse(opts.TrustListRaw)
 		if err != nil {
-			return nil, nil, fmt.Errorf("parsing trust list: %w", err)
+			return nil, nil, fmt.Errorf("parsing trusted list: %w", err)
 		}
 		tlCerts = trustlist.ExtractPublicKeys(tl)
 		for _, ci := range tlCerts {
@@ -587,11 +587,11 @@ func resolveKeys(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, e
 		// The URL is caller-supplied, and ReadRemoteInput cannot read local files.
 		tlRaw, err := format.ReadRemoteInput(opts.TrustListURL)
 		if err != nil {
-			return nil, nil, fmt.Errorf("fetching trust list: %w", err)
+			return nil, nil, fmt.Errorf("fetching trusted list: %w", err)
 		}
 		tl, err := trustlist.Parse(tlRaw)
 		if err != nil {
-			return nil, nil, fmt.Errorf("parsing trust list: %w", err)
+			return nil, nil, fmt.Errorf("parsing trusted list: %w", err)
 		}
 		certs := trustlist.ExtractPublicKeys(tl)
 		tlCerts = append(tlCerts, certs...)

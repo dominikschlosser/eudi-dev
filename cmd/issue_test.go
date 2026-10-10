@@ -517,7 +517,7 @@ func TestIssueSDJWTToWallet_UsesWalletIssuerContext(t *testing.T) {
 
 	group, ok := wallet.FindTrustListGroupForWallet(w, "eaa", "", "")
 	if !ok {
-		t.Fatal("no eaa trust list")
+		t.Fatal("no eaa trusted list")
 	}
 	tlJWT, err := wallet.GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/eaa")
 	if err != nil {
@@ -528,11 +528,11 @@ func TestIssueSDJWTToWallet_UsesWalletIssuerContext(t *testing.T) {
 		t.Fatalf("trustlist.Parse: %v", err)
 	}
 	if len(tl.Entities) == 0 || len(tl.Entities[0].Services) == 0 {
-		t.Fatal("expected trust list services")
+		t.Fatal("expected trusted list services")
 	}
 	key, err := validate.ExtractAndValidateX5C(token.Header, tl.Entities[0].Services[0].Certificates)
 	if err != nil {
-		t.Fatalf("validating wallet-issued SD-JWT x5c against trust list: %v", err)
+		t.Fatalf("validating wallet-issued SD-JWT x5c against trusted list: %v", err)
 	}
 	if key == nil {
 		t.Fatal("expected trust-list-validated x5c key")
@@ -580,7 +580,7 @@ func TestIssueSDJWTToWallet_PersistsTrustMetadataFlags(t *testing.T) {
 		"issue", "--wallet-dir", wDir, "sdjwt", "--wallet",
 		"--vct", "urn:test:employee:1",
 		"--entitlement", wantEntitlement,
-		"--trust-entity-name", wantEntity,
+		"--trusted-entity-name", wantEntity,
 	})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("issue sdjwt --wallet: %v", err)

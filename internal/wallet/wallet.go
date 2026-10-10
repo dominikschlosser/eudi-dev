@@ -90,7 +90,7 @@ type Wallet struct {
 	// registration certificates (--relying-party-ca).
 	RelyingPartyCAPEM []byte
 	// TrustListCAPEM holds further CAs of trusted list operators
-	// (--trust-list-ca). With --arf the signer of a fetched trusted list must
+	// (--trusted-list-ca). With --arf the signer of a fetched trusted list must
 	// chain to one of them or to the wallet CA.
 	TrustListCAPEM []byte
 	// ConfiguredTrustedListURLs are the external lists from --trusted-list.

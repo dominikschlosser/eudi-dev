@@ -100,7 +100,7 @@ test.describe("Docker Image", () => {
     expect(config.seeded_keys).toBe(true);
   });
 
-  test("trust list endpoint is available", async () => {
+  test("trusted list endpoint is available", async () => {
     const res = await httpGet(`${WALLET_URL}/api/trustlist`);
     expect(res.status).toBe(200);
     expect(res.body.split(".").length).toBe(3);

@@ -43,7 +43,7 @@ func binaryName() string {
 var rootCmd = &cobra.Command{
 	Use:   binaryName(),
 	Short: "Decode, validate, and test verifiable credentials (SD-JWT, mdoc)",
-	Long:  "A local-first CLI tool for decoding, validating, and testing verifiable credentials. Supports SD-JWT, mdoc (mso_mdoc), OID4VP/OID4VCI flows, ETSI trust lists, and includes a testing wallet.",
+	Long:  "A local-first CLI tool for decoding, validating, and testing verifiable credentials. Supports SD-JWT, mdoc (mso_mdoc), OID4VP/OID4VCI flows, ETSI trusted lists, and includes a testing wallet.",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if noColor {
 			color.NoColor = true

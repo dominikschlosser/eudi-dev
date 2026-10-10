@@ -179,7 +179,7 @@ func TestExtractAndValidateX5C_NoTrustListCerts(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if key != nil {
-		t.Error("expected nil key when no trust list certs")
+		t.Error("expected nil key when no trusted list certs")
 	}
 }
 

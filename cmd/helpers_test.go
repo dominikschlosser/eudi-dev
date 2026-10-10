@@ -651,7 +651,7 @@ func TestEveryRemoteCommandRefusesMode(t *testing.T) {
 // trust-list prints the list of trusted lists under the ID of its URL.
 func TestTrustListPrintsTheListOfTrustedLists(t *testing.T) {
 	resetRemoteTestState(t)
-	rootCmd.SetArgs([]string{"wallet", "trust-list", "--id", "lists"})
+	rootCmd.SetArgs([]string{"wallet", "trusted-list", "--id", "lists"})
 	out := captureStdout(t, func() {
 		if err := rootCmd.Execute(); err != nil {
 			t.Fatal(err)

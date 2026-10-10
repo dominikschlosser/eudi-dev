@@ -829,15 +829,15 @@ func displayImageMIME(path string, data []byte) string {
 func addIssueTrustMetadataFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&issueCategory, "category", "", "With --wallet: credential category (it selects the signer and the trusted list): pid, qeaa, pub-eaa or eaa (default the category of the template or the catalogue entry, else eaa). unlisted puts the credential on no list")
 	cmd.Flags().StringSliceVar(&issueEntitlements, "entitlement", nil, "With --wallet: registrar entitlement URI to persist with the issued credential (repeatable)")
-	cmd.Flags().StringVar(&issueTrustListType, "trust-list-type", "", "With --wallet: trust-list LoTE type to persist with the issued credential")
-	cmd.Flags().StringVar(&issueStatusDetermination, "status-determination-approach", "", "With --wallet: trust-list status determination approach URI to persist with the issued credential")
-	cmd.Flags().StringVar(&issueSchemeCommunityRule, "scheme-community-rule", "", "With --wallet: trust-list scheme community rule URI to persist with the issued credential")
-	cmd.Flags().StringVar(&issueSchemeTerritory, "scheme-territory", "", "With --wallet: trust-list scheme territory to persist with the issued credential")
-	cmd.Flags().StringVar(&issueTrustEntityName, "trust-entity-name", "", "With --wallet: trust-list entity name to persist with the issued credential")
-	cmd.Flags().StringVar(&issueIssuanceServiceType, "issuance-service-type", "", "With --wallet: trust-list issuance service type identifier to persist with the issued credential")
-	cmd.Flags().StringVar(&issueRevocationServiceType, "revocation-service-type", "", "With --wallet: trust-list revocation service type identifier to persist with the issued credential")
-	cmd.Flags().StringVar(&issueIssuanceServiceName, "issuance-service-name", "", "With --wallet: trust-list issuance service name to persist with the issued credential")
-	cmd.Flags().StringVar(&issueRevocationServiceName, "revocation-service-name", "", "With --wallet: trust-list revocation service name to persist with the issued credential")
+	cmd.Flags().StringVar(&issueTrustListType, "trusted-list-type", "", "With --wallet: trusted list LoTE type to persist with the issued credential")
+	cmd.Flags().StringVar(&issueStatusDetermination, "status-determination-approach", "", "With --wallet: trusted list status determination approach URI to persist with the issued credential")
+	cmd.Flags().StringVar(&issueSchemeCommunityRule, "scheme-community-rule", "", "With --wallet: trusted list scheme community rule URI to persist with the issued credential")
+	cmd.Flags().StringVar(&issueSchemeTerritory, "scheme-territory", "", "With --wallet: trusted list scheme territory to persist with the issued credential")
+	cmd.Flags().StringVar(&issueTrustEntityName, "trusted-entity-name", "", "With --wallet: trusted list entity name to persist with the issued credential")
+	cmd.Flags().StringVar(&issueIssuanceServiceType, "issuance-service-type", "", "With --wallet: trusted list issuance service type identifier to persist with the issued credential")
+	cmd.Flags().StringVar(&issueRevocationServiceType, "revocation-service-type", "", "With --wallet: trusted list revocation service type identifier to persist with the issued credential")
+	cmd.Flags().StringVar(&issueIssuanceServiceName, "issuance-service-name", "", "With --wallet: trusted list issuance service name to persist with the issued credential")
+	cmd.Flags().StringVar(&issueRevocationServiceName, "revocation-service-name", "", "With --wallet: trusted list revocation service name to persist with the issued credential")
 }
 
 func issueTrustSpecFromFlags() wallet.IssuedAttestationSpec {

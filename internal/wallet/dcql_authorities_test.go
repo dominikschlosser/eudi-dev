@@ -327,15 +327,15 @@ func TestCheckETSITrustListMDOC(t *testing.T) {
 
 	otherCA, otherLeaf, _, _ := authorityChain(t)
 
-	t.Run("an mdoc chaining to the trust list", func(t *testing.T) {
+	t.Run("an mdoc chaining to the trusted list", func(t *testing.T) {
 		if !checkETSITrustList(mdocWithChain(t, leafCert, caCert), ts.URL) {
-			t.Error("an mdoc whose issuer is in the trust list was refused")
+			t.Error("an mdoc whose issuer is in the trusted list was refused")
 		}
 	})
 
 	t.Run("an mdoc from another authority", func(t *testing.T) {
 		if checkETSITrustList(mdocWithChain(t, otherLeaf, otherCA), ts.URL) {
-			t.Error("an mdoc from an authority not in the trust list was accepted")
+			t.Error("an mdoc from an authority not in the trusted list was accepted")
 		}
 	})
 }
@@ -349,12 +349,12 @@ func mustGenerateKey(t *testing.T) *ecdsa.PrivateKey {
 	return key
 }
 
-// An etsi_tl entry with an unreachable trust list refuses the credential.
+// An etsi_tl entry with an unreachable trusted list refuses the credential.
 func TestCheckETSITrustListWithAnUnreachableList(t *testing.T) {
 	caCert, leafCert, _, _ := authorityChain(t)
 	cred := mdocWithChain(t, leafCert, caCert)
 
 	if checkETSITrustList(cred, "http://127.0.0.1:1/trustlist") {
-		t.Error("an unreachable trust list was treated as satisfied")
+		t.Error("an unreachable trusted list was treated as satisfied")
 	}
 }

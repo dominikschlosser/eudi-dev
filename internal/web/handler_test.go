@@ -145,7 +145,7 @@ func TestHandleJWTRegardlessOfClaims(t *testing.T) {
 		{"custom type and claims", map[string]any{"alg": "none", "typ": "custom+jwt"}, map[string]any{"custom": map[string]any{"items": []any{"a", true, nil}}}},
 		{"credential offer", map[string]any{"alg": "none"}, map[string]any{"credential_issuer": "https://issuer.example"}},
 		{"authorization request", map[string]any{"alg": "none"}, map[string]any{"client_id": "https://verifier.example", "response_type": "vp_token"}},
-		{"trust list", map[string]any{"alg": "none"}, map[string]any{"LoTE": map[string]any{"TrustedEntitiesList": []any{}}}},
+		{"trusted list", map[string]any{"alg": "none"}, map[string]any{"LoTE": map[string]any{"TrustedEntitiesList": []any{}}}},
 	} {
 		for _, endpoint := range []string{"/api/decode", "/api/validate"} {
 			t.Run(tc.name+endpoint, func(t *testing.T) {

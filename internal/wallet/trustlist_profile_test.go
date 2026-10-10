@@ -32,7 +32,7 @@ func TestTrustListProfilePublication(t *testing.T) {
 				t.Fatal(err)
 			}
 			if first != second {
-				t.Error("unchanged trust list was reissued")
+				t.Error("unchanged trusted list was reissued")
 			}
 			token, err := sdjwt.Parse(first)
 			if err != nil {
@@ -105,7 +105,7 @@ func TestTrustListRetainsProviderTrustAcrossCountriesAndUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	if first == second {
-		t.Fatal("adding a provider CA did not update the trust list")
+		t.Fatal("adding a provider CA did not update the trusted list")
 	}
 	token, err := sdjwt.Parse(second)
 	if err != nil {
@@ -135,7 +135,7 @@ func TestTrustListRetainsProviderTrustAcrossCountriesAndUpdates(t *testing.T) {
 		}
 	}
 	if !trusted {
-		t.Error("French credential provider CA is absent from the trust list")
+		t.Error("French credential provider CA is absent from the trusted list")
 	}
 	store := w.signingStore()
 	for sequence, expected := range []string{first, second} {

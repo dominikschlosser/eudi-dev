@@ -324,7 +324,7 @@ func eaaTrustListProfile() trustListProfile {
 	}
 }
 
-// applyCategoryDefaults fills the empty trust list fields of the spec from
+// applyCategoryDefaults fills the empty trusted list fields of the spec from
 // the list of its category.
 func applyCategoryDefaults(spec IssuedAttestationSpec) IssuedAttestationSpec {
 	p := categoryTrustListProfile(spec.Category)

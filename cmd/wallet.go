@@ -220,7 +220,7 @@ func warnIssuedEndpointsOffline(store *wallet.WalletStore, w *wallet.Wallet) {
 func deriveWalletIssuerURL(port int, baseURL string, docker bool) (string, error) {
 	if baseURL != "" {
 		// An https base URL means a TLS terminator already serves the wallet
-		// on that origin. Issuer metadata, status list and trust list are
+		// on that origin. Issuer metadata, status list and trusted list are
 		// served there too.
 		if u, err := url.Parse(strings.TrimSpace(baseURL)); err == nil && strings.EqualFold(u.Scheme, "https") {
 			return strings.TrimRight(strings.TrimSpace(baseURL), "/"), nil
@@ -494,10 +494,10 @@ func walletTrustListCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "trust-list",
+		Use:   "trusted-list",
 		Short: "Print a trusted list of this wallet (or just its URL)",
 		Long: `Prints a list of trusted entities (ETSI TS 119 602) of this wallet as a signed JWT.
-The output can be piped to a file or used directly with --trust-list in the validate command.
+The output can be piped to a file or used directly with --trusted-list in the validate command.
 
 The wallet keeps one list per credential category (pid, qeaa, pub-eaa, eaa),
 one for wallet providers (wallet-provider), one for access certificate
@@ -574,7 +574,7 @@ Use --url to print only the list URL of a running wallet server.`,
 			}
 			jwt, err := wallet.GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/"+group.ID)
 			if err != nil {
-				return fmt.Errorf("generating trust list: %w", err)
+				return fmt.Errorf("generating trusted list: %w", err)
 			}
 
 			printTrustList(jwt)
@@ -582,13 +582,13 @@ Use --url to print only the list URL of a running wallet server.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&urlOnly, "url", false, "Print only the trust list URL (for a running wallet server)")
+	cmd.Flags().BoolVar(&urlOnly, "url", false, "Print only the trusted list URL (for a running wallet server)")
 	cmd.Flags().BoolVar(&list, "list", false, "List all trusted lists of the wallet instead of printing one")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port (used with --url)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost (used with --url)")
 	cmd.Flags().StringVar(&id, "id", "", "ID of the list to print, for example 'pid', 'eaa', 'wallet-provider' or 'lists' for the list of trusted lists")
-	cmd.Flags().StringVar(&vct, "vct", "", "Select the trust list covering this SD-JWT VCT")
-	cmd.Flags().StringVar(&docType, "doctype", "", "Select the trust list covering this mdoc docType")
+	cmd.Flags().StringVar(&vct, "vct", "", "Select the trusted list covering this SD-JWT VCT")
+	cmd.Flags().StringVar(&docType, "doctype", "", "Select the trusted list covering this mdoc docType")
 	return cmd
 }
 
@@ -933,7 +933,7 @@ func applyWalletOutbound(w *wallet.Wallet) error {
 
 // conformanceFlagNames are flags of accept and scan. A running wallet keeps
 // its own values for them.
-var conformanceFlagNames = []string{"haip", "arf", "relying-party-ca", "trust-list-ca", "trusted-list", "key-attestation-level"}
+var conformanceFlagNames = []string{"haip", "arf", "relying-party-ca", "trusted-list-ca", "trusted-list", "key-attestation-level"}
 
 // changedConformanceFlags lists the conformance flags set on the command
 // line, including the persistent wallet --mode.
@@ -957,7 +957,7 @@ func checkRemoteConformanceFlags(flags []string) error {
 	if len(flags) == 0 {
 		return nil
 	}
-	return fmt.Errorf("a running wallet keeps its own settings, so %s can't change them. Change --mode, --haip, --arf and --key-attestation-level on 'wallet serve' or through PUT /api/config/conformance. Add CAs and lists with 'eudi wallet trust'. Set --trust-list-ca on 'wallet serve'", strings.Join(flags, ", "))
+	return fmt.Errorf("a running wallet keeps its own settings, so %s can't change them. Change --mode, --haip, --arf and --key-attestation-level on 'wallet serve' or through PUT /api/config/conformance. Add CAs and lists with 'eudi wallet trust'. Set --trusted-list-ca on 'wallet serve'", strings.Join(flags, ", "))
 }
 
 func checkRemoteOutboundFlags() error {

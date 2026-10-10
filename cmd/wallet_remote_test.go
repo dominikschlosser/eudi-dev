@@ -543,7 +543,7 @@ func TestCompletionInstall(t *testing.T) {
 	}
 }
 
-// A remote wallet may use a different CA. Its trust list must come from the remote
+// A remote wallet may use a different CA. Its trusted list must come from the remote
 // API.
 func TestTrustListFollowsTheRemoteWallet(t *testing.T) {
 	resetRemoteTestState(t)
@@ -564,21 +564,21 @@ func TestTrustListFollowsTheRemoteWallet(t *testing.T) {
 
 	served, err := remote.NewClient(url).TrustList("", "", "")
 	if err != nil {
-		t.Fatalf("fetching the remote trust list: %v", err)
+		t.Fatalf("fetching the remote trusted list: %v", err)
 	}
-	// Compare CA certificates because each fetch signs a new trust list JWT.
+	// Compare CA certificates because each fetch signs a new trusted list JWT.
 	wantAnchors := trustListAnchors(t, served)
 
 	out := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"wallet", "trust-list", "--remote", url})
+		rootCmd.SetArgs([]string{"wallet", "trusted-list", "--remote", url})
 		if err := rootCmd.Execute(); err != nil {
-			t.Fatalf("wallet trust-list --remote: %v", err)
+			t.Fatalf("wallet trusted-list --remote: %v", err)
 		}
 	})
 
 	anchors := trustListAnchors(t, strings.TrimSpace(out))
 	if len(anchors) == 0 {
-		t.Fatal("the printed trust list carries no certificate")
+		t.Fatal("the printed trusted list carries no certificate")
 	}
 	for der := range wantAnchors {
 		if !anchors[der] {
@@ -598,11 +598,11 @@ func trustListAnchors(t *testing.T, jwt string) map[string]bool {
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		t.Fatalf("decoding the trust list payload: %v", err)
+		t.Fatalf("decoding the trusted list payload: %v", err)
 	}
 	var doc any
 	if err := json.Unmarshal(payload, &doc); err != nil {
-		t.Fatalf("parsing the trust list payload: %v", err)
+		t.Fatalf("parsing the trusted list payload: %v", err)
 	}
 	found := map[string]bool{}
 	var walk func(any)
@@ -632,9 +632,9 @@ func TestTrustListListsProfiles(t *testing.T) {
 	url, _ := startRemoteTestWallet(t)
 
 	out := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"wallet", "trust-list", "--list", "--remote", url})
+		rootCmd.SetArgs([]string{"wallet", "trusted-list", "--list", "--remote", url})
 		if err := rootCmd.Execute(); err != nil {
-			t.Fatalf("wallet trust-list --list: %v", err)
+			t.Fatalf("wallet trusted-list --list: %v", err)
 		}
 	})
 
@@ -645,7 +645,7 @@ func TestTrustListListsProfiles(t *testing.T) {
 	}
 
 	// Combining a listing with a selection is an error.
-	rootCmd.SetArgs([]string{"wallet", "trust-list", "--list", "--id", "pid", "--remote", url})
+	rootCmd.SetArgs([]string{"wallet", "trusted-list", "--list", "--id", "pid", "--remote", url})
 	if err := rootCmd.Execute(); err == nil {
 		t.Error("--list with --id was accepted")
 	}

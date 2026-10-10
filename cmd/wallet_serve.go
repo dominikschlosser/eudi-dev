@@ -115,7 +115,7 @@ func walletServeCmdWithOptions() (*cobra.Command, *walletServeOptions) {
 Capabilities:
   - Web UI for credential management, issuing, and consent
   - OID4VP authorization endpoint (/authorize)
-  - Legacy PID-first trust list endpoint (/api/trustlist)
+  - Legacy PID-first trusted list endpoint (/api/trustlist)
   - Trust-list index endpoint (/api/trustlists)
   - Request logging with timestamps
   - Browser-based consent UI for incoming requests
@@ -149,7 +149,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
 	cmd.Flags().BoolVar(&opts.ARF, "arf", false, arfFlagUsage)
 	cmd.Flags().StringArrayVar(&opts.RelyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
-	cmd.Flags().StringArrayVar(&opts.TrustListCAs, "trust-list-ca", nil, trustListCAFlagUsage)
+	cmd.Flags().StringArrayVar(&opts.TrustListCAs, "trusted-list-ca", nil, trustListCAFlagUsage)
 	cmd.Flags().StringArrayVar(&opts.TrustedLists, "trusted-list", nil, trustedListFlagUsage)
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().BoolVar(&opts.AdhocDisplayImages, "adhoc-display-images", false, "Keep an issuer's https display image URL and let the card fetch it on demand instead of fetching once and storing the image (nothing is stored but the issuer sees each render, while a data URI, template art, and http URLs are still embedded)")

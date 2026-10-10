@@ -152,13 +152,13 @@
         <button type="button" class="howto-tab" role="tab" id="howto-tab-registrar" aria-selected="false" aria-controls="howto-panel-registrar" tabindex="-1">Registrar</button>
       </div>
       <div class="howto-panel" role="tabpanel" id="howto-panel-basics" aria-labelledby="howto-tab-basics">
-      <p class="dialog-hint">Test issuance with OpenID4VCI and presentations with OpenID4VP. This wallet supports SD-JWT VC, mdoc, holder binding, status lists and trust lists.</p>
+      <p class="dialog-hint">Test issuance with OpenID4VCI and presentations with OpenID4VP. This wallet supports SD-JWT VC, mdoc, holder binding, status lists and trusted lists.</p>
       <div class="cli-install">
         <div class="cli-install-label">Deliver a credential offer (OpenID4VCI)</div>
         <pre><span class="howto-origin"></span>/credential-offer?credential_offer_uri=&hellip;</pre>
         <div class="cli-install-label">Send an authorization request (OpenID4VP)</div>
         <pre><span class="howto-origin"></span>/authorize?client_id=&hellip;&amp;request_uri=&hellip;</pre>
-        <div class="cli-install-label">Trust list (verifiers trusting this wallet's credentials)</div>
+        <div class="cli-install-label">Trusted list (verifiers trusting this wallet's credentials)</div>
         <pre><span class="howto-origin"></span>/api/trustlist</pre>
       </div>
       <p class="dialog-hint">To open a custom-scheme link in a browser, replace everything before the <code>?</code> with the matching endpoint URL. Keep the query parameters.</p>

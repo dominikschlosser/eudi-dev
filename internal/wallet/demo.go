@@ -176,7 +176,7 @@ func demoBlockedRoute(r *http.Request) bool {
 
 // ResetToBaseline drops all visitor-created state: credentials, activity
 // log, status entries and the attestation registry. Keys, certificates and
-// serving URLs stay, so trust list and status list URLs are stable across
+// serving URLs stay, so trusted list and status list URLs are stable across
 // resets.
 func (w *Wallet) ResetToBaseline() {
 	w.mu.Lock()

@@ -263,7 +263,7 @@ func TestWalletProviderTrustList_UsesDistinctSignerAndIsNeverDefault(t *testing.
 
 	defaultGroup := DefaultTrustListGroupForWallet(w)
 	if defaultGroup.ID == "wallet-provider" {
-		t.Fatal("wallet-provider list must never be the default trust list")
+		t.Fatal("wallet-provider list must never be the default trusted list")
 	}
 
 	// TS 119 412-6 V1.1.1 §5 distinguishes the wallet provider signing role.
@@ -297,12 +297,12 @@ func trustListAnchorCert(t *testing.T, jwt string) string {
 	lote, _ := payload["LoTE"].(map[string]any)
 	entities, _ := lote["TrustedEntitiesList"].([]any)
 	if len(entities) == 0 {
-		t.Fatal("expected a trusted entity in the trust list")
+		t.Fatal("expected a trusted entity in the trusted list")
 	}
 	entity, _ := entities[0].(map[string]any)
 	services, _ := entity["TrustedEntityServices"].([]any)
 	if len(services) == 0 {
-		t.Fatal("expected a service entry in the trust list")
+		t.Fatal("expected a service entry in the trusted list")
 	}
 	service, _ := services[0].(map[string]any)
 	info, _ := service["ServiceInformation"].(map[string]any)

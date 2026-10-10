@@ -558,11 +558,11 @@
     html += "</div>";
 
     const verifyLabel = sigValid ? "Re-verify signature" : "Verify signature";
-    html += '<details class="verify-details"><summary>' + verifyLabel + " with a key or trust list</summary>";
+    html += '<details class="verify-details"><summary>' + verifyLabel + " with a key or trusted list</summary>";
     html += '<div class="verify-inline">';
     html += '<label class="verify-label">Public Key (PEM or JWK)</label>';
     html += '<textarea class="verify-input verify-inline-key" rows="3" placeholder="Paste PEM or JWK..." spellcheck="false"></textarea>';
-    html += '<label class="verify-label">Trust List URL</label>';
+    html += '<label class="verify-label">Trusted list URL</label>';
     html += '<input class="verify-input verify-inline-tl" type="text" placeholder="https://...">';
     html += '<button class="btn verify-btn verify-inline-btn">' + verifyLabel + "</button>";
     html += "</div></details>";
@@ -576,7 +576,7 @@
       const keyText = keyInput.value.trim();
       const tlUrl = tlInput.value.trim();
       if (!keyText && !tlUrl) {
-        showToast("Provide a public key or trust list URL");
+        showToast("Provide a public key or trusted list URL");
         return;
       }
       verifyInlineBtn.disabled = true;

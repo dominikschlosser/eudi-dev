@@ -46,12 +46,12 @@ var validateCmd = &cobra.Command{
 	Long: `Decode and validate a credential. Unlike 'decode' (which only parses and displays),
 'validate' actively checks correctness:
 
-  - Signature verification (requires --key or --trust-list)
+  - Signature verification (requires --key or --trusted-list)
   - Expiry check (use --allow-expired to skip)
   - Revocation status via status list when the credential contains a status reference
   - With --haip, the rules HAIP 1.0 adds on top, reported without failing
 
-If neither --key nor --trust-list is provided, signature verification is skipped
+If neither --key nor --trusted-list is provided, signature verification is skipped
 and only expiry/status checks are performed. This is useful for quick revocation
 checks without needing the issuer's key.`,
 	Args: cobra.MaximumNArgs(1),
@@ -60,7 +60,7 @@ checks without needing the issuer's key.`,
 
 func init() {
 	validateCmd.Flags().StringVar(&keyFile, "key", "", "Public key file (PEM or JWK)")
-	validateCmd.Flags().StringVar(&trustListFile, "trust-list", "", "ETSI trust list JWT (file path or URL)")
+	validateCmd.Flags().StringVar(&trustListFile, "trusted-list", "", "ETSI trusted list JWT (file path or URL)")
 	validateCmd.Flags().BoolVar(&statusListFlag, "status-list", true, "Check revocation via status list when the credential contains a status reference")
 	validateCmd.Flags().BoolVar(&allowExpired, "allow-expired", false, "Don't fail on expired credentials")
 	validateCmd.Flags().BoolVar(&validateHAIP, "haip", false, "Also check the credential against HAIP 1.0 and report what it breaks")
@@ -107,11 +107,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	if trustListFile != "" {
 		tlRaw, err := format.ReadInput(trustListFile)
 		if err != nil {
-			return fmt.Errorf("reading trust list: %w", err)
+			return fmt.Errorf("reading trusted list: %w", err)
 		}
 		tl, err := trustlist.Parse(tlRaw)
 		if err != nil {
-			return fmt.Errorf("parsing trust list: %w", err)
+			return fmt.Errorf("parsing trusted list: %w", err)
 		}
 		tlCerts = trustlist.ExtractPublicKeys(tl)
 		for _, ci := range tlCerts {
@@ -265,7 +265,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		} else {
 			if !opts.JSON {
-				fmt.Println("\n  Signature verification skipped (no --key or --trust-list provided)")
+				fmt.Println("\n  Signature verification skipped (no --key or --trusted-list provided)")
 			}
 			if doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil && doc.IssuerAuth.MSO.ValidityInfo != nil {
 				if doc.IssuerAuth.MSO.ValidityInfo.ValidUntil != nil && doc.IssuerAuth.MSO.ValidityInfo.ValidUntil.Before(time.Now()) {
@@ -330,7 +330,7 @@ func reportCatalogueTrust(raw string, report jsonReport) {
 // not mistaken for a trust statement.
 func printLeafSourceNote(source string, opts output.Options) {
 	if source == validate.SourceX5CLeaf && !opts.JSON {
-		fmt.Println("  Note: verified with the credential's embedded certificate (chain not validated). Pass --trust-list to also validate trust.")
+		fmt.Println("  Note: verified with the credential's embedded certificate (chain not validated). Pass --trusted-list to also validate trust.")
 	}
 }
 
@@ -407,7 +407,7 @@ func printSkippedSignatureNote(token *sdjwt.Token) {
 		fmt.Printf("\n  Signature verification skipped (the issuer key is named by the DID %s, which this tool does not resolve)\n", did)
 		return
 	}
-	fmt.Println("\n  Signature verification skipped (no --key/--trust-list and issuer metadata resolution unavailable)")
+	fmt.Println("\n  Signature verification skipped (no --key/--trusted-list and issuer metadata resolution unavailable)")
 }
 
 // HAIP findings are informational here. Only signature, expiry and revocation checks

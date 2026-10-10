@@ -119,13 +119,13 @@ func TestJSONOutputIsOneDocument(t *testing.T) {
 		t.Errorf("wallet remove: %v", doc)
 	}
 
-	if doc := runJSON(t, "wallet", "trust-list"); !strings.Contains(doc["trust_list"].(string), ".") {
-		t.Errorf("wallet trust-list: %v", doc)
+	if doc := runJSON(t, "wallet", "trusted-list"); !strings.Contains(doc["trust_list"].(string), ".") {
+		t.Errorf("wallet trusted-list: %v", doc)
 	}
-	if doc := runJSON(t, "wallet", "trust-list", "--url"); !strings.HasPrefix(doc["url"].(string), "http") {
-		t.Errorf("wallet trust-list --url: %v", doc)
+	if doc := runJSON(t, "wallet", "trusted-list", "--url"); !strings.HasPrefix(doc["url"].(string), "http") {
+		t.Errorf("wallet trusted-list --url: %v", doc)
 	}
-	runJSON(t, "wallet", "trust-list", "--list")
+	runJSON(t, "wallet", "trusted-list", "--list")
 	if doc := runJSON(t, "wallet", "ca-cert"); !strings.Contains(doc["pem"].(string), "BEGIN CERTIFICATE") {
 		t.Errorf("wallet ca-cert: %v", doc)
 	}

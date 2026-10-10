@@ -29,6 +29,7 @@ Version 3.0.0 adds a registrar, ARF checks, a catalogue of attestations and a tr
 - **Registrar API.** `GET /api/registrar/wrp` returns the TS05 v1.5 format. Its filter `providesattestation` is renamed to `providedattestation`. A provided attestation is `{"format", "type"}`, and `supportURI` is a single string.
 - **`issuer_info` dataset.** The `registrar_dataset` holds only `identifier`, `srvDescription`, `registryURI` and `providesAttestations` (ETSI TS 119 472-3 V1.1.1 §4.2.3).
 - **JSON output.** `validate`, `wallet deferred check`, `wallet list` and one-shot `wallet accept` print a different `--json` document (see [ADR 0020](docs/adr/0020-cli-output-can-be-automated.md)).
+- **"Trusted list" in CLI names.** `wallet trust-list` is now `wallet trusted-list`, `validate --trust-list` is `--trusted-list`, `issue --trust-list-type` and `--trust-entity-name` are `--trusted-list-type` and `--trusted-entity-name`, and `decode --format trustlist` is `trusted-list`.
 - **Presentation API errors.** `POST /api/presentations` refuses an invalid request with `{"error": "<code>", "error_description": "<message>"}` (see [presenting](docs/wallet/presenting.md)).
 
 ### Added
@@ -77,7 +78,7 @@ Version 3.0.0 adds a registrar, ARF checks, a catalogue of attestations and a tr
 - **Offer dialog.** A long credential description shows two lines with a **More** button. The status badges of a consent row don't overlap the **Show** button at phone width.
 - **Provider identifier in the issuer metadata.** The `registrar_dataset` in `issuer_info` names the wallet's issuer by its access certificate's identifier, as ETSI TS 119 472-3 requires.
 - **Card images in the demo issuer metadata.** The issuer metadata lists the logo and card image of each template (see [templates](docs/templates.md)).
-- **`wallet trust-list --id lists`.** It prints the list of trusted lists.
+- **`wallet trusted-list --id lists`.** It prints the list of trusted lists.
 
 ## [2.7.0] - 2026-10-10
 

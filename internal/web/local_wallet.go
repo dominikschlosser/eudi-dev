@@ -32,7 +32,7 @@ func loadLocalWallet(store *wallet.WalletStore) (*wallet.Wallet, error) {
 	return store.LoadOrCreate()
 }
 
-// The local CA verifies locally issued credentials without a trust list.
+// The local CA verifies locally issued credentials without a trusted list.
 func localWalletTrustAnchors(store *wallet.WalletStore) []trustlist.CertInfo {
 	w, err := loadLocalWallet(store)
 	if err != nil || w == nil || len(w.CertChain) == 0 {

@@ -250,7 +250,7 @@ func TestPrefixAPILinksIncludePrefix(t *testing.T) {
 
 			rec := prefixRequest(srv, http.MethodGet, tc.target+"/api/trustlists", nil)
 			if !strings.Contains(rec.Body.String(), `"path":"`+tc.want+`trustlists/`) {
-				t.Fatalf("trust list paths: %.300s", rec.Body.String())
+				t.Fatalf("trusted list paths: %.300s", rec.Body.String())
 			}
 		})
 	}

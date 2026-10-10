@@ -1720,7 +1720,7 @@ func TestTrustListAPI_ParseableByTrustlistParser(t *testing.T) {
 
 	tl, err := trustlist.Parse(w.Body.String())
 	if err != nil {
-		t.Fatalf("trust list parser failed: %v", err)
+		t.Fatalf("trusted list parser failed: %v", err)
 	}
 
 	if tl.SchemeInfo == nil {
@@ -1819,7 +1819,7 @@ func TestTrustListAPI_RemainsCertificateCentric(t *testing.T) {
 		}
 		for _, key := range forbiddenKeys {
 			if _, exists := info[key]; exists {
-				t.Errorf("trust list service must not expose %q", key)
+				t.Errorf("trusted list service must not expose %q", key)
 			}
 		}
 	}
@@ -1890,16 +1890,16 @@ func TestJWTVCIssuerMetadata_ExposesSigningKeyTrustedByTrustList(t *testing.T) {
 
 	tlResp := serverRequest(t, srv, "GET", "/api/trustlist", "")
 	if tlResp.Code != http.StatusOK {
-		t.Fatalf("expected trust list 200, got %d: %s", tlResp.Code, tlResp.Body.String())
+		t.Fatalf("expected trusted list 200, got %d: %s", tlResp.Code, tlResp.Body.String())
 	}
 	tl, err := trustlist.Parse(strings.TrimSpace(tlResp.Body.String()))
 	if err != nil {
-		t.Fatalf("parsing trust list: %v", err)
+		t.Fatalf("parsing trusted list: %v", err)
 	}
 	tlCerts := trustlist.ExtractPublicKeys(tl)
 	validatedKey, err := validate.ValidateCertChain([]*x509.Certificate{leafCert}, tlCerts)
 	if err != nil {
-		t.Fatalf("validating issuer metadata x5c against trust list: %v", err)
+		t.Fatalf("validating issuer metadata x5c against trusted list: %v", err)
 	}
 	issuerPub, ok := validatedKey.(*ecdsa.PublicKey)
 	if !ok {
@@ -2203,7 +2203,7 @@ func TestTrustListsAPI_ListsEveryCategoryWithThePIDListAsDefault(t *testing.T) {
 		switch entry["id"] {
 		case "pid":
 			if entry["default"] != true {
-				t.Fatalf("expected pid trust list to be default, got %v", entry["default"])
+				t.Fatalf("expected pid trusted list to be default, got %v", entry["default"])
 			}
 			if entry["advertised_url"] != "https://localhost:8443/api/trustlists/pid" {
 				t.Fatalf("expected pid advertised_url, got %v", entry["advertised_url"])

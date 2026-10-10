@@ -3234,7 +3234,7 @@
           links.className = 'trust-links';
           const link = document.createElement('a');
           link.href = url;
-          link.textContent = entry.id || 'trust list';
+          link.textContent = entry.id || 'trusted list';
           link.title = url;
           links.appendChild(link);
           if (entry.entityName) {
@@ -3247,7 +3247,7 @@
           copy.type = 'button';
           copy.className = 'copy-btn';
           copy.textContent = '\u29C9';
-          copy.title = 'Copy trust list URL';
+          copy.title = 'Copy trusted list URL';
           copy.addEventListener('click', async () => {
             try {
               await navigator.clipboard.writeText(url);

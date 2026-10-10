@@ -154,14 +154,14 @@ func TestResolveKeysErrors(t *testing.T) {
 		}
 	})
 
-	t.Run("a trust list that does not parse", func(t *testing.T) {
-		_, _, err := resolveKeys(ValidateOpts{TrustListRaw: "not a trust list"})
-		if err == nil || !strings.Contains(err.Error(), "parsing trust list") {
-			t.Errorf("error = %v, want a trust list parse failure", err)
+	t.Run("a trusted list that does not parse", func(t *testing.T) {
+		_, _, err := resolveKeys(ValidateOpts{TrustListRaw: "not a trusted list"})
+		if err == nil || !strings.Contains(err.Error(), "parsing trusted list") {
+			t.Errorf("error = %v, want a trusted list parse failure", err)
 		}
 	})
 
-	t.Run("a trust list URL that cannot be fetched", func(t *testing.T) {
+	t.Run("a trusted list URL that cannot be fetched", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "gone", http.StatusNotFound)
 		}))
@@ -169,19 +169,19 @@ func TestResolveKeysErrors(t *testing.T) {
 
 		_, _, err := resolveKeys(ValidateOpts{TrustListURL: srv.URL})
 		if err == nil {
-			t.Error("a trust list URL that answers 404 was accepted")
+			t.Error("a trusted list URL that answers 404 was accepted")
 		}
 	})
 
-	t.Run("a trust list URL serving something that is not a trust list", func(t *testing.T) {
+	t.Run("a trusted list URL serving something that is not a trusted list", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte("not a trust list"))
+			_, _ = w.Write([]byte("not a trusted list"))
 		}))
 		defer srv.Close()
 
 		_, _, err := resolveKeys(ValidateOpts{TrustListURL: srv.URL})
-		if err == nil || !strings.Contains(err.Error(), "parsing trust list") {
-			t.Errorf("error = %v, want a trust list parse failure", err)
+		if err == nil || !strings.Contains(err.Error(), "parsing trusted list") {
+			t.Errorf("error = %v, want a trusted list parse failure", err)
 		}
 	})
 

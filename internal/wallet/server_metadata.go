@@ -39,13 +39,13 @@ func (s *Server) handleTrustList(w http.ResponseWriter, r *http.Request) {
 	}
 	group, ok := FindTrustListGroupForWallet(s.wallet, "", r.URL.Query().Get("vct"), r.URL.Query().Get("doctype"))
 	if !ok {
-		http.Error(w, "wallet has no matching trust list", http.StatusNotFound)
+		http.Error(w, "wallet has no matching trusted list", http.StatusNotFound)
 		return
 	}
 	// The selected list is the same instance as /api/trustlists/{id}.
 	jwt, err := GenerateTrustListJWTForWalletGroup(s.wallet, s.wallet.IssuerURL, group, "/api/trustlists/"+group.ID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("generating trust list: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("generating trusted list: %v", err), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/jwt")
@@ -78,12 +78,12 @@ func (s *Server) handleTrustListByID(w http.ResponseWriter, r *http.Request) {
 	}
 	group, ok := FindTrustListGroupForWallet(s.wallet, r.PathValue("id"), "", "")
 	if !ok {
-		http.Error(w, "trust list not found", http.StatusNotFound)
+		http.Error(w, "trusted list not found", http.StatusNotFound)
 		return
 	}
 	jwt, err := GenerateTrustListJWTForWalletGroup(s.wallet, s.wallet.IssuerURL, group, "/api/trustlists/"+group.ID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("generating trust list: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("generating trusted list: %v", err), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/jwt")
@@ -99,7 +99,7 @@ func (s *Server) handleTrustListHistory(w http.ResponseWriter, r *http.Request) 
 	listPath := "/api/trustlists/" + group.ID
 	issuer := strings.TrimRight(s.wallet.IssuerURL, "/")
 	if _, err := GenerateTrustListJWTForWalletGroup(s.wallet, issuer, group, listPath); err != nil {
-		http.Error(w, "loading trust list history: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "loading trusted list history: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	store := s.wallet.signingStore()
@@ -115,7 +115,7 @@ func (s *Server) handleTrustListHistory(w http.ResponseWriter, r *http.Request) 
 			if errors.Is(err, fs.ErrNotExist) {
 				http.NotFound(w, r)
 			} else {
-				http.Error(w, "loading trust list history: "+err.Error(), http.StatusInternalServerError)
+				http.Error(w, "loading trusted list history: "+err.Error(), http.StatusInternalServerError)
 			}
 			return
 		}
@@ -125,7 +125,7 @@ func (s *Server) handleTrustListHistory(w http.ResponseWriter, r *http.Request) 
 	}
 	files, err := store.backend.List(dir)
 	if err != nil {
-		http.Error(w, "loading trust list history: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "loading trusted list history: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	type instance struct {
