@@ -188,6 +188,8 @@ Trusted lists contain service certificates and provider CAs. A separate list ope
 
 ### Registrar
 
+*(new in 3.0.0)*
+
 These endpoints are available on both wallet ports. Anyone with access to the wallet can register, change and delete relying parties, as with credentials. All `GET` endpoints under `/api/registrar/wrp` and `PUT /api/registrar/wrp` answer with a JWT signed by the registrar (`application/jwt`). Its payload has `iss`, `iat` and `data`. Send `Accept: application/json` without `application/jwt` to get the payload unsigned. See [registrar](registrar.md#registrar-api). The [registrar API walkthrough](registrar-api.md) registers a verifier and an issuer with curl and uses their certificates.
 
 `PUT /api/registrar/wrp` and `PUT /api/catalog/schemas/{id}` have no CLI command. Use the API or the UI for them.

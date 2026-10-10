@@ -99,6 +99,8 @@ The demo verifier accepts a credential when its certificate chains to an issuanc
 
 ### Trusted lists
 
+*(new in 3.0.0)*
+
 The wallet publishes lists of trusted entities (ETSI TS 119 602). It takes every trust anchor from such lists ([ADR 0023](../adr/0023-trust-anchors-come-from-trusted-lists.md)). With `--arf`, the wallet checks received credentials against them. It also checks the access and registration certificates of verifiers and issuers. The demo issuer and the demo verifier use them too.
 
 | List ID | Lists | LoTE type |
@@ -356,6 +358,8 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 
 ## Startup credentials
 
+*(new in 3.0.0)*
+
 `--credentials` adds credentials on every start. It reads a YAML or JSON file, every `.yaml`, `.yml` and `.json` file of a directory (in name order), or stdin with `-`. An entry either issues a credential from a [template](../templates.md) or imports a finished one. A file can mix both.
 
 ```yaml
@@ -459,6 +463,8 @@ On a running wallet server the same export is available as `GET /api/certificate
 | `--jwks` | `false` | Output as JWKS (public key with `x5c` chain) |
 
 ## Registrar
+
+*(new in 3.0.0)*
 
 The wallet runs a relying party registrar. It registers relying parties and issues their access and registration certificates. See [registrar](registrar.md).
 

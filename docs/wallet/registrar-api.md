@@ -1,5 +1,7 @@
 # Registrar API walkthrough
 
+*(new in 3.0.0)*
+
 This walkthrough registers a verifier and an issuer with the wallet's [registrar](registrar.md) over the HTTP API. Then it uses their certificates against the wallet, which checks them with `--arf`. The requests use `curl`, `jq` and `openssl`. The responses come from a wallet started like this:
 
 ```bash

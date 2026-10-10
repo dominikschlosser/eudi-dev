@@ -57,6 +57,8 @@ The web decoder (`eudi serve` and the wallet's embedded decoder) also uses the l
 
 ## Catalogue trust
 
+*(new in 3.0.0)*
+
 When the wallet's attestation catalogue has an entry for the credential type, `validate` and the web decoder also check whether one of the entry's trusted lists anchors the credential. They read the linked lists of the entry. For a PID or a PuB-EAA they also read the lists of that type on the wallet's list of trusted lists, as the wallet does on issuance. The decoder shows the result as the `trust` check. `validate` prints it and adds `trust` to `--json`. The exit code doesn't depend on it. A type without a catalogue entry gets no trust check.
 
 `validate` and the decoder of `eudi serve` read the stored wallet. The lists from `wallet serve --trusted-list` and the operators from `--trust-list-ca` count only in the decoder of the running wallet.

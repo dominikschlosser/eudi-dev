@@ -72,6 +72,8 @@ Deferred issuances are saved in the selected storage backend. With file or Postg
 
 ## ARF checks
 
+*(new in 3.0.0)*
+
 The offer flow applies `--mode`, `--haip` and `--arf` like a presentation, whether the offer comes from `wallet accept`, `wallet scan` or an offer URL.
 
 With `--arf` the wallet also checks the issuer before it requests a credential, for an offer and for a renewal, as ARF v3.0.0 §6.6.2.2 and §6.6.2.3 describe. It asks for signed metadata first (`Accept: application/jwt, application/json;q=0.5`) and checks that:
