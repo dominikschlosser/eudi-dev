@@ -24,42 +24,6 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 )
 
-// A JWK's x5c arrives from JSON as []any and from Go code as []string. Both
-// must read the same.
-func TestNormalizeX5CEntries(t *testing.T) {
-	t.Run("a slice of strings", func(t *testing.T) {
-		got, err := normalizeX5CEntries([]string{"a", "b"})
-		if err != nil {
-			t.Fatalf("normalizeX5CEntries: %v", err)
-		}
-		if len(got) != 2 || got[0] != "a" || got[1] != "b" {
-			t.Errorf("entries = %v", got)
-		}
-	})
-
-	t.Run("a slice of any, as JSON decodes it", func(t *testing.T) {
-		got, err := normalizeX5CEntries([]any{"a", "b"})
-		if err != nil {
-			t.Fatalf("normalizeX5CEntries: %v", err)
-		}
-		if len(got) != 2 || got[0] != "a" {
-			t.Errorf("entries = %v", got)
-		}
-	})
-
-	t.Run("an entry that is not a string", func(t *testing.T) {
-		if _, err := normalizeX5CEntries([]any{"a", 42}); err == nil {
-			t.Error("a non-string x5c entry was accepted")
-		}
-	})
-
-	t.Run("not an array at all", func(t *testing.T) {
-		if _, err := normalizeX5CEntries("just a string"); err == nil {
-			t.Error("a scalar x5c was accepted")
-		}
-	})
-}
-
 func TestExtractAndValidateJWKX5C(t *testing.T) {
 	caCert, caKey, caDER := generateCACert(t)
 	_, _, leafDER := generateLeafCert(t, caCert, caKey)
@@ -105,7 +69,7 @@ func TestExtractAndValidateJWKX5C(t *testing.T) {
 
 	t.Run("an x5c entry that is not base64", func(t *testing.T) {
 		_, err := extractAndValidateJWKX5C(map[string]any{"x5c": []any{"!!! not base64 !!!"}}, anchors)
-		if err == nil || !strings.Contains(err.Error(), "decoding jwk x5c certificate") {
+		if err == nil || !strings.Contains(err.Error(), "decoding x5c certificate") {
 			t.Errorf("error = %v, want a decoding failure", err)
 		}
 	})
@@ -113,7 +77,7 @@ func TestExtractAndValidateJWKX5C(t *testing.T) {
 	t.Run("an x5c entry that is not a certificate", func(t *testing.T) {
 		notACert := base64.StdEncoding.EncodeToString([]byte("nope"))
 		_, err := extractAndValidateJWKX5C(map[string]any{"x5c": []any{notACert}}, anchors)
-		if err == nil || !strings.Contains(err.Error(), "parsing jwk x5c certificate") {
+		if err == nil || !strings.Contains(err.Error(), "parsing x5c certificate") {
 			t.Errorf("error = %v, want a parse failure", err)
 		}
 	})
@@ -276,10 +240,10 @@ func TestExtractMDOCX5ChainCertificates(t *testing.T) {
 		}
 	})
 
+	// RFC 9360 §2 allows a byte string or an array of byte strings.
 	t.Run("an x5chain of an unexpected shape", func(t *testing.T) {
-		certs, err := ExtractMDOCX5ChainCertificates(withHeader(map[any]any{int64(33): "a string"}))
-		if err != nil || certs != nil {
-			t.Errorf("certs = %v, err = %v, want both empty", certs, err)
+		if _, err := ExtractMDOCX5ChainCertificates(withHeader(map[any]any{int64(33): "a string"})); err == nil {
+			t.Error("a text x5chain was accepted")
 		}
 	})
 

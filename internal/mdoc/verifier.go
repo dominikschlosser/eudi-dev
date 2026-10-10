@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/veraison/go-cose"
+
+	"github.com/dominikschlosser/eudi-dev/v3/internal/validity"
 )
 
 // VerifyResult uses the camelCase keys of the validate --json document.
@@ -63,12 +65,8 @@ func Verify(doc *Document, pubKey crypto.PublicKey) *VerifyResult {
 			result.Signed = mso.ValidityInfo.Signed
 
 			now := time.Now()
-			if mso.ValidityInfo.ValidUntil != nil && now.After(*mso.ValidityInfo.ValidUntil) {
-				result.Expired = true
-			}
-			if mso.ValidityInfo.ValidFrom != nil && now.Before(*mso.ValidityInfo.ValidFrom) {
-				result.NotYetValid = true
-			}
+			result.Expired = validity.Expired(mso.ValidityInfo.ValidUntil, now)
+			result.NotYetValid = validity.NotYet(mso.ValidityInfo.ValidFrom, now)
 		}
 	}
 

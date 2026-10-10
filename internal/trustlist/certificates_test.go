@@ -151,8 +151,9 @@ func TestParseReadsEntitiesServicesAndCertificates(t *testing.T) {
 	}
 }
 
-// An unreadable list entry leaves the valid trust anchors in place.
-func TestParseSkipsUnreadableEntries(t *testing.T) {
+// An unreadable list entry leaves the valid trust anchors in place, and each
+// one is named in a finding.
+func TestParseReportsUnreadableEntries(t *testing.T) {
 	good := certB64(t, "Good CA")
 
 	raw := trustListJWT(t, map[string]any{
@@ -193,53 +194,9 @@ func TestParseSkipsUnreadableEntries(t *testing.T) {
 	if certs[0].Subject != "CN=Good CA" {
 		t.Errorf("subject = %q, want CN=Good CA", certs[0].Subject)
 	}
-}
-
-func TestExtractPublicKeys(t *testing.T) {
-	raw := trustListJWT(t, map[string]any{
-		"LoTE": map[string]any{
-			"TrustedEntitiesList": []any{
-				map[string]any{
-					"TrustedEntityServices": []any{
-						serviceWith(map[string]any{"val": certB64(t, "CA One")}),
-						serviceWith(map[string]any{"val": certB64(t, "CA Two")}),
-					},
-				},
-				map[string]any{
-					"TrustedEntityServices": []any{
-						serviceWith(map[string]any{"val": certB64(t, "CA Three")}),
-					},
-				},
-			},
-		},
-	})
-
-	tl, err := Parse(raw)
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-
-	keys := ExtractPublicKeys(tl)
-	if len(keys) != 3 {
-		t.Fatalf("keys = %d, want 3 across both entities", len(keys))
-	}
-	subjects := map[string]bool{}
-	for _, k := range keys {
-		subjects[k.Subject] = true
-		if k.PublicKey == nil {
-			t.Errorf("%s carries no public key", k.Subject)
-		}
-	}
-	for _, want := range []string{"CN=CA One", "CN=CA Two", "CN=CA Three"} {
-		if !subjects[want] {
-			t.Errorf("%s is missing from the extracted keys", want)
-		}
-	}
-}
-
-func TestExtractPublicKeysOnAnEmptyList(t *testing.T) {
-	if keys := ExtractPublicKeys(&TrustList{}); len(keys) != 0 {
-		t.Errorf("keys = %d, want none", len(keys))
+	// One entity, two services and four certificates are unreadable.
+	if len(tl.Findings) != 7 {
+		t.Errorf("findings = %q, want one for each of the 7 unreadable entries", tl.Findings)
 	}
 }
 

@@ -23,6 +23,9 @@ type TrustList struct {
 	Header     map[string]any
 	SchemeInfo *SchemeInfo
 	Entities   []TrustedEntity
+	// Findings name the entities, services and certificates that Parse could
+	// not read and left out.
+	Findings []string
 }
 
 type SchemeInfo struct {

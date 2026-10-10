@@ -31,6 +31,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/validity"
 )
 
 var (
@@ -47,38 +48,7 @@ var (
 )
 
 func relativeTime(t time.Time) string {
-	now := timeNow()
-	d := t.Sub(now)
-	if d < 0 {
-		d = -d
-		return formatDuration(d) + " ago"
-	}
-	return "in " + formatDuration(d)
-}
-
-func formatDuration(d time.Duration) string {
-	const day = 24 * time.Hour
-	switch {
-	case d >= 60*day:
-		months := int(d / (30 * day))
-		if months == 1 {
-			return "1 month"
-		}
-		return fmt.Sprintf("%d months", months)
-	case d >= 2*day:
-		days := int(d / day)
-		return fmt.Sprintf("%d days", days)
-	case d >= day:
-		return "1 day"
-	case d >= 2*time.Hour:
-		return fmt.Sprintf("%d hours", int(d.Hours()))
-	case d >= time.Hour:
-		return "1 hour"
-	case d >= 2*time.Minute:
-		return fmt.Sprintf("%d minutes", int(d.Minutes()))
-	default:
-		return "1 minute"
-	}
+	return validity.Relative(t, timeNow())
 }
 
 func addTokenNotes(out map[string]any, token *sdjwt.Token) {

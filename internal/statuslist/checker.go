@@ -28,14 +28,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/certchain"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/validity"
 )
-
-// The expiry check allows one minute of clock drift. The specification defines no
-// tolerance.
-const clockSkew = time.Minute
 
 // ExtractStatusRef extracts the status list reference from SD-JWT claims or
 // mdoc MSO status. It returns nil without a status claim. Section 6.2 requires
@@ -302,13 +300,13 @@ func (t *statusListToken) validate(ref *StatusRef, opts CheckOptions) error {
 	// checked if the Status List Token is expired".
 	now := opts.now()
 	if t.expiresAt != nil {
-		if now.After(t.expiresAt.Add(clockSkew)) {
+		if validity.Expired(t.expiresAt, now) {
 			return fmt.Errorf("the status list token expired at %s", t.expiresAt.UTC().Format(time.RFC3339))
 		}
 	} else {
 		t.warnings = append(t.warnings, "the status list token has no exp claim, which section 5.1 and 5.2 recommend")
 	}
-	if t.issuedAt.After(now.Add(clockSkew)) {
+	if validity.NotYet(t.issuedAt, now) {
 		t.warnings = append(t.warnings, fmt.Sprintf("the status list token is issued at %s, which is in the future", t.issuedAt.UTC().Format(time.RFC3339)))
 	}
 
@@ -398,27 +396,19 @@ func resolveKeys(certs []*x509.Certificate, embedded []crypto.PublicKey, named s
 	return nil, fmt.Errorf("no key to verify the status list token with: it carries no certificate chain and no public key, and no trust list or key was supplied")
 }
 
+// verifyChain checks the token's chain against the trust anchors. An anchor
+// that is not a certificate is an error.
 func verifyChain(certs []*x509.Certificate, trustCerts []TrustCert) (*x509.Certificate, error) {
-	roots := x509.NewCertPool()
-	for _, tc := range trustCerts {
-		tlCert, err := x509.ParseCertificate(tc.Raw)
+	anchors := make([]*x509.Certificate, 0, len(trustCerts))
+	for i, tc := range trustCerts {
+		anchor, err := x509.ParseCertificate(tc.Raw)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("trust anchor %d is not a certificate: %w", i+1, err)
 		}
-		roots.AddCert(tlCert)
+		anchors = append(anchors, anchor)
 	}
-
-	intermediates := x509.NewCertPool()
-	for _, c := range certs[1:] {
-		intermediates.AddCert(c)
-	}
-
-	leaf := certs[0]
-	if _, err := leaf.Verify(x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: intermediates,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-	}); err != nil {
+	leaf, err := certchain.Verify(certs, anchors)
+	if err != nil {
 		return nil, fmt.Errorf("the status list token's certificate chain is not trusted: %w", err)
 	}
 	return leaf, nil
@@ -451,7 +441,7 @@ func parseJWTStatusListToken(body []byte, opts CheckOptions) (*statusListToken, 
 		return nil, fmt.Errorf("the status list token has typ %q, section 5.1 requires %q", typ, TypJWT)
 	}
 
-	certs, err := certsFromX5C(header["x5c"])
+	certs, err := certchain.FromX5C(header["x5c"])
 	if err != nil {
 		return nil, err
 	}
@@ -539,30 +529,6 @@ func parseJWTStatusListToken(body []byte, opts CheckOptions) (*statusListToken, 
 func isStatusListTyp(typ, want string) bool {
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	return typ == want || typ == "application/"+want
-}
-
-func certsFromX5C(raw any) ([]*x509.Certificate, error) {
-	entries, ok := raw.([]any)
-	if !ok || len(entries) == 0 {
-		return nil, nil
-	}
-	var certs []*x509.Certificate
-	for _, entry := range entries {
-		b64, ok := entry.(string)
-		if !ok {
-			return nil, fmt.Errorf("an x5c entry in the status list token is not a string")
-		}
-		der, err := format.DecodeBase64Std(b64)
-		if err != nil {
-			return nil, fmt.Errorf("decoding x5c certificate: %w", err)
-		}
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, fmt.Errorf("parsing x5c certificate: %w", err)
-		}
-		certs = append(certs, cert)
-	}
-	return certs, nil
 }
 
 func publicKeyFromJWK(raw any) (crypto.PublicKey, error) {

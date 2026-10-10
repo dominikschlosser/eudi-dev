@@ -22,7 +22,12 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jsonutil"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/validity"
 )
+
+// ErrSignatureInvalid is the error Verify records for a signature that does
+// not verify with the key.
+const ErrSignatureInvalid = "signature verification failed"
 
 // VerifyResult uses the camelCase keys of the validate --json document.
 type VerifyResult struct {
@@ -49,7 +54,7 @@ func Verify(token *Token, pubKey crypto.PublicKey) *VerifyResult {
 	if exp, ok := jsonutil.GetFloat64(token.Payload, "exp"); ok {
 		t := time.Unix(int64(exp), 0)
 		result.ExpiresAt = &t
-		result.Expired = now.After(t)
+		result.Expired = validity.Expired(&t, now)
 	}
 	if iat, ok := jsonutil.GetFloat64(token.Payload, "iat"); ok {
 		t := time.Unix(int64(iat), 0)
@@ -58,7 +63,7 @@ func Verify(token *Token, pubKey crypto.PublicKey) *VerifyResult {
 	if nbf, ok := jsonutil.GetFloat64(token.Payload, "nbf"); ok {
 		t := time.Unix(int64(nbf), 0)
 		result.NotBefore = &t
-		result.NotYetValid = now.Before(t)
+		result.NotYetValid = validity.NotYet(&t, now)
 	}
 
 	jwtRaw := strings.SplitN(token.Raw, "~", 2)[0]
@@ -74,7 +79,7 @@ func Verify(token *Token, pubKey crypto.PublicKey) *VerifyResult {
 
 	result.SignatureValid = jws.Valid(jwtRaw, pubKey)
 	if !result.SignatureValid {
-		result.Errors = append(result.Errors, "signature verification failed")
+		result.Errors = append(result.Errors, ErrSignatureInvalid)
 	}
 
 	return result

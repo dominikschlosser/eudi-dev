@@ -171,11 +171,3 @@ func TestParse_RejectsUnwrappedPayload(t *testing.T) {
 		t.Fatal("expected unwrapped payload to be rejected")
 	}
 }
-
-func TestExtractPublicKeys_Empty(t *testing.T) {
-	tl := &TrustList{}
-	keys := ExtractPublicKeys(tl)
-	if len(keys) != 0 {
-		t.Errorf("expected 0 keys, got %d", len(keys))
-	}
-}

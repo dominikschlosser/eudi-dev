@@ -23,8 +23,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/certchain"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
 )
 
 func TestGenerateMDOC_DefaultClaims(t *testing.T) {
@@ -594,7 +594,7 @@ func TestGenerateMDOC_X5ChainOmitsTheRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mdoc.Parse: %v", err)
 	}
-	certs, err := validate.ExtractMDOCX5ChainCertificates(doc)
+	certs, err := certchain.FromCOSE(doc.IssuerAuth.ProtectedHeader, doc.IssuerAuth.UnprotectedHeader)
 	if err != nil {
 		t.Fatalf("reading x5chain: %v", err)
 	}

@@ -21,37 +21,22 @@ import (
 	"crypto/x509"
 	"fmt"
 
-	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/certchain"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 )
 
+// ValidateCertChain checks that the leaf certs[0] chains to one of the trust
+// list certificates and returns its public key.
 func ValidateCertChain(certs []*x509.Certificate, tlCerts []trustlist.CertInfo) (crypto.PublicKey, error) {
-	leaf := certs[0]
-
-	roots := x509.NewCertPool()
-	for _, ci := range tlCerts {
-		tlCert, err := x509.ParseCertificate(ci.Raw)
-		if err != nil {
-			continue
-		}
-		roots.AddCert(tlCert)
+	anchors, err := trustlist.Certificates(tlCerts)
+	if err != nil {
+		return nil, err
 	}
-
-	intermediates := x509.NewCertPool()
-	for _, c := range certs[1:] {
-		intermediates.AddCert(c)
-	}
-
-	_, err := leaf.Verify(x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: intermediates,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-	})
+	leaf, err := certchain.Verify(certs, anchors)
 	if err != nil {
 		return nil, fmt.Errorf("certificate chain not trusted: %w", err)
 	}
-
 	return leaf.PublicKey, nil
 }
 
@@ -88,32 +73,11 @@ func X5CCertificates(header map[string]any) ([]*x509.Certificate, error) {
 }
 
 func parseX5CCerts(header map[string]any) ([]*x509.Certificate, error) {
-	x5cRaw, ok := header["x5c"].([]any)
-	if !ok || len(x5cRaw) == 0 {
-		return nil, nil
-	}
-
-	var certs []*x509.Certificate
-	for _, entry := range x5cRaw {
-		b64, ok := entry.(string)
-		if !ok {
-			return nil, fmt.Errorf("x5c entry is not a string")
-		}
-		der, err := format.DecodeBase64Std(b64)
-		if err != nil {
-			return nil, fmt.Errorf("decoding x5c certificate: %w", err)
-		}
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, fmt.Errorf("parsing x5c certificate: %w", err)
-		}
-		certs = append(certs, cert)
-	}
-	return certs, nil
+	return certchain.FromX5C(header["x5c"])
 }
 
-// ExtractAndValidateMDOCX5Chain extracts the leaf certificate public key from a COSE
-// x5chain (label 33) in the unprotected header and validates the chain against the trust list.
+// ExtractAndValidateMDOCX5Chain extracts the leaf certificate public key from the
+// COSE x5chain (label 33) and validates the chain against the trust list.
 // Returns nil, nil if no x5chain is present.
 func ExtractAndValidateMDOCX5Chain(doc *mdoc.Document, tlCerts []trustlist.CertInfo) (crypto.PublicKey, error) {
 	if len(tlCerts) == 0 {
@@ -143,47 +107,10 @@ func ExtractMDOCX5ChainCertificates(doc *mdoc.Document) ([]*x509.Certificate, er
 	return parseMDOCX5ChainCerts(doc)
 }
 
-// parseMDOCX5ChainCerts decodes the certificates of a COSE x5chain (label 33)
-// in the unprotected header.
+// parseMDOCX5ChainCerts reads the x5chain of the MSO's COSE_Sign1.
 func parseMDOCX5ChainCerts(doc *mdoc.Document) ([]*x509.Certificate, error) {
-	if doc.IssuerAuth == nil || doc.IssuerAuth.UnprotectedHeader == nil {
+	if doc == nil || doc.IssuerAuth == nil {
 		return nil, nil
 	}
-
-	x5chainRaw, ok := doc.IssuerAuth.UnprotectedHeader[int64(33)]
-	if !ok {
-		x5chainRaw, ok = doc.IssuerAuth.UnprotectedHeader[uint64(33)]
-		if !ok {
-			return nil, nil
-		}
-	}
-
-	// RFC 9360 §2 allows a single certificate as a bare byte string or an array of them.
-	var certDERs [][]byte
-	switch v := x5chainRaw.(type) {
-	case []byte:
-		certDERs = append(certDERs, v)
-	case []any:
-		for _, entry := range v {
-			if b, ok := entry.([]byte); ok {
-				certDERs = append(certDERs, b)
-			}
-		}
-	default:
-		return nil, nil
-	}
-
-	if len(certDERs) == 0 {
-		return nil, nil
-	}
-
-	var certs []*x509.Certificate
-	for _, der := range certDERs {
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, fmt.Errorf("parsing x5chain certificate: %w", err)
-		}
-		certs = append(certs, cert)
-	}
-	return certs, nil
+	return certchain.FromCOSE(doc.IssuerAuth.ProtectedHeader, doc.IssuerAuth.UnprotectedHeader)
 }

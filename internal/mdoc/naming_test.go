@@ -290,9 +290,9 @@ func TestDigestHasher(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.alg, func(t *testing.T) {
-			hash, err := digestHasher(tt.alg)
+			hash, err := DigestHasher(tt.alg)
 			if err != nil {
-				t.Fatalf("digestHasher(%q): %v", tt.alg, err)
+				t.Fatalf("DigestHasher(%q): %v", tt.alg, err)
 			}
 			if string(hash(payload)) != string(tt.want) {
 				t.Errorf("digest for %q does not match", tt.alg)
@@ -300,7 +300,7 @@ func TestDigestHasher(t *testing.T) {
 		})
 	}
 
-	if _, err := digestHasher("SHA-1"); err == nil {
+	if _, err := DigestHasher("SHA-1"); err == nil {
 		t.Error("an unsupported digest algorithm was accepted")
 	}
 }

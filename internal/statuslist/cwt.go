@@ -19,13 +19,13 @@ import (
 	"compress/zlib"
 	"crypto/ecdsa"
 	"crypto/rand"
-	"crypto/x509"
 	"fmt"
 	"os"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/veraison/go-cose"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/certchain"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
@@ -90,7 +90,7 @@ func parseCWTStatusListToken(body []byte, opts CheckOptions) (*statusListToken, 
 		return nil, fmt.Errorf("the status list token is signed with %v, which is not one of the accepted algorithms ES256 and ES384", alg)
 	}
 
-	certs, err := certsFromX5Chain(msg.Headers)
+	certs, err := certchain.FromCOSE(map[any]any(msg.Headers.Protected), map[any]any(msg.Headers.Unprotected))
 	if err != nil {
 		return nil, err
 	}
@@ -186,46 +186,6 @@ func cwtType(protected cose.ProtectedHeader) (string, error) {
 	default:
 		return "", fmt.Errorf("the status list token's type header (16) is a %T, section 5.2 requires the media type name or a CoAP Content-Format ID", value)
 	}
-}
-
-// certsFromX5Chain reads the RFC 9360 x5chain header (33) from the protected
-// or the unprotected bucket.
-func certsFromX5Chain(headers cose.Headers) ([]*x509.Certificate, error) {
-	value, present := headerValue(map[any]any(headers.Protected), coseHeaderX5Chain)
-	if !present {
-		value, present = headerValue(map[any]any(headers.Unprotected), coseHeaderX5Chain)
-	}
-	if !present {
-		return nil, nil
-	}
-
-	var ders [][]byte
-	switch v := value.(type) {
-	case []byte:
-		ders = [][]byte{v}
-	case [][]byte:
-		ders = v
-	case []any:
-		for _, entry := range v {
-			der, ok := entry.([]byte)
-			if !ok {
-				return nil, fmt.Errorf("an x5chain entry in the status list token is not a byte string")
-			}
-			ders = append(ders, der)
-		}
-	default:
-		return nil, fmt.Errorf("the status list token's x5chain header is a %T", value)
-	}
-
-	var certs []*x509.Certificate
-	for _, der := range ders {
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, fmt.Errorf("parsing x5chain certificate: %w", err)
-		}
-		certs = append(certs, cert)
-	}
-	return certs, nil
 }
 
 // headerValue looks up an integer-labelled COSE header. A label decodes as

@@ -16,13 +16,13 @@ package validate
 
 import (
 	"crypto"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/certchain"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jsonutil"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
@@ -112,14 +112,28 @@ func ResolveJWTIssuerMetadataKey(token *sdjwt.Token, tlCerts []trustlist.CertInf
 	return key, "issuer metadata", nil
 }
 
-// SourceX5CLeaf marks a check against the embedded leaf. It proves integrity only.
-// Issuer trust needs a trust list to validate the chain.
-const SourceX5CLeaf = "x5c certificate, chain not validated"
+// IssuerMetadataError is a failed lookup of the issuer's key in its JWT VC
+// Issuer Metadata (SD-JWT VC §3).
+type IssuerMetadataError struct{ Err error }
+
+func (e *IssuerMetadataError) Error() string { return e.Err.Error() }
+func (e *IssuerMetadataError) Unwrap() error { return e.Err }
+
+// Sources of a verified signature.
+const (
+	// SourceX5CChain is the leaf of a chain that ends in a trust anchor.
+	SourceX5CChain = "x5c chain"
+	// SourceProvidedKey is a key supplied by the caller.
+	SourceProvidedKey = "provided key"
+	// SourceX5CLeaf is the embedded leaf of an unvalidated chain. It proves
+	// integrity only. Issuer trust needs a trust list to validate the chain.
+	SourceX5CLeaf = "x5c certificate, chain not validated"
+)
 
 // VerifyJWTSignature verifies the token signature. It tries in order x5c with
-// the trust list, the given keys, the embedded x5c leaf (only without a trust
-// list) and kid-based issuer metadata. The leaf step keeps validation offline
-// for credentials that carry their issuer certificate.
+// the trust list, the given keys, the embedded x5c leaf (only without supplied
+// keys and trust list) and kid-based issuer metadata. The leaf step keeps
+// validation offline for credentials that carry their issuer certificate.
 func VerifyJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts []trustlist.CertInfo, clients ...*http.Client) (*sdjwt.VerifyResult, string, error) {
 	return verifyJWTSignature(token, pubKeys, tlCerts, true, clients...)
 }
@@ -135,39 +149,56 @@ func verifyJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts 
 		return nil, "", fmt.Errorf("token is nil")
 	}
 
-	if x5cKey, err := ExtractAndValidateX5C(token.Header, tlCerts); err == nil && x5cKey != nil {
-		return sdjwt.Verify(token, x5cKey), "x5c chain", nil
+	x5cKey, chainErr := ExtractAndValidateX5C(token.Header, tlCerts)
+	if x5cKey != nil {
+		return sdjwt.Verify(token, x5cKey), SourceX5CChain, nil
 	}
 
 	var best *sdjwt.VerifyResult
+	bestSource := SourceProvidedKey
 	for _, key := range pubKeys {
 		result := sdjwt.Verify(token, key)
 		best = result
 		if result.SignatureValid {
-			return result, "provided key", nil
+			return result, SourceProvidedKey, nil
 		}
 	}
 
-	// Without trust anchors the embedded leaf still proves the signature is intact.
-	// A metadata lookup fails whenever the issuer is unreachable.
-	if len(tlCerts) == 0 {
-		if leafKey, err := ExtractX5CLeafKey(token.Header); err == nil && leafKey != nil {
-			if result := sdjwt.Verify(token, leafKey); result.SignatureValid {
+	// Without supplied trust the embedded leaf still proves the signature is
+	// intact. A metadata lookup fails whenever the issuer is unreachable.
+	if len(pubKeys) == 0 && len(tlCerts) == 0 {
+		leafKey, err := ExtractX5CLeafKey(token.Header)
+		if err != nil {
+			return nil, "", err
+		}
+		if leafKey != nil {
+			result := sdjwt.Verify(token, leafKey)
+			if result.SignatureValid {
 				return result, SourceX5CLeaf, nil
 			}
+			best, bestSource = result, SourceX5CLeaf
 		}
 	}
 
 	if best != nil {
+		if chainErr != nil {
+			best.Errors = append(best.Errors, chainErr.Error())
+		}
 		if resolveIssuerMetadata {
-			if key, source, err := ResolveJWTIssuerMetadataKey(token, tlCerts, clients...); err == nil && key != nil {
-				result := sdjwt.Verify(token, key)
-				if result.SignatureValid {
+			key, source, err := ResolveJWTIssuerMetadataKey(token, tlCerts, clients...)
+			switch {
+			case err != nil:
+				best.Errors = append(best.Errors, err.Error())
+			case key != nil:
+				if result := sdjwt.Verify(token, key); result.SignatureValid {
 					return result, source, nil
 				}
 			}
 		}
-		return best, "provided key", nil
+		return best, bestSource, nil
+	}
+	if chainErr != nil {
+		return nil, "", chainErr
 	}
 
 	if !resolveIssuerMetadata {
@@ -176,7 +207,7 @@ func verifyJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts 
 
 	key, source, err := ResolveJWTIssuerMetadataKey(token, tlCerts, clients...)
 	if err != nil {
-		return nil, "", err
+		return nil, "", &IssuerMetadataError{Err: err}
 	}
 	if key == nil {
 		return nil, "", nil
@@ -303,49 +334,15 @@ func findIssuerMetadataJWK(doc map[string]any, kid string, clients ...*http.Clie
 }
 
 func extractAndValidateJWKX5C(jwk map[string]any, tlCerts []trustlist.CertInfo) (crypto.PublicKey, error) {
-	x5cRaw, ok := jwk["x5c"]
-	if !ok || len(tlCerts) == 0 {
+	if len(tlCerts) == 0 {
 		return nil, nil
 	}
-
-	entries, err := normalizeX5CEntries(x5cRaw)
+	certs, err := certchain.FromX5C(jwk["x5c"])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading the jwk x5c: %w", err)
 	}
-	if len(entries) == 0 {
+	if len(certs) == 0 {
 		return nil, nil
-	}
-
-	certs := make([]*x509.Certificate, 0, len(entries))
-	for _, b64 := range entries {
-		der, err := format.DecodeBase64Std(b64)
-		if err != nil {
-			return nil, fmt.Errorf("decoding jwk x5c certificate: %w", err)
-		}
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, fmt.Errorf("parsing jwk x5c certificate: %w", err)
-		}
-		certs = append(certs, cert)
 	}
 	return ValidateCertChain(certs, tlCerts)
-}
-
-func normalizeX5CEntries(raw any) ([]string, error) {
-	switch v := raw.(type) {
-	case []string:
-		return v, nil
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, entry := range v {
-			s, ok := entry.(string)
-			if !ok {
-				return nil, fmt.Errorf("x5c entry is not a string")
-			}
-			out = append(out, s)
-		}
-		return out, nil
-	default:
-		return nil, fmt.Errorf("x5c is not an array")
-	}
 }

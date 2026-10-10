@@ -39,7 +39,7 @@ func VerifyValueDigests(doc *Document) error {
 		return fmt.Errorf("document carries no MSO to check digests against")
 	}
 	mso := doc.IssuerAuth.MSO
-	hash, err := digestHasher(mso.DigestAlgorithm)
+	hash, err := DigestHasher(mso.DigestAlgorithm)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,9 @@ func coseInt(v any) int64 {
 	return 0
 }
 
-func digestHasher(alg string) (func([]byte) []byte, error) {
+// DigestHasher returns the hash function named by an MSO digestAlgorithm. A
+// missing algorithm reads as SHA-256.
+func DigestHasher(alg string) (func([]byte) []byte, error) {
 	switch alg {
 	case "", "SHA-256":
 		return func(b []byte) []byte { sum := sha256.Sum256(b); return sum[:] }, nil
@@ -223,7 +225,7 @@ func ItemDigest(doc *Document, namespace string, item IssuerSignedItem) (got, wa
 	if doc == nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
 		return nil, nil, fmt.Errorf("document carries no MSO")
 	}
-	hash, err := digestHasher(doc.IssuerAuth.MSO.DigestAlgorithm)
+	hash, err := DigestHasher(doc.IssuerAuth.MSO.DigestAlgorithm)
 	if err != nil {
 		return nil, nil, err
 	}

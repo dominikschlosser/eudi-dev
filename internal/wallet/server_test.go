@@ -1896,7 +1896,7 @@ func TestJWTVCIssuerMetadata_ExposesSigningKeyTrustedByTrustList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing trusted list: %v", err)
 	}
-	tlCerts := trustlist.ExtractPublicKeys(tl)
+	tlCerts := trustlist.ServiceCertificates(tl, trustlist.IssuanceServices)
 	validatedKey, err := validate.ValidateCertChain([]*x509.Certificate{leafCert}, tlCerts)
 	if err != nil {
 		t.Fatalf("validating issuer metadata x5c against trusted list: %v", err)

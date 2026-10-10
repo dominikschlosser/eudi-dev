@@ -419,12 +419,9 @@ func TestExtractAndValidateMDOCX5Chain_UnsupportedType(t *testing.T) {
 		{Raw: []byte("x")},
 	}
 
-	key, err := ExtractAndValidateMDOCX5Chain(doc, tlCerts)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if key != nil {
-		t.Error("expected nil key for unsupported x5chain type")
+	// RFC 9360 §2 allows a byte string or an array of byte strings.
+	if _, err := ExtractAndValidateMDOCX5Chain(doc, tlCerts); err == nil {
+		t.Error("a text x5chain was accepted")
 	}
 }
 

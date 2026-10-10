@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package web
+package validity
 
 import (
 	"strings"
@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-func TestRelativeTimeGo(t *testing.T) {
+func TestRelative(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
@@ -43,9 +43,9 @@ func TestRelativeTimeGo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := relativeTimeGo(tt.t)
+			got := Relative(tt.t, now)
 			if !strings.Contains(got, tt.wantPart) {
-				t.Errorf("relativeTimeGo() = %q, want to contain %q", got, tt.wantPart)
+				t.Errorf("Relative() = %q, want to contain %q", got, tt.wantPart)
 			}
 			if tt.future && !strings.HasPrefix(got, "in ") {
 				t.Errorf("expected future prefix 'in ', got %q", got)
