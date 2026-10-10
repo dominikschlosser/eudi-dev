@@ -215,7 +215,7 @@ func (s *Server) setupRoutes() {
 		if err := s.syncDemoRegistrations(); err != nil {
 			s.log("  WARNING: updating the demo registrations: %v", err)
 		}
-	}, Protected: s.protectedRelyingParty, KeepTemplateEntries: func() bool { return s.demo != nil }}
+	}, BuiltIn: builtInRelyingParty, Protected: s.protectedRelyingParty, KeepTemplateEntries: func() bool { return s.demo != nil }}
 	for pattern, handler := range registrarAPI.Routes() {
 		s.routeFunc(pattern, s.withFreshStore(handler))
 	}

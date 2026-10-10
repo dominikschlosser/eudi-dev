@@ -751,3 +751,30 @@ func TestDemoProtectsTheDemoRegistrations(t *testing.T) {
 		t.Errorf("protected_relying_parties = %v, want the demo issuer and verifier", config["protected_relying_parties"])
 	}
 }
+
+func TestTheWalletKeepsTheDemoRegistrationsButLetsYouRevokeTheirCertificates(t *testing.T) {
+	srv := newTestServer(t, true)
+	if err := srv.syncDemoRegistrations(); err != nil {
+		t.Fatal(err)
+	}
+	if w := serverRequest(t, srv, "DELETE", "/api/registrar/wrp/"+demoVerifierIdentity.Identifier, ""); w.Code != http.StatusForbidden {
+		t.Errorf("delete = %d, want 403", w.Code)
+	}
+	body := `{"identifier":[{"identifier":"` + demoVerifierIdentity.Identifier + `","type":"http://data.europa.eu/eudi/id/EUID"}],"tradeName":"Mine"}`
+	if w := serverRequest(t, srv, "PUT", "/api/registrar/wrp", body); w.Code != http.StatusForbidden {
+		t.Errorf("update = %d, want 403", w.Code)
+	}
+	if w := serverRequest(t, srv, "POST", "/api/registrar/registration-certificates/status", `{"identifier":"`+demoVerifierIdentity.Identifier+`","revoked":true}`); w.Code != http.StatusOK {
+		t.Errorf("revoke = %d, want 200: %s", w.Code, w.Body)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(serverRequest(t, srv, "GET", "/api/config", "").Body.Bytes(), &config); err != nil {
+		t.Fatal(err)
+	}
+	if builtIn, _ := config["built_in_relying_parties"].([]any); len(builtIn) != 2 {
+		t.Errorf("built_in_relying_parties = %v, want the demo issuer and verifier", config["built_in_relying_parties"])
+	}
+	if protected, _ := config["protected_relying_parties"].([]any); len(protected) != 0 {
+		t.Errorf("protected_relying_parties = %v, want none outside the demo", config["protected_relying_parties"])
+	}
+}

@@ -176,7 +176,7 @@ Pin the CA through an out-of-band exchange. It is self-signed and persists acros
 
 Trusted lists are grouped by provider role. Each category has its own signing key and provider CA. The `pid`, `qeaa`, `pub-eaa` and `eaa` lists publish the credential signing certificates of their category and their provider CAs. The `wallet-provider` list publishes wallet provider certificates. The `access-ca` list names the relying party access CA and the `registrar` list the registrar CA. A separate list operator signs the lists. Their sequence numbers and retained history let clients test trust updates.
 
-The issuer metadata endpoints return JSON by default and a JWT signed with the access certificate key when the `Accept` header prefers `application/jwt`. They include a registration certificate from the registrar. Its identifier, legal name and country match the access certificate. The demo issuer and the demo verifier are registered with the registrar like any relying party. If a visitor revokes one of their registration certificates, the wallet issues a new one. See [test certificates](test-certificates.md) for the exact profiles and versions.
+The issuer metadata endpoints return JSON by default and a JWT signed with the access certificate key when the `Accept` header prefers `application/jwt`. They include a registration certificate from the registrar. Its identifier, legal name and country match the access certificate. The demo issuer and the demo verifier are registered with the registrar like any relying party. Visitors can't change these two registrations or their certificates. See [test certificates](test-certificates.md) for the exact profiles and versions.
 
 ## Imprint
 

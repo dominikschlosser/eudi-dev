@@ -2976,8 +2976,10 @@
   });
 
   let demoMode = false;
-  // protectedParties are the registrations visitors of the public demo can't
-  // change. The list shows them without actions.
+  // The wallet derives the registrations of its built-in parties from its
+  // templates and overwrites changes, so the list offers no edits for them.
+  // On the public demo their certificates are locked too (protectedParties).
+  let builtInParties = new Set();
   let protectedParties = new Set();
   // Wait for configuration before deciding to open consent automatically. Demo mode uses
   // different ownership rules.
@@ -3008,6 +3010,7 @@
         document.getElementById('tls-row').hidden = true;
       }
       demoMode = !!(config.demo && config.demo.enabled);
+      builtInParties = new Set(config.built_in_relying_parties || []);
       protectedParties = new Set(config.protected_relying_parties || []);
       document.getElementById('sponsor-info').hidden = !demoMode;
       renderAutoAccept(!!config.auto_accept);
@@ -3557,8 +3560,9 @@
       (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-revoke" title="' +
         (status === 'revoked' ? 'Makes the certificate valid.' : 'Revokes the certificate on the status list.') +
         '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
-      '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-edit">Edit attestation types</button>' +
-      '<button type="button" class="btn btn-danger btn-sm" id="' + servicePrefix + '-delete" title="Removes it from the registration and revokes it.">Delete</button>' +
+      (builtInParties.has(identifier) ? '' :
+        '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-edit">Edit attestation types</button>' +
+        '<button type="button" class="btn btn-danger btn-sm" id="' + servicePrefix + '-delete" title="Removes it from the registration and revokes it.">Delete</button>') +
     '</span>';
     row.innerHTML =
       '<div class="registrar-use-kind" id="' + servicePrefix + '-kind" title="Lists the attestation types this issuer may issue (ETSI TS 119 475). The issuer publishes it in issuer_info.">Issuer registration certificate</div>' +
@@ -3635,7 +3639,7 @@
           (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + usePrefix + '-revoke" title="' +
             (status === 'revoked' ? 'Makes the certificate valid.' : 'Revokes the certificate on the status list.') +
             '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
-          '<button type="button" class="btn btn-danger btn-sm" id="' + usePrefix + '-delete" title="Removes the intended use from the registration and revokes its certificates.">Delete</button>' +
+          (builtInParties.has(identifier) ? '' : '<button type="button" class="btn btn-danger btn-sm" id="' + usePrefix + '-delete" title="Removes the intended use from the registration and revokes its certificates.">Delete</button>') +
         '</span>') +
       '</div>' +
       '<div class="cred-pills registrar-pills" id="' + usePrefix + '-pills">' +
@@ -3719,7 +3723,7 @@
       '<span class="status-badge ' + badgeClass + '" id="' + rowPrefix + '-summary-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>' +
       '<span class="registrar-cert-actions">' +
         '<button type="button" class="btn btn-sm" id="' + rowPrefix + '-details">Details</button>' +
-        (protectedParties.has(detail.identifier) ? '' : '<button type="button" class="btn btn-danger btn-sm" id="' + rowPrefix + '-summary-delete" title="Removes it from the registration and revokes it.">Delete</button>') +
+        (builtInParties.has(detail.identifier) ? '' : '<button type="button" class="btn btn-danger btn-sm" id="' + rowPrefix + '-summary-delete" title="Removes it from the registration and revokes it.">Delete</button>') +
       '</span>';
     const removeButton = line.querySelector('#' + rowPrefix + '-summary-delete');
     if (removeButton) removeButton.addEventListener('click', () => removeRegistrationCertificate(removeButton, detail));
@@ -3774,7 +3778,7 @@
     shown.forEach(({ rp }) => {
       const identifier = (rp.identifier || [])[0] ? rp.identifier[0].identifier : '';
       const prefix = 'registrar-party-' + registrarDomID(identifier);
-      const locked = protectedParties.has(identifier);
+      const locked = builtInParties.has(identifier);
       const card = document.createElement('div');
       card.className = 'registrar-party';
       card.id = prefix;
@@ -3790,7 +3794,9 @@
           relyingPartyRoles(rp).map(role =>
             '<span class="status-badge status-role-' + role + '" id="' + prefix + '-role-' + role + '">' +
             (role === 'verifier' ? 'Verifier' : 'Issuer') + '</span>').join('') +
-          (locked ? '<span class="status-badge status-none" id="' + prefix + '-protected" title="Visitors of the public demo share this registration and can\'t change it.">' + LOCK_SVG + 'Pre-registered</span>' : '') +
+          (locked ? '<span class="status-badge status-none" id="' + prefix + '-protected" title="' +
+            (protectedParties.has(identifier) ? 'Visitors of the public demo share this registration and can\'t change it.' : 'The wallet registers it from its templates and overwrites changes to it. Its certificates can be issued and revoked.') +
+            '">' + LOCK_SVG + 'Pre-registered</span>' : '') +
           '<code class="registrar-party-identifier" id="' + prefix + '-identifier">' + escHtml(identifier) + '</code>' +
         '</div>';
       // An issuer's card lists its issuer certificate first, then its

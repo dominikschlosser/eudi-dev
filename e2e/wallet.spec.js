@@ -2006,6 +2006,21 @@ test.describe("Registrar", () => {
     return execSync(`openssl ${command} -in ${file} -pubout 2>/dev/null`, { cwd: dir }).toString();
   }
 
+  test("the demo verifier can't be edited, but its certificate can be revoked", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await page.locator("#registrar-search").fill("EUDI Dev Demo Verifier");
+    const card = "#registrar-party-NTRNL-00000001";
+    await expect(page.locator(card + "-protected")).toHaveText("Pre-registered");
+    await expect(page.locator(card + "-delete")).toHaveCount(0);
+    await expect(page.locator(card + "-add-use")).toHaveCount(0);
+    await expect(page.locator(card + ' [id$="-summary-delete"]')).toHaveCount(0);
+    await page.locator(card + ' [id$="-details"]').first().click();
+    await expect(page.locator('#registrar-cert-body [id$="-delete"]')).toHaveCount(0);
+    await expect(page.locator('#registrar-cert-body [id$="-revoke"]')).toBeVisible();
+  });
+
   test("registering a verifier with the defaults issues both certificates", async ({ page }) => {
     await openRegisterDialog(page);
     await page.locator("#registrar-submit").click();

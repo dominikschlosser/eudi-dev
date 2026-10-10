@@ -52,14 +52,21 @@ func (s *Server) SetImprint(page []byte) {
 	s.imprintHTML = page
 }
 
+// builtInRelyingParty reports whether a registration is one of the demo
+// issuer and verifier, which the wallet derives from its templates.
+func builtInRelyingParty(identifier string) bool {
+	return identifier == demoIssuerIdentity.Identifier || identifier == demoVerifierIdentity.Identifier
+}
+
 // protectedRelyingParty reports whether visitors of the public demo may not
-// change a registration. They share the demo issuer and verifier.
+// change a registration or its certificates. They share the demo issuer and
+// verifier.
 func (s *Server) protectedRelyingParty(identifier string) bool {
-	return s.demo != nil && (identifier == demoIssuerIdentity.Identifier || identifier == demoVerifierIdentity.Identifier)
+	return s.demo != nil && builtInRelyingParty(identifier)
 }
 
 // protectedRelyingParties names the registrations the UI shows without
-// actions.
+// certificate actions.
 func (s *Server) protectedRelyingParties() []string {
 	if s.demo == nil {
 		return []string{}
@@ -203,6 +210,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"seeded_keys":               seeded,
 		"version":                   s.version,
 		"imprint":                   len(s.imprintHTML) > 0,
+		"built_in_relying_parties":  []string{demoIssuerIdentity.Identifier, demoVerifierIdentity.Identifier},
 		"protected_relying_parties": s.protectedRelyingParties(),
 		"news_id":                   s.newsID(),
 		"base_url":                  s.wallet.BaseURL,
