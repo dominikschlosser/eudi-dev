@@ -34,6 +34,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v2/internal/demorp"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/imprint"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/news"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/serverlog"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/storage"
@@ -67,6 +68,7 @@ type walletServeOptions struct {
 	Demo                    bool
 	DemoReset               string
 	ImprintFile             string
+	NewsFile                string
 	Detached                bool
 	ServeTLS                bool
 	DemoVerifierTrust       []string
@@ -128,6 +130,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode debug, --haip and --vci-version 1.1 (all overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
 	cmd.Flags().StringVar(&opts.DemoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&opts.ImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
+	cmd.Flags().StringVar(&opts.NewsFile, "news-file", "", "HTML snippet with news for visitors of a public demo, shown once in a popup and again from the footer link. Requires --demo")
 	cmd.Flags().BoolVar(&opts.ServeTLS, "serve-tls", false, "Serve an https --base-url locally with the wallet's own TLS certificate instead of expecting an external TLS terminator in front (the HTTP port stays bound as well)")
 	cmd.Flags().StringArrayVar(&opts.DemoVerifierTrust, "demo-verifier-trust-anchor", nil, "CA certificate PEM file the demo verifier accepts issuer chains under, next to the wallet's own CA (repeatable). For presentations issued outside this wallet, such as an OIDF conformance suite run")
 	cmd.Flags().StringVar(&opts.LogFormat, "log-format", os.Getenv(serverlog.EnvVar), "Console output format: 'text' (the default) or 'json' (one JSON record per line on stdout, for log collectors) (default $"+serverlog.EnvVar+")")
@@ -418,6 +421,9 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	if cmd.Flags().Changed("demo-reset") && !opts.Demo {
 		return fmt.Errorf("--demo-reset requires --demo")
 	}
+	if opts.NewsFile != "" && !opts.Demo {
+		return fmt.Errorf("--news-file requires --demo")
+	}
 	demoOpts, err := parseDemoReset(opts.DemoReset)
 	if err != nil {
 		return fmt.Errorf("invalid --demo-reset %q: %w", opts.DemoReset, err)
@@ -670,6 +676,13 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	srv.SetStore(store)
 	srv.SetVersion(Version)
 	srv.SetImprint(imprintHTML)
+	if opts.NewsFile != "" {
+		n, err := news.Load(opts.NewsFile)
+		if err != nil {
+			return err
+		}
+		srv.SetNews(n)
+	}
 	if opts.Demo {
 		srv.SetDemo(demoOpts)
 	}

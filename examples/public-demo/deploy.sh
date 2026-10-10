@@ -59,6 +59,8 @@ copy_stack() {
   echo "Copying the stack to ${DEMO_HOST}:${DEMO_DIR}..."
   ssh "${DEMO_HOST}" "mkdir -p ${DEMO_DIR}"
   scp -q Caddyfile Dockerfile docker-compose.yml "${DEMO_HOST}:${DEMO_DIR}/"
+  # The news snippet and its images. The main wallet shows them to visitors.
+  scp -qr news "${DEMO_HOST}:${DEMO_DIR}/"
   # Copy operator details from gitignored imprint.local.html. The repository contains a
   # placeholder, so preserve the host copy when no local file exists.
   if [[ -f imprint.local.html ]]; then

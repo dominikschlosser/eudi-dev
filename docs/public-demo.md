@@ -185,9 +185,17 @@ The issuer metadata endpoints return JSON by default and an access-certificate-s
 
 Pass `--imprint-file` with an HTML snippet containing the operator's name, address and contact details. The wallet serves it at `/imprint` and `/decoder/imprint`, adds the EU non-affiliation notice and links it from the footer. The standalone decoder accepts the same flag.
 
+## News
+
+Pass `--news-file` with an HTML snippet to tell visitors about new features. The wallet opens it in a popup on the first visit and links it as **News** in the footer. A changed file opens once more. It needs `--demo`.
+
+An image next to the snippet, such as `<img src="overview.png">`, is embedded in the page, because the wallet loads images only from itself. Images can be PNG, JPEG, GIF, WebP or SVG, up to 2 MiB each. A paragraph with `class="lead"` stands out as the summary.
+
+The example stack mounts the `news` folder, and `./deploy.sh push` copies it to the host. On eudi-test.dev it points visitors to the beta on the preview host. `3.0.0-beta.source.html` is the page the overview image is rendered from.
+
 The demo uses the `eudi_session` cookie to associate consent requests with a browser. It is an opaque session value with `HttpOnly`, `SameSite=Lax` and, for HTTPS connections, `Secure`. The activity log remains shared.
 
-Pages opened by the CLI or URL handler keep the supplied browser ID in `sessionStorage`. Theme preferences and dismissed banner state use `localStorage`. They store only UI state. There is no third-party tracking. Describe this storage in the deployment's privacy notice.
+Pages opened by the CLI or URL handler keep the supplied browser ID in `sessionStorage`. Theme preferences, dismissed banner state and the news a visitor has seen use `localStorage`. They store only UI state. There is no third-party tracking. Describe this storage in the deployment's privacy notice.
 
 ## Deploying and updating
 
