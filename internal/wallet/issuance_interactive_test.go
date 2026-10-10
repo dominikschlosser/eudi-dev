@@ -480,17 +480,42 @@ func TestInteractiveAuthorizationRefusesAnotherResponseMode(t *testing.T) {
 // wallet's defence against one authorization server forwarding another's
 // request.
 func TestInteractiveAuthorizationChecksExpectedOrigins(t *testing.T) {
-	t.Run("a foreign origin is refused", func(t *testing.T) {
+	for name, origins := range map[string]func(own string) []any{
+		"a foreign origin":               func(string) []any { return []any{"https://elsewhere.example"} },
+		"another origin besides its own": func(own string) []any { return []any{own, "https://elsewhere.example"} },
+		"its own origin with a space":    func(own string) []any { return []any{" " + own} },
+		"an empty list":                  func(string) []any { return []any{} },
+	} {
+		t.Run("strict mode refuses "+name, func(t *testing.T) {
+			w := newInteractiveWallet(t)
+			w.ValidationMode = ValidationModeStrict
+			issuer := newInteractiveIssuer(t, w)
+			issuer.openid4vpRequest["expected_origins"] = origins(derivedOrigin(issuer.url))
+
+			_, err := w.ProcessCredentialOffer(interactiveOfferURI(issuer.url))
+			if err == nil {
+				t.Fatal("expected the request to be refused")
+			}
+			if !strings.Contains(err.Error(), "expected_origins") {
+				t.Errorf("error = %v, want it to name expected_origins", err)
+			}
+		})
+	}
+
+	t.Run("debug mode warns about a foreign origin and continues", func(t *testing.T) {
 		w := newInteractiveWallet(t)
 		issuer := newInteractiveIssuer(t, w)
 		issuer.openid4vpRequest["expected_origins"] = []any{"https://elsewhere.example"}
 
-		_, err := w.ProcessCredentialOffer(interactiveOfferURI(issuer.url))
-		if err == nil {
-			t.Fatal("expected a forwarded request to be refused")
+		result, err := w.ProcessCredentialOffer(interactiveOfferURI(issuer.url))
+		if err != nil {
+			t.Fatalf("ProcessCredentialOffer() error = %v", err)
 		}
-		if !strings.Contains(err.Error(), "expected_origins") {
-			t.Errorf("error = %v, want it to name expected_origins", err)
+		if result.CredentialID == "" {
+			t.Fatal("expected an imported credential")
+		}
+		if !hasWarningContaining(w, "expected_origins") {
+			t.Error("expected a warning that names expected_origins")
 		}
 	})
 

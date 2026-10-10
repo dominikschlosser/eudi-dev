@@ -485,15 +485,12 @@ func (w *Wallet) parseInteractiveAuthorizationRequest(request map[string]any, en
 
 	params := authorizationParams(parsed)
 	params.Source = "interactive_authorization"
+	params.RequestOrigin = derivedOrigin(endpoint)
 
 	// §6.2.1.1: "The response_mode MUST be either ia_post for unencrypted
 	// responses or ia_post.jwt for encrypted responses."
 	if !isInteractiveAuthorizationResponseMode(params.ResponseMode) {
 		return nil, fmt.Errorf("openid4vp_request has response_mode %q, which OpenID4VCI 1.1 §6.2.1.1 does not allow here (ia_post or ia_post.jwt)", params.ResponseMode)
-	}
-
-	if err := checkInteractiveAuthorizationOrigins(params.RequestPayload, endpoint); err != nil {
-		return nil, err
 	}
 
 	w.PrepareARFChecks(params)
@@ -506,33 +503,6 @@ func (w *Wallet) parseInteractiveAuthorizationRequest(request map[string]any, en
 	w.warnUndefinedRequestParameters("issuance", params)
 
 	return params, nil
-}
-
-// checkInteractiveAuthorizationOrigins enforces §6.2.1.1: "If expected_origins
-// is present, it MUST contain only the derived Origin of the Authorization
-// Challenge Endpoint." This check detects a request forwarded from another
-// authorization server (§6.2.1.5).
-//
-// Unsigned requests are checked too, because no platform reports a true origin
-// here.
-func checkInteractiveAuthorizationOrigins(payload map[string]any, endpoint string) error {
-	if payload == nil {
-		return nil
-	}
-	values := jsonutil.GetArray(payload, "expected_origins")
-	if len(values) == 0 {
-		return nil
-	}
-	origin := derivedOrigin(endpoint)
-	if origin == "" {
-		return fmt.Errorf("cannot derive the origin of the authorization challenge endpoint %q", endpoint)
-	}
-	for _, value := range values {
-		if candidate, ok := value.(string); !ok || strings.TrimSpace(candidate) != origin {
-			return fmt.Errorf("openid4vp_request expected_origins must contain only the origin of the authorization challenge endpoint (%s), got %v", origin, values)
-		}
-	}
-	return nil
 }
 
 // derivedOrigin is the origin of a URL as RFC 6454 §4 derives it (scheme,

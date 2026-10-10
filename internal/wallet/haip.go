@@ -203,22 +203,6 @@ func haipContentEncryptionAlgorithms(metadata map[string]any) map[string]bool {
 	return listed
 }
 
-func originAllowedByExpectedOrigins(payload map[string]any, origin string) bool {
-	if payload == nil {
-		return false
-	}
-	values := jsonutil.GetArray(payload, "expected_origins")
-	if len(values) == 0 {
-		return false
-	}
-	for _, value := range values {
-		if text, ok := value.(string); ok && text == origin {
-			return true
-		}
-	}
-	return false
-}
-
 // ValidateHAIPIssuanceCompliance checks a credential offer and the issuer's
 // metadata against the HAIP 1.0 profile of OpenID4VCI.
 //

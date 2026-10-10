@@ -183,7 +183,7 @@ Challenge requests carry the same wallet attestation headers as token requests. 
 
 The presentation interaction works without `--vci-redirect-uri`. An issuer that sets `require_interactive_authorization` requires this flow.
 
-The presentation is bound to the challenge endpoint. An SD-JWT key binding JWT uses `ia:<endpoint>` as `aud`. An mdoc uses the `OpenID4VCIIAEHandover` session transcript. If the request contains `expected_origins`, it must contain the origin of the challenge endpoint. This stops one authorization server from forwarding another server's request.
+The presentation is bound to the challenge endpoint. An SD-JWT key binding JWT uses `ia:<endpoint>` as `aud`. An mdoc uses the `OpenID4VCIIAEHandover` session transcript. If the request contains `expected_origins`, it must contain only the origin of the challenge endpoint. This stops one authorization server from forwarding another server's request. Strict mode refuses any other value. Debug mode warns and continues.
 
 The wallet supports two interaction types. It advertises a type only when it can complete that interaction (§6.2.1):
 

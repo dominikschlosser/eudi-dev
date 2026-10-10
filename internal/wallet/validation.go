@@ -17,6 +17,7 @@ package wallet
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
@@ -148,16 +149,56 @@ func authorizationFindings(params *AuthorizationRequestParams, payload map[strin
 	if payloadHasKey(payload, "transaction_data") {
 		findings = append(findings, "OID4VP 1.0 §5.1: transaction_data is not supported by this wallet")
 	}
-	// Appendix A.2: for a signed Digital Credentials API request
-	// expected_origins is REQUIRED, and "If the Origin does not match any of
-	// the entries in expected_origins, the Wallet MUST return an error."
-	if !params.UnsignedDCAPI && isDCAPIResponseMode(params.ResponseMode) && params.RequestOrigin != "" {
-		if !originAllowedByExpectedOrigins(payload, params.RequestOrigin) {
-			findings = append(findings, fmt.Sprintf(
-				"OID4VP 1.0 Appendix A.2: expected_origins must include the caller origin %q", params.RequestOrigin))
-		}
+	if finding := expectedOriginsFinding(params, payload); finding != "" {
+		findings = append(findings, finding)
 	}
 	return findings
+}
+
+// expectedOriginsFinding compares expected_origins with the origin the request
+// came from, using simple string comparison.
+func expectedOriginsFinding(params *AuthorizationRequestParams, payload map[string]any) string {
+	origin := params.RequestOrigin
+	if origin == "" {
+		return ""
+	}
+	values := stringValues(payload["expected_origins"])
+	switch {
+	// OpenID4VCI 1.1 §6.2.1.1: "If expected_origins is present, it MUST
+	// contain only the derived Origin of the Authorization Challenge Endpoint".
+	case isInteractiveAuthorizationResponseMode(params.ResponseMode):
+		if !payloadHasKey(payload, "expected_origins") || slices.Equal(values, []string{origin}) {
+			return ""
+		}
+		return fmt.Sprintf("OID4VCI 1.1 §6.2.1.1: expected_origins must contain only %q, the origin of the authorization challenge endpoint, and contains %v", origin, payload["expected_origins"])
+	// OpenID4VP 1.0 Appendix A.2: for a signed Digital Credentials API request
+	// expected_origins is REQUIRED, and "If the Origin does not match any of
+	// the entries in expected_origins, the Wallet MUST return an error."
+	case isDCAPIResponseMode(params.ResponseMode) && !params.UnsignedDCAPI:
+		if slices.Contains(values, origin) {
+			return ""
+		}
+		return fmt.Sprintf("OID4VP 1.0 Appendix A.2: expected_origins must include the caller origin %q", origin)
+	}
+	return ""
+}
+
+// stringValues reads a JSON array in which every entry is a string. Any other
+// value gives nil.
+func stringValues(raw any) []string {
+	entries, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		text, ok := entry.(string)
+		if !ok {
+			return nil
+		}
+		out = append(out, text)
+	}
+	return out
 }
 
 func specCitedSummary(subject string, findings []string) string {
