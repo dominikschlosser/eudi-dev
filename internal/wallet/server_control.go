@@ -52,6 +52,21 @@ func (s *Server) SetImprint(page []byte) {
 	s.imprintHTML = page
 }
 
+// protectedRelyingParty reports whether visitors of the public demo may not
+// change a registration. They share the demo issuer and verifier.
+func (s *Server) protectedRelyingParty(identifier string) bool {
+	return s.demo != nil && (identifier == demoIssuerIdentity.Identifier || identifier == demoVerifierIdentity.Identifier)
+}
+
+// protectedRelyingParties names the registrations the UI shows without
+// actions.
+func (s *Server) protectedRelyingParties() []string {
+	if s.demo == nil {
+		return []string{}
+	}
+	return []string{demoIssuerIdentity.Identifier, demoVerifierIdentity.Identifier}
+}
+
 // SetNews makes the news of a public demo available to the UI.
 func (s *Server) SetNews(n *news.News) {
 	s.news = n
@@ -182,26 +197,27 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	// /api/config/conformance can change them concurrently.
 	mode, requireHAIP, requireEncrypted := s.wallet.ConformanceSettings()
 	config := map[string]any{
-		"port":                  s.port,
-		"build_id":              processBuildID(),
-		"storage":               storageKind,
-		"seeded_keys":           seeded,
-		"version":               s.version,
-		"imprint":               len(s.imprintHTML) > 0,
-		"news_id":               s.newsID(),
-		"base_url":              s.wallet.BaseURL,
-		"issuer_url":            s.wallet.IssuerURL,
-		"status_list_url":       s.wallet.StatusListURL(),
-		"preferred_format":      s.wallet.PreferredFormat,
-		"key_attestation_level": s.wallet.KeyAttestationLevelSetting(),
-		"tls_verify":            s.wallet.TLSVerification(),
-		"tls_verify_override":   s.wallet.TLSVerificationOverride(),
-		"validation_mode":       string(mode),
-		"vci_version":           string(s.wallet.VCIFeatureVersion()),
-		"auto_accept":           s.wallet.AutoAccept,
-		"session_transcript":    string(s.wallet.SessionTranscript),
-		"require_haip":          requireHAIP,
-		"require_arf":           s.wallet.ARFChecks(),
+		"port":                      s.port,
+		"build_id":                  processBuildID(),
+		"storage":                   storageKind,
+		"seeded_keys":               seeded,
+		"version":                   s.version,
+		"imprint":                   len(s.imprintHTML) > 0,
+		"protected_relying_parties": s.protectedRelyingParties(),
+		"news_id":                   s.newsID(),
+		"base_url":                  s.wallet.BaseURL,
+		"issuer_url":                s.wallet.IssuerURL,
+		"status_list_url":           s.wallet.StatusListURL(),
+		"preferred_format":          s.wallet.PreferredFormat,
+		"key_attestation_level":     s.wallet.KeyAttestationLevelSetting(),
+		"tls_verify":                s.wallet.TLSVerification(),
+		"tls_verify_override":       s.wallet.TLSVerificationOverride(),
+		"validation_mode":           string(mode),
+		"vci_version":               string(s.wallet.VCIFeatureVersion()),
+		"auto_accept":               s.wallet.AutoAccept,
+		"session_transcript":        string(s.wallet.SessionTranscript),
+		"require_haip":              requireHAIP,
+		"require_arf":               s.wallet.ARFChecks(),
 		// Report issuance and presentation settings separately even though they use
 		// the same flag.
 		"require_haip_issuance":     requireHAIP,

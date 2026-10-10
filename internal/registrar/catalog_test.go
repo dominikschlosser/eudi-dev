@@ -125,9 +125,19 @@ func TestAddingToTheCatalogue(t *testing.T) {
 		t.Error("an update changed the schema URIs")
 	}
 
-	fromTemplate := w.CatalogAttestations()[0].Schema.ID
-	if err := w.DeleteCatalogAttestation(fromTemplate); err == nil {
-		t.Error("an entry of a template was deleted")
+	// The entry of a predefined template is removed from the catalogue, and its
+	// type can be added again.
+	fromTemplate := w.CatalogAttestations()[0]
+	if err := w.DeleteCatalogAttestation(fromTemplate.Schema.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := w.CatalogAttestation(fromTemplate.Schema.ID); ok {
+		t.Error("the deleted template entry is still listed")
+	}
+	readded := fromTemplate
+	readded.Template = false
+	if _, err := w.AddCatalogAttestation(readded); err != nil {
+		t.Errorf("adding the type of a deleted template entry: %v", err)
 	}
 	if err := w.DeleteCatalogAttestation(added.Schema.ID); err != nil {
 		t.Fatal(err)

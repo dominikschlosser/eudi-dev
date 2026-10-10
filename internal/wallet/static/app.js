@@ -2976,6 +2976,9 @@
   });
 
   let demoMode = false;
+  // protectedParties are the registrations visitors of the public demo can't
+  // change. The list shows them without actions.
+  let protectedParties = new Set();
   // Wait for configuration before deciding to open consent automatically. Demo mode uses
   // different ownership rules.
   async function loadAppConfig() {
@@ -3005,6 +3008,7 @@
         document.getElementById('tls-row').hidden = true;
       }
       demoMode = !!(config.demo && config.demo.enabled);
+      protectedParties = new Set(config.protected_relying_parties || []);
       document.getElementById('sponsor-info').hidden = !demoMode;
       renderAutoAccept(!!config.auto_accept);
       renderConformance(config);
@@ -3545,7 +3549,7 @@
     row.dataset.status = status;
     const [badgeClass, badgeText, badgeTitle] = PROVIDER_STATUS_BADGES[status];
     const badge = '<span class="status-badge ' + badgeClass + '" id="' + servicePrefix + '-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>';
-    const actions = '<span class="registrar-use-actions" id="' + servicePrefix + '-actions">' +
+    const actions = protectedParties.has(identifier) ? '' : '<span class="registrar-use-actions" id="' + servicePrefix + '-actions">' +
       '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-issue" title="' +
         (status === 'active' ? 'Issues a new certificate and revokes the current one.' : 'Issues a registration certificate for this service and its attestations.') +
         '">' + (status === 'none' ? 'Issue certificate' : 'Issue new certificate') + '</button>' +
@@ -3576,7 +3580,8 @@
       field.value = issuerInfo;
       wireCopyButton(row.querySelector('#' + servicePrefix + '-copy'), field);
     }
-    row.querySelector('#' + servicePrefix + '-edit').addEventListener('click', () => {
+    const editTypes = row.querySelector('#' + servicePrefix + '-edit');
+    if (editTypes) editTypes.addEventListener('click', () => {
       const entry = registrarEntries.find(e => ((e.rp.identifier || [])[0] || {}).identifier === identifier);
       if (!entry) return;
       registrarDetail = null;
@@ -3584,7 +3589,7 @@
       openRegistrarDialog(entry.rp, true, 'issuer', service);
     });
     const removeService = row.querySelector('#' + servicePrefix + '-delete');
-    removeService.addEventListener('click', () => removeRegistrationCertificate(removeService, { identifier: identifier, service: service.serviceIdentifier || '' }));
+    if (removeService) removeService.addEventListener('click', () => removeRegistrationCertificate(removeService, { identifier: identifier, service: service.serviceIdentifier || '' }));
     const issue = row.querySelector('#' + servicePrefix + '-issue');
     if (issue) {
       issue.addEventListener('click', () => registrarAction(issue, async () => {
@@ -3619,7 +3624,7 @@
       '<div class="registrar-use-kind" id="' + usePrefix + '-kind" title="Lists the credentials and claims this party may request for one purpose (ETSI TS 119 475). It is sent in verifier_info.">Verifier registration certificate</div>' +
       '<div class="registrar-use-head" id="' + usePrefix + '-head">' +
         '<span class="registrar-use-purpose" id="' + usePrefix + '-purpose">' + escHtml(((use.purpose || [])[0] || {}).content || use.intendedUseIdentifier) + '</span>' +
-        '<span class="registrar-use-actions" id="' + usePrefix + '-actions">' +
+        (protectedParties.has(identifier) ? '' : '<span class="registrar-use-actions" id="' + usePrefix + '-actions">' +
           '<button type="button" class="btn btn-sm" id="' + usePrefix + '-issue" title="' +
             { none: 'Issues a registration certificate for this purpose and these claims.',
               active: 'Issues a new certificate and revokes the current one.',
@@ -3630,7 +3635,7 @@
             (status === 'revoked' ? 'Makes the certificate valid.' : 'Revokes the certificate on the status list.') +
             '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
           '<button type="button" class="btn btn-danger btn-sm" id="' + usePrefix + '-delete" title="Removes the intended use from the registration and revokes its certificates.">Delete</button>' +
-        '</span>' +
+        '</span>') +
       '</div>' +
       '<div class="cred-pills registrar-pills" id="' + usePrefix + '-pills">' +
         '<span class="status-badge ' + badgeClass + '" id="' + usePrefix + '-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>' +
@@ -3650,7 +3655,7 @@
       wireCopyButton(row.querySelector('#' + usePrefix + '-copy'), field);
     }
     const issue = row.querySelector('#' + usePrefix + '-issue');
-    issue.addEventListener('click', () => registrarAction(issue, async () => {
+    if (issue) issue.addEventListener('click', () => registrarAction(issue, async () => {
       await registrarRequest('POST', 'api/registrar/registration-certificates', {
         identifier: identifier,
         serviceIdentifier: service.serviceIdentifier || '',
@@ -3666,7 +3671,7 @@
       })));
     }
     const removeUse = row.querySelector('#' + usePrefix + '-delete');
-    removeUse.addEventListener('click', () => removeRegistrationCertificate(removeUse, { identifier: identifier, use: use.intendedUseIdentifier }));
+    if (removeUse) removeUse.addEventListener('click', () => removeRegistrationCertificate(removeUse, { identifier: identifier, use: use.intendedUseIdentifier }));
     return row;
   }
 
@@ -3713,10 +3718,10 @@
       '<span class="status-badge ' + badgeClass + '" id="' + rowPrefix + '-summary-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>' +
       '<span class="registrar-cert-actions">' +
         '<button type="button" class="btn btn-sm" id="' + rowPrefix + '-details">Details</button>' +
-        '<button type="button" class="btn btn-danger btn-sm" id="' + rowPrefix + '-summary-delete" title="Removes it from the registration and revokes it.">Delete</button>' +
+        (protectedParties.has(detail.identifier) ? '' : '<button type="button" class="btn btn-danger btn-sm" id="' + rowPrefix + '-summary-delete" title="Removes it from the registration and revokes it.">Delete</button>') +
       '</span>';
     const removeButton = line.querySelector('#' + rowPrefix + '-summary-delete');
-    removeButton.addEventListener('click', () => removeRegistrationCertificate(removeButton, detail));
+    if (removeButton) removeButton.addEventListener('click', () => removeRegistrationCertificate(removeButton, detail));
     line.querySelector('#' + rowPrefix + '-details').addEventListener('click', () => {
       registrarDetail = Object.assign({ opener: rowPrefix + '-details' }, detail);
       registrarPartiesOverlay.classList.remove('active');
@@ -3768,6 +3773,7 @@
     shown.forEach(({ rp }) => {
       const identifier = (rp.identifier || [])[0] ? rp.identifier[0].identifier : '';
       const prefix = 'registrar-party-' + registrarDomID(identifier);
+      const locked = protectedParties.has(identifier);
       const card = document.createElement('div');
       card.className = 'registrar-party';
       card.id = prefix;
@@ -3775,14 +3781,15 @@
       card.innerHTML =
         '<div class="registrar-party-head" id="' + prefix + '-head">' +
           '<span class="registrar-party-name" id="' + prefix + '-name">' + escHtml(rp.tradeName || '') + '</span>' +
-          '<span class="registrar-party-actions" id="' + prefix + '-actions">' +
+          (locked ? '' : '<span class="registrar-party-actions" id="' + prefix + '-actions">' +
             '<button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button>' +
-          '</span>' +
+          '</span>') +
         '</div>' +
         '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
           relyingPartyRoles(rp).map(role =>
             '<span class="status-badge status-role-' + role + '" id="' + prefix + '-role-' + role + '">' +
             (role === 'verifier' ? 'Verifier' : 'Issuer') + '</span>').join('') +
+          (locked ? '<span class="status-badge status-none" id="' + prefix + '-protected" title="Visitors of the public demo share this registration and can\'t change it.">' + LOCK_SVG + 'Pre-registered</span>' : '') +
           '<code class="registrar-party-identifier" id="' + prefix + '-identifier">' + escHtml(identifier) + '</code>' +
         '</div>';
       // An issuer's card lists its issuer certificate first, then its
@@ -3826,7 +3833,7 @@
         addButton('-add-issuer', '+ Add issuer registration certificate',
           'Registers the attestation types this party may issue, and issues its certificate for issuer_info.', 'issuer');
       }
-      card.appendChild(addRow);
+      if (!locked) card.appendChild(addRow);
       const remove = card.querySelector('#' + prefix + '-delete');
       if (remove) {
         remove.addEventListener('click', () =>
@@ -4596,7 +4603,7 @@
       card.innerHTML =
         '<div class="registrar-party-head" id="' + prefix + '-head">' +
           '<span class="registrar-party-name" id="' + prefix + '-name">' + escHtml(entry.name) + '</span>' +
-          (entry.template ? '' : '<span class="registrar-party-actions"><button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button></span>') +
+          (entry.template && demoMode ? '' : '<span class="registrar-party-actions"><button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button></span>') +
         '</div>' +
         '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
           '<span class="status-badge catalog-badge" id="' + prefix + '-category" title="Credential category. It selects the signer and the trusted list.">Category: ' + escHtml(categoryLabel(entry.category)) + '</span>' +

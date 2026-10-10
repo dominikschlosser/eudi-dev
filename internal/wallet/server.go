@@ -215,10 +215,7 @@ func (s *Server) setupRoutes() {
 		if err := s.syncDemoRegistrations(); err != nil {
 			s.log("  WARNING: updating the demo registrations: %v", err)
 		}
-	}, Protected: func(identifier string) bool {
-		// Visitors of the public demo share the demo issuer and verifier.
-		return s.demo != nil && (identifier == demoIssuerIdentity.Identifier || identifier == demoVerifierIdentity.Identifier)
-	}}
+	}, Protected: s.protectedRelyingParty, KeepTemplateEntries: func() bool { return s.demo != nil }}
 	for pattern, handler := range registrarAPI.Routes() {
 		s.routeFunc(pattern, s.withFreshStore(handler))
 	}

@@ -71,6 +71,10 @@ type CatalogAttestation struct {
 	// Template marks an entry built from a credential template. Editing the
 	// template changes the entry. The catalogue API can't change it.
 	Template bool `json:"template,omitempty"`
+	// Removed marks the deleted entry of a predefined template. The catalogue
+	// derives that entry from the template, so the stored catalogue keeps
+	// only this marker with its id.
+	Removed bool `json:"removed,omitempty"`
 }
 
 // CatalogCredential is one format of an attestation: its vct or doctype and
@@ -101,10 +105,11 @@ var (
 // entries.
 func (r *Registrar) CatalogAttestations() []CatalogAttestation {
 	base := r.env.RegistrarBase()
-	entries := r.templateCatalog(base)
 	r.mu.RLock()
-	added := slices.Clone(r.state.Catalog)
+	added := slices.DeleteFunc(slices.Clone(r.state.Catalog), func(e CatalogAttestation) bool { return e.Removed })
+	removed := r.removedTemplateIDsLocked()
 	r.mu.RUnlock()
+	entries := slices.DeleteFunc(r.templateCatalog(base), func(e CatalogAttestation) bool { return removed[e.Schema.ID] })
 	sort.SliceStable(added, func(i, j int) bool { return strings.ToLower(added[i].Name) < strings.ToLower(added[j].Name) })
 	for _, entry := range added {
 		entries = append(entries, completed(cloneCatalogAttestation(entry), base))
@@ -160,6 +165,9 @@ func (r *Registrar) CheckCatalogAttestation(entry CatalogAttestation) error {
 // the trusted list of a received credential by its type.
 func (r *Registrar) checkNewCatalogEntryLocked(entry CatalogAttestation, fromTemplates []CatalogAttestation) error {
 	for _, existing := range append(fromTemplates, r.state.Catalog...) {
+		if existing.Removed || r.removedTemplateIDsLocked()[existing.Schema.ID] {
+			continue
+		}
 		if strings.EqualFold(existing.Name, entry.Name) {
 			return fmt.Errorf("the catalogue already lists %q", existing.Name)
 		}
@@ -242,20 +250,44 @@ func (r *Registrar) UpdateCatalogSchema(id string, schema AttestationSchema) (Ca
 	return completed(cloneCatalogAttestation(updated), base), nil
 }
 
-// DeleteCatalogAttestation removes an added entry.
+// DeleteCatalogAttestation removes an entry. The entry of a predefined
+// template is recorded as removed, because the catalogue derives it from the
+// template.
 func (r *Registrar) DeleteCatalogAttestation(id string) error {
 	base := r.env.RegistrarBase()
 	if r.isTemplateCatalogID(id, base) {
-		return errCatalogTemplate
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.removedTemplateIDsLocked()[id] {
+			return fmt.Errorf("%w: %s", errCatalogNotFound, id)
+		}
+		r.state.Catalog = append(r.state.Catalog, CatalogAttestation{Template: true, Removed: true, Schema: AttestationSchema{ID: id}})
+		return nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	i := slices.IndexFunc(r.state.Catalog, func(e CatalogAttestation) bool { return e.Schema.ID == id })
+	i := slices.IndexFunc(r.state.Catalog, func(e CatalogAttestation) bool { return e.Schema.ID == id && !e.Removed })
 	if i < 0 {
 		return fmt.Errorf("%w: %s", errCatalogNotFound, id)
 	}
 	r.state.Catalog = slices.Delete(r.state.Catalog, i, i+1)
 	return nil
+}
+
+func (r *Registrar) removedTemplateIDsLocked() map[string]bool {
+	removed := map[string]bool{}
+	for _, e := range r.state.Catalog {
+		if e.Removed {
+			removed[e.Schema.ID] = true
+		}
+	}
+	return removed
+}
+
+// IsTemplateCatalogID reports whether an entry comes from a predefined
+// template.
+func (r *Registrar) IsTemplateCatalogID(id string) bool {
+	return r.isTemplateCatalogID(id, r.env.RegistrarBase())
 }
 
 func (r *Registrar) isTemplateCatalogID(id, base string) bool {

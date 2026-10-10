@@ -727,4 +727,27 @@ func TestDemoProtectsTheDemoRegistrations(t *testing.T) {
 	if w := serverRequest(t, srv, "PUT", "/api/registrar/wrp", body); w.Code != http.StatusForbidden {
 		t.Errorf("update = %d, want 403", w.Code)
 	}
+	// An access certificate for the demo verifier's identifier would let a
+	// visitor sign requests as the demo verifier.
+	for path, body := range map[string]string{
+		"/api/registrar/access-certificates":              `{"identifier":"` + demoVerifierIdentity.Identifier + `","csr":"x"}`,
+		"/api/registrar/registration-certificates":        `{"identifier":"` + demoVerifierIdentity.Identifier + `"}`,
+		"/api/registrar/registration-certificates/status": `{"identifier":"` + demoIssuerIdentity.Identifier + `","revoked":true}`,
+	} {
+		if w := serverRequest(t, srv, "POST", path, body); w.Code != http.StatusForbidden {
+			t.Errorf("POST %s = %d, want 403", path, w.Code)
+		}
+	}
+	// Visitors share the catalogue entries of the predefined templates.
+	fromTemplate := srv.wallet.Registrar().CatalogAttestations()[0].Schema.ID
+	if w := serverRequest(t, srv, "DELETE", "/api/catalog/schemas/"+fromTemplate, ""); w.Code != http.StatusForbidden {
+		t.Errorf("deleting a template entry = %d, want 403", w.Code)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(serverRequest(t, srv, "GET", "/api/config", "").Body.Bytes(), &config); err != nil {
+		t.Fatal(err)
+	}
+	if protected, _ := config["protected_relying_parties"].([]any); len(protected) != 2 {
+		t.Errorf("protected_relying_parties = %v, want the demo issuer and verifier", config["protected_relying_parties"])
+	}
 }

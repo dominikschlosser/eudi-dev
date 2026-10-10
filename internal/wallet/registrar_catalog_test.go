@@ -83,7 +83,7 @@ func TestTheCatalogueAPI(t *testing.T) {
 		t.Fatalf("PUT: %d %s", put.Code, put.Body.String())
 	}
 	fromTemplate := srv.wallet.Registrar().CatalogAttestations()[0].Schema.ID
-	if del := serverRequest(t, srv, "DELETE", "/api/catalog/schemas/"+fromTemplate, ""); del.Code != http.StatusForbidden {
+	if del := serverRequest(t, srv, "DELETE", "/api/catalog/schemas/"+fromTemplate, ""); del.Code != http.StatusNoContent {
 		t.Errorf("DELETE of a template entry: %d", del.Code)
 	}
 	if del := serverRequest(t, srv, "DELETE", "/api/catalog/schemas/"+added.Schema.ID, ""); del.Code != http.StatusNoContent {

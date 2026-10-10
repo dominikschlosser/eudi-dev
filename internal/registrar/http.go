@@ -41,6 +41,9 @@ type Server struct {
 	// Protected reports whether clients may not update or delete the
 	// registration of the identifier.
 	Protected func(identifier string) bool
+	// KeepTemplateEntries reports whether clients may not delete the
+	// catalogue entries of the predefined templates.
+	KeepTemplateEntries func() bool
 }
 
 func (h *Server) refuseProtected(w http.ResponseWriter, identifier string) bool {
@@ -281,6 +284,9 @@ func (h *Server) handleSetRegistrationCertificateStatus(w http.ResponseWriter, r
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
 		return
 	}
+	if h.refuseProtected(w, req.Identifier) {
+		return
+	}
 	var changed int
 	var err error
 	h.Mutate(func() bool {
@@ -453,6 +459,10 @@ func (h *Server) handleUpdateCatalogSchema(w http.ResponseWriter, r *http.Reques
 
 // handleDeleteCatalogSchema deletes an attestation schema (TS11 v1.0 §5.3.3).
 func (h *Server) handleDeleteCatalogSchema(w http.ResponseWriter, r *http.Request) {
+	if h.KeepTemplateEntries != nil && h.KeepTemplateEntries() && h.Registrar().IsTemplateCatalogID(r.PathValue("id")) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "the entries of the predefined templates are part of the public demo, and visitors can't delete them"})
+		return
+	}
 	var err error
 	h.Mutate(func() bool {
 		err = h.Registrar().DeleteCatalogAttestation(r.PathValue("id"))
@@ -522,6 +532,9 @@ func (h *Server) handleIssueRegistrationCertificate(w http.ResponseWriter, r *ht
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
 		return
 	}
+	if h.refuseProtected(w, req.Identifier) {
+		return
+	}
 	if h.Registrar().CertificateCount(req.Identifier) >= maxCertificatesPerRelyingParty {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("%s holds %d registration certificates, the most the registrar issues to one relying party. Older ones free up when they expire", req.Identifier, maxCertificatesPerRelyingParty)})
 		return
@@ -545,6 +558,11 @@ func (h *Server) handleIssueAccessCertificate(w http.ResponseWriter, r *http.Req
 	var req AccessCertificateRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+	// An access certificate for a protected party's identifier would let its
+	// holder sign requests as that party.
+	if h.refuseProtected(w, req.Identifier) {
 		return
 	}
 	result, err := h.Registrar().IssueAccessCertificate(req)

@@ -2516,6 +2516,14 @@ test.describe("Registrar", () => {
     expect(stored.services[0].entitlements).toContain("https://uri.etsi.org/19475/Entitlement/Service_Provider");
   });
 
+  test("outside the demo the predefined catalogue entries can be deleted", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-catalog-link").click();
+    const pid = page.locator("#registrar-catalog-list .registrar-party").filter({ hasText: "EUDI PID" }).first();
+    await expect(pid.locator('[id$="-delete"]')).toBeVisible();
+  });
+
   test("the attestation catalogue filters by category and security level", async ({ page }) => {
     await page.goto(WALLET_URL);
     await page.locator("#registrar-menu-toggle").click();
@@ -2555,7 +2563,7 @@ test.describe("Registrar", () => {
     await expect(pid.locator("[id$='-template']")).toHaveText("From a template");
     await expect(pid.locator("[id$='-formats']")).toContainText("dc+sd-jwt: urn:eudi:pid:1");
     await expect(pid.locator("[id$='-trust']")).toHaveAttribute("href", /\/api\/trustlists\/pid$/);
-    await expect(pid.locator("button")).toHaveCount(0);
+    await expect(pid.locator("button")).toHaveText(["Delete"]);
 
     await page.locator("#registrar-catalog-add").click();
     await expect(page.locator("#registrar-catalog-add-overlay")).toBeVisible();

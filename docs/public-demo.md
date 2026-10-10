@@ -20,7 +20,7 @@ Browser flows ask for consent. API submissions provide consent directly. Each co
 
 ### Administrative operations
 
-Demo mode returns `403` for shutdown, error injection, log clearing and changes to format, consent or conformance settings. Visitors can save templates. They can't change or delete the predefined templates or the operator's templates (those present at startup). Visitor templates can't have their own images, and the issue endpoint rejects images from visitors. The bundled templates keep their images. A demo keeps at most 50 visitor templates, and a reset deletes them. Configuration responses omit host paths and the process ID.
+Demo mode returns `403` for shutdown, error injection, log clearing and changes to format, consent or conformance settings. Visitors can save templates. They can't change or delete the predefined templates or the operator's templates (those present at startup). They also can't change the demo issuer and demo verifier registrations, request certificates for them, or delete the catalogue entries of the predefined templates. Visitor templates can't have their own images, and the issue endpoint rejects images from visitors. The bundled templates keep their images. A demo keeps at most 50 visitor templates, and a reset deletes them. Configuration responses omit host paths and the process ID.
 
 ### Outbound connections
 

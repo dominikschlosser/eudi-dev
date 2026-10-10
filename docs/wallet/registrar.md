@@ -181,7 +181,7 @@ The demo issuer and the demo verifier are registered like any other relying part
 
 The wallet registers both when it starts, after a demo reset, when you save or delete a template and once an hour, and stores the result. Both registrations are derived from the templates. The next update overwrites any change you make to them.
 
-The demo issuer and the demo verifier each use their current registration certificate. If there is none, or the current one expires within a day, the registrar issues a new one. A revoked certificate stays the current one, so the demo keeps sending it until a new certificate replaces it. On the public demo this applies to every visitor until the next reset.
+The demo issuer and the demo verifier each use their current registration certificate. If there is none, or the current one expires within a day, the registrar issues a new one. A revoked certificate stays the current one, so the demo keeps sending it until a new certificate replaces it. On a public demo, visitors can't change either registration or its certificates.
 
 The demo issuer signs its metadata with its access certificate and publishes its registration certificate in `issuer_info`. On the demo verifier page you choose how the verifier identifies itself:
 
@@ -195,7 +195,7 @@ The identity buttons are `identity-registered`, `identity-unregistered` and `ide
 
 The registrar keeps a catalogue of attestation types, like the catalogue of attestations in EC TS11 v1.0 (§4.3 and §5). Each entry describes one attestation type: its formats with the schema of each, its rulebook, its level of security, how it is bound to its holder and the trusted list of its issuers.
 
-Every predefined credential template is in the catalogue. Templates with the same display name share one entry, so the EUDI PID has its SD-JWT VC and its mdoc type in one entry. The rulebook is the last URL in the template's description. The entry takes the template's category. These entries can't be changed or deleted.
+Every predefined credential template is in the catalogue. Templates with the same display name share one entry, so the EUDI PID has its SD-JWT VC and its mdoc type in one entry. The rulebook is the last URL in the template's description. The entry takes the template's category. The catalogue API can't change these entries. Deleting one removes it from the catalogue (a public demo refuses that), and its types can then be added as a new entry.
 
 To add a user template, tick "Add the template to the attestation catalogue" when you save it (see [templates](../templates.md#attestation-catalogue)). You can delete that entry like any other added type.
 

@@ -1317,6 +1317,37 @@ test.describe("Demo mode hardening", () => {
     await expect(page.locator(`#template-row-${id}`)).toHaveCount(0);
   });
 
+  test("visitors can't change the demo registrations or the predefined catalogue entries", async ({ page }) => {
+    const name = "E2E visitor diploma " + Date.now();
+    const added = await (await fetch(BASE + "/api/catalog/attestations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, credentials: [{ format: "dc+sd-jwt", type: `urn:example:${Date.now()}:1` }] }),
+    })).json();
+    await page.goto(BASE);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await page.locator("#registrar-search").fill("EUDI Dev Demo Verifier");
+    const card = "#registrar-party-NTRNL-00000001";
+    await expect(page.locator(card + "-protected")).toHaveText("Pre-registered");
+    await expect(page.locator(card + "-delete")).toHaveCount(0);
+    await expect(page.locator(card + "-add-use")).toHaveCount(0);
+    await expect(page.locator(card + ' [id$="-summary-delete"]')).toHaveCount(0);
+    await page.locator(card + ' [id$="-details"]').first().click();
+    await expect(page.locator('#registrar-cert-body [id$="-verifier-info"]')).toHaveValue(/registration_cert/);
+    await expect(page.locator("#registrar-cert-body button")).toHaveCount(1); // the copy button
+    await page.locator("#registrar-cert-close").click();
+    await page.locator("#registrar-parties-close").click();
+
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-catalog-link").click();
+    const entry = (n) => page.locator("#registrar-catalog-list .registrar-party").filter({ hasText: n });
+    await expect(entry("EUDI PID").locator('[id$="-delete"]')).toHaveCount(0);
+    await entry(name).locator('[id$="-delete"]').click();
+    await expect(entry(name)).toHaveCount(0);
+    expect(added.schema.id).toBeTruthy();
+  });
+
   test("the decoder links back to the wallet it is mounted on", async ({ page }) => {
     await page.goto(BASE + "/decoder/");
     const walletLink = page.locator("#wallet-link");
