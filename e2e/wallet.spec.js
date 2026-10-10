@@ -2423,6 +2423,57 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-parties-link").click();
     await page.locator(card + "-service-default-details").click();
     await expect(page.locator(card + "-service-default-issuer-info")).toHaveValue(/registrar_dataset.*registration_cert/);
+
+    // Editing the types issues a new certificate for the changed list.
+    await page.locator(card + "-service-default-edit").click();
+    await expect(page.locator("#registrar-title")).toHaveText("Edit the attestation types of Ticket Shop");
+    await expect(page.locator('#registrar-attestations [data-field="type"]')).toHaveValue("urn:example:ticket:1");
+    await page.locator("#registrar-add-attestation").click();
+    await page.locator('#registrar-attestations [data-field="type"]').nth(1).fill("urn:example:ticket:2");
+    await expect(page.locator("#registrar-submit")).toHaveText("Save and issue certificate");
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-submit")).toHaveText("✓ Saved");
+    const edited = JSON.parse(await page.locator("#registrar-issuer-info").inputValue());
+    expect(edited[0].data.providesAttestations.map((a) => a.type)).toEqual(["urn:example:ticket:1", "urn:example:ticket:2"]);
+    await page.locator("#registrar-close").click();
+    await expect(page.locator(card + "-service-default-summary-status")).toHaveText("Active");
+  });
+
+  test("deleting a registration certificate removes it from the registration and revokes it", async ({ page }) => {
+    const { body } = await jsonPost(`${WALLET_URL}/api/registrar/wrp`, {
+      tradeName: "Shrinking University",
+      services: [{
+        serviceIdentifier: "diplomas",
+        providesAttestations: [{ format: "dc+sd-jwt", type: "urn:example:diploma:9" }],
+        intendedUses: [{
+          purpose: [{ lang: "en", content: "Identity check" }],
+          credentials: [{ format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["given_name"] }] }],
+        }],
+      }],
+    });
+    const identifier = body.identifier[0].identifier;
+    const useID = body.services[0].intendedUses[0].intendedUseIdentifier;
+    await jsonPost(`${WALLET_URL}/api/registrar/registration-certificates`, { identifier, intendedUseIdentifier: useID });
+    await jsonPost(`${WALLET_URL}/api/registrar/registration-certificates`, { identifier, serviceIdentifier: "diplomas" });
+    const card = "#registrar-party-" + identifier;
+    const statuses = async () => (await jsonGet(`${WALLET_URL}/api/registrar/registration-certificates?identifier=${identifier}`)).body;
+
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+
+    // From the list.
+    await page.locator(card + "-use-" + useID + "-summary-delete").click();
+    await expect(page.locator(card + "-use-" + useID + "-summary")).toHaveCount(0);
+    expect((await statuses()).filter((s) => s.intendedUse === useID).every((s) => s.revoked)).toBe(true);
+
+    // From the details.
+    await page.locator(card + "-service-diplomas-details").click();
+    await page.locator(card + "-service-diplomas-delete").click();
+    await expect(page.locator("#registrar-parties-overlay")).toBeVisible();
+    await expect(page.locator(card + "-service-diplomas-summary")).toHaveCount(0);
+    await expect(page.locator(card + "-add-issuer")).toBeVisible();
+    expect((await statuses()).filter((s) => !s.intendedUse).every((s) => s.revoked)).toBe(true);
   });
 
   test("an issuer adds an intended use to ask for a PID before it issues", async ({ page }) => {
@@ -2441,7 +2492,6 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-menu-toggle").click();
     await page.locator("#registrar-parties-link").click();
     await expect(page.locator(card + "-service-diplomas-summary-kind")).toHaveText("Issuer registration certificate");
-    await expect(page.locator(card + "-requests-hint")).toContainText("for example a PID before issuing");
     await expect(page.locator(card + "-add-use")).toHaveText("+ Add verifier registration certificate");
     await page.locator(card + "-add-use").click();
     await expect(page.locator("#registrar-title")).toHaveText("Add a verifier registration certificate to Checking University");
@@ -2456,7 +2506,6 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-close").click();
     await expect(page.locator(card + "-role-issuer")).toBeVisible();
     await expect(page.locator(card + "-role-verifier")).toBeVisible();
-    await expect(page.locator(card + "-requests-hint")).toHaveCount(0);
     await expect(page.locator(card + ' [id^="' + card.slice(1) + '-use-"][id$="-summary-kind"]')).toHaveText("Verifier registration certificate");
     await expect(page.locator(card + ' [id^="' + card.slice(1) + '-use-"][id$="-summary-title"]')).toHaveText("Checks who you are before a diploma is issued");
     // One registration holds both roles (CIR (EU) 2025/848 Annex I).

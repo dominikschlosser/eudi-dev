@@ -316,9 +316,11 @@ gives the issuer the entitlement of each type's category in the catalogue
 registration-cert to get the registration certificate. It comes inside an
 issuer_info value for your issuer metadata.
 
---to adds the attestation types to a registered verifier instead, so it issues
-as well. It stays one registration with both roles. The command issues the
-issuer registration certificate and prints its issuer_info.`,
+--to adds the attestation types to a registered relying party instead. A
+verifier issues as well and stays one registration with both roles. An issuer
+lists the new types next to its others. The command issues the new issuer
+registration certificate, which revokes the current one, and prints its
+issuer_info.`,
 		Example: `  eudi wallet registrar issuers add --name "Example University" --attestation dc+sd-jwt:urn:example:diploma:1
   eudi wallet registrar issuers add --name "Example PID Provider" --attestation dc+sd-jwt:urn:eudi:pid:1 --attestation mso_mdoc:eu.europa.ec.eudi.pid.1
   eudi wallet registrar issuers add --name "Example Bank" --category qeaa --attestation dc+sd-jwt:urn:example:account:1
@@ -358,7 +360,7 @@ issuer registration certificate and prints its issuer_info.`,
 	party.add(cmd)
 	cmd.Flags().StringArrayVar(&categories, "category", nil, "Credential category whose provider entitlement the issuer gets: pid, qeaa, pub-eaa or eaa (repeatable, default the categories of the attestation types in the catalogue)")
 	cmd.Flags().StringArrayVar(&attestations, "attestation", nil, "Attestation type as format:type, such as dc+sd-jwt:urn:eudi:pid:1 or mso_mdoc:eu.europa.ec.eudi.pid.1 (repeatable, required)")
-	cmd.Flags().StringVar(&to, "to", "", "Identifier of a registered verifier to add the attestation types to")
+	cmd.Flags().StringVar(&to, "to", "", "Identifier of a registered relying party to add the attestation types to")
 	_ = cmd.RegisterFlagCompletionFunc("category", staticCompletion(credtemplate.Categories...))
 	_ = cmd.MarkFlagRequired("attestation")
 	return cmd
@@ -413,14 +415,25 @@ func addProvidedAttestations(cmd *cobra.Command, identifier string, entitlements
 	if err != nil {
 		return err
 	}
-	if slices.ContainsFunc(before.Services, func(s registrar.WalletRelyingPartyService) bool { return len(s.ProvidesAttestations) > 0 }) {
-		return fmt.Errorf("%s is registered as an issuer already. Run registration-cert --provider for its certificate", identifier)
-	}
 	changed := cloneParty(before)
-	changed.Services[0].ProvidesAttestations = provided
-	changed.Services[0].Entitlements = append(changed.Services[0].Entitlements, entitlements...)
+	// An issuer adds the types to the service it issues with already.
+	i := max(0, slices.IndexFunc(changed.Services, func(s registrar.WalletRelyingPartyService) bool { return len(s.ProvidesAttestations) > 0 }))
+	service := &changed.Services[i]
+	added := 0
+	for _, a := range provided {
+		if !slices.Contains(service.ProvidesAttestations, a) {
+			service.ProvidesAttestations = append(service.ProvidesAttestations, a)
+			added++
+		}
+	}
+	if added == 0 {
+		return fmt.Errorf("%s already lists these attestation types", identifier)
+	}
+	// Without provider entitlements the registrar derives them from the
+	// categories of all types, so the new types get matching entitlements.
+	service.Entitlements = append(slices.DeleteFunc(service.Entitlements, isProviderEntitlement), entitlements...)
 	stored, result, err := extendParty(svc, before, changed, func(stored registrar.WalletRelyingParty) registrar.RegistrationCertificateRequest {
-		return registrar.RegistrationCertificateRequest{Identifier: identifier, ServiceIdentifier: stored.Services[0].ServiceIdentifier}
+		return registrar.RegistrationCertificateRequest{Identifier: identifier, ServiceIdentifier: stored.Services[i].ServiceIdentifier}
 	})
 	if err != nil {
 		return err
@@ -430,6 +443,17 @@ func addProvidedAttestations(cmd *cobra.Command, identifier string, entitlements
 		fmt.Fprintln(cmd.OutOrStdout(), result.IssuerInfo)
 	})
 	return nil
+}
+
+// isProviderEntitlement reports whether an entitlement is the provider
+// entitlement of a credential category.
+func isProviderEntitlement(entitlement string) bool {
+	for _, category := range credtemplate.Categories {
+		if category != "" && registrar.CategoryOf(category).Entitlement == entitlement {
+			return true
+		}
+	}
+	return false
 }
 
 // cloneParty copies a registration so a change leaves the original intact, and

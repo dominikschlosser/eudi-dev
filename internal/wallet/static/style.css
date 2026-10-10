@@ -2237,6 +2237,11 @@ header h1 {
   margin-left: 0;
 }
 
+.registrar-cert-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
 .registrar-cert-title {
   min-width: 0;
   font-size: 13px;
@@ -2254,17 +2259,13 @@ header h1 {
   display: none;
 }
 
-.registrar-section-hint {
-  margin: 10px 0 0;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
 .registrar-add-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
 }
 
 .registrar-use-head {

@@ -185,6 +185,12 @@ func TestRegistrarAddsTheOtherRoleToARegistration(t *testing.T) {
 		t.Errorf("registration-cert printed %q, want the issued %q", current, issued)
 	}
 
+	// An issuer lists further types next to its others, with a new certificate.
+	extended := run("issuers", "add", "--to", identifier, "--attestation", "dc+sd-jwt:urn:example:ticket:2")
+	if extended == issued || !strings.Contains(extended, "urn:example:ticket:1") || !strings.Contains(extended, "urn:example:ticket:2") {
+		t.Fatalf("issuers add --to on an issuer printed %q, want a new issuer_info with both types", extended)
+	}
+
 	var verifierInfo []map[string]string
 	added := run("verifiers", "add", "--to", identifier, "--purpose", "Identity check", "--dcql", dcql)
 	if json.Unmarshal([]byte(added), &verifierInfo) != nil || verifierInfo[0]["format"] != "registration_cert" {

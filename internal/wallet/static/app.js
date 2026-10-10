@@ -3552,6 +3552,8 @@
       (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-revoke" title="' +
         (status === 'revoked' ? 'Makes the certificate valid.' : 'Revokes the certificate on the status list.') +
         '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
+      '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-edit">Edit attestation types</button>' +
+      '<button type="button" class="btn btn-danger btn-sm" id="' + servicePrefix + '-delete" title="Removes it from the registration and revokes it.">Delete</button>' +
     '</span>';
     row.innerHTML =
       '<div class="registrar-use-kind" id="' + servicePrefix + '-kind" title="Lists the attestation types this issuer may issue (ETSI TS 119 475). The issuer publishes it in issuer_info.">Issuer registration certificate</div>' +
@@ -3574,6 +3576,15 @@
       field.value = issuerInfo;
       wireCopyButton(row.querySelector('#' + servicePrefix + '-copy'), field);
     }
+    row.querySelector('#' + servicePrefix + '-edit').addEventListener('click', () => {
+      const entry = registrarEntries.find(e => ((e.rp.identifier || [])[0] || {}).identifier === identifier);
+      if (!entry) return;
+      registrarDetail = null;
+      registrarCertOverlay.classList.remove('active');
+      openRegistrarDialog(entry.rp, true, 'issuer', service);
+    });
+    const removeService = row.querySelector('#' + servicePrefix + '-delete');
+    removeService.addEventListener('click', () => removeRegistrationCertificate(removeService, { identifier: identifier, service: service.serviceIdentifier || '' }));
     const issue = row.querySelector('#' + servicePrefix + '-issue');
     if (issue) {
       issue.addEventListener('click', () => registrarAction(issue, async () => {
@@ -3618,6 +3629,7 @@
           (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + usePrefix + '-revoke" title="' +
             (status === 'revoked' ? 'Makes the certificate valid.' : 'Revokes the certificate on the status list.') +
             '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
+          '<button type="button" class="btn btn-danger btn-sm" id="' + usePrefix + '-delete" title="Removes the intended use from the registration and revokes its certificates.">Delete</button>' +
         '</span>' +
       '</div>' +
       '<div class="cred-pills registrar-pills" id="' + usePrefix + '-pills">' +
@@ -3653,6 +3665,8 @@
         revoked: status !== 'revoked',
       })));
     }
+    const removeUse = row.querySelector('#' + usePrefix + '-delete');
+    removeUse.addEventListener('click', () => removeRegistrationCertificate(removeUse, { identifier: identifier, use: use.intendedUseIdentifier }));
     return row;
   }
 
@@ -3660,6 +3674,34 @@
   // open in their own dialog, so the list stays short.
   const registrarCertOverlay = document.getElementById('registrar-cert-overlay');
   let registrarDetail = null;
+  const providerEntitlements = () => new Set(categories.map(c => c.entitlement).filter(Boolean));
+  const withoutProviderEntitlements = (entitlements) => (entitlements || []).filter(e => !providerEntitlements().has(e));
+  // Deleting a registration certificate removes what it certifies from the
+  // registration: an intended use, or the attestation types of a service. The
+  // registrar revokes the certificates of the removed content.
+  function removeRegistrationCertificate(button, detail) {
+    return registrarAction(button, async () => {
+      const entry = registrarEntries.find(e => ((e.rp.identifier || [])[0] || {}).identifier === detail.identifier);
+      if (!entry) return;
+      const updated = JSON.parse(JSON.stringify(entry.rp));
+      (updated.services || []).forEach(service => {
+        if (detail.use) {
+          service.intendedUses = (service.intendedUses || []).filter(u => u.intendedUseIdentifier !== detail.use);
+        } else if ((service.serviceIdentifier || '') === detail.service) {
+          service.providesAttestations = [];
+          service.entitlements = withoutProviderEntitlements(service.entitlements);
+        }
+      });
+      await registrarRequest('PUT', 'api/registrar/wrp', updated);
+      if (registrarDetail) {
+        registrarDetail = null;
+        registrarCertOverlay.classList.remove('active');
+        registrarPartiesOverlay.classList.add('active');
+      }
+      registrarFocusID = 'registrar-party-' + registrarDomID(detail.identifier) + '-add-use';
+    });
+  }
+
   function certSummary(rowPrefix, kind, title, badge, detail) {
     const [badgeClass, badgeText, badgeTitle] = badge;
     const line = document.createElement('div');
@@ -3669,8 +3711,13 @@
       '<span class="registrar-use-kind" id="' + rowPrefix + '-summary-kind">' + kind + '</span>' +
       '<span class="registrar-cert-title" id="' + rowPrefix + '-summary-title">' + escHtml(title) + '</span>' +
       '<span class="status-badge ' + badgeClass + '" id="' + rowPrefix + '-summary-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>' +
-      '<button type="button" class="btn btn-sm" id="' + rowPrefix + '-details">Details</button>';
-    line.querySelector('button').addEventListener('click', () => {
+      '<span class="registrar-cert-actions">' +
+        '<button type="button" class="btn btn-sm" id="' + rowPrefix + '-details">Details</button>' +
+        '<button type="button" class="btn btn-danger btn-sm" id="' + rowPrefix + '-summary-delete" title="Removes it from the registration and revokes it.">Delete</button>' +
+      '</span>';
+    const removeButton = line.querySelector('#' + rowPrefix + '-summary-delete');
+    removeButton.addEventListener('click', () => removeRegistrationCertificate(removeButton, detail));
+    line.querySelector('#' + rowPrefix + '-details').addEventListener('click', () => {
       registrarDetail = Object.assign({ opener: rowPrefix + '-details' }, detail);
       registrarPartiesOverlay.classList.remove('active');
       document.getElementById('registrar-cert-error').textContent = '';
@@ -3748,13 +3795,6 @@
           PROVIDER_STATUS_BADGES[providerStatus(identifier, service.serviceIdentifier || '')],
           { identifier: identifier, service: service.serviceIdentifier || '' }));
       });
-      if (!services.some(service => (service.intendedUses || []).length > 0)) {
-        const hint = document.createElement('p');
-        hint.className = 'registrar-section-hint';
-        hint.id = prefix + '-requests-hint';
-        hint.textContent = 'To request credentials from a wallet, for example a PID before issuing, add a verifier registration certificate.';
-        card.appendChild(hint);
-      }
       services.forEach(service => {
         (service.intendedUses || []).forEach(use => {
           const usePrefix = prefix + '-use-' + registrarDomID(use.intendedUseIdentifier);
@@ -3932,7 +3972,9 @@
   let registrarMode = 'verifier';
   function showRegistered(done) {
     registrarSubmit.classList.toggle('registrar-registered', done);
-    if (registrarTarget) {
+    if (registrarEditService) {
+      registrarSubmit.textContent = done ? '\u2713 Saved' : 'Save and issue certificate';
+    } else if (registrarTarget) {
       registrarSubmit.textContent = done ? '\u2713 Added' : 'Add certificate';
     } else {
       registrarSubmit.textContent = done ? '\u2713 Registered' : (registrarMode === 'issuer' ? 'Register issuer' : 'Register verifier');
@@ -3991,8 +4033,12 @@
       : 'openssl ecparam -name prime256v1 -genkey -noout -out verifier.key\nopenssl req -new -key verifier.key -subj "/" -out verifier.csr';
   }
 
-  function openRegistrarDialog(target, fromList, mode) {
+  // editService is the issuer service whose attestation types the dialog
+  // edits, or null when it adds something.
+  let registrarEditService = null;
+  function openRegistrarDialog(target, fromList, mode, editService) {
     registrarTarget = target || null;
+    registrarEditService = editService || null;
     registrarFromList = !!fromList;
     applyRegistrarMode(mode || 'verifier');
     showRegistered(false);
@@ -4006,16 +4052,25 @@
       registrarCredentials.innerHTML = '';
       addRegistrarCredential('dc+sd-jwt', 'urn:eudi:pid:1', 'given_name, family_name');
     }
+    if (registrarEditService) {
+      registrarAttestations.innerHTML = '';
+      (registrarEditService.providesAttestations || []).forEach(a => addRegistrarAttestation(a.format, a.type));
+      document.getElementById('registrar-entitlement').value = '';
+    }
     const targetHint = document.getElementById('registrar-target-hint');
     targetHint.hidden = !registrarTarget;
-    targetHint.textContent = addsIssuer
+    targetHint.textContent = registrarEditService
+      ? 'The registrar issues a new issuer registration certificate for the changed types and revokes the current one.'
+      : addsIssuer
       ? 'With an issuer registration certificate, ' + targetName + ' can issue the attestation types below. ' +
         targetName + ' publishes the certificate in issuer_info in its signed issuer metadata.'
       : targetIssues
       ? 'With a verifier registration certificate, ' + targetName + ' can request credentials from a wallet, for example a PID before it issues. ' +
         targetName + ' sends the certificate in verifier_info and signs the request with its access certificate.'
       : 'The registrar issues a verifier registration certificate for another purpose. Send it in verifier_info with the requests for this purpose.';
-    document.getElementById('registrar-title').textContent = registrarTarget
+    document.getElementById('registrar-title').textContent = registrarEditService
+      ? 'Edit the attestation types of ' + targetName
+      : registrarTarget
       ? 'Add ' + (addsIssuer ? 'an issuer' : 'a verifier') + ' registration certificate to ' + targetName
       : (registrarMode === 'issuer' ? 'Register an issuer' : 'Register a verifier');
     document.getElementById('registrar-party-section').hidden = !!registrarTarget;
@@ -4389,15 +4444,22 @@
     const updated = JSON.parse(JSON.stringify(before));
     updated.services = updated.services && updated.services.length > 0 ? updated.services : [{}];
     const entitlement = document.getElementById('registrar-entitlement').value;
-    updated.services[0].providesAttestations = attestations;
-    if (entitlement) updated.services[0].entitlements = (updated.services[0].entitlements || []).concat([entitlement]);
+    const index = registrarEditService
+      ? Math.max(0, updated.services.findIndex(s => (s.serviceIdentifier || '') === (registrarEditService.serviceIdentifier || '')))
+      : 0;
+    const service = updated.services[index];
+    service.providesAttestations = attestations;
+    // Without provider entitlements the registrar derives them from the
+    // categories of the types, so changed types get matching entitlements.
+    if (registrarEditService) service.entitlements = withoutProviderEntitlements(service.entitlements);
+    if (entitlement) service.entitlements = (service.entitlements || []).concat([entitlement]);
     submit.disabled = true;
     let saved = null;
     try {
       saved = (await registrarRequest('PUT', 'api/registrar/wrp', updated)).data;
       const registration = await registrarRequest('POST', 'api/registrar/registration-certificates', {
         identifier: identifier,
-        serviceIdentifier: saved.services[0].serviceIdentifier || '',
+        serviceIdentifier: saved.services[index].serviceIdentifier || '',
         validity: registrarValue('registrar-registration-validity'),
       });
       registrarTarget = saved;
