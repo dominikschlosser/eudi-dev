@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -65,8 +66,11 @@ const logTrimEvery = 64
 // Read the full section in one query when more than this many rows changed.
 const bulkReadAbove = 16
 
-// Only the revision row's version matters. Its content stays fixed.
-var revisionMark = []byte("1")
+// Readers compare only the revision row's version. A stamp version changes
+// with the content, so every bump writes new content.
+func revisionMark() []byte {
+	return []byte(rand.Text())
+}
 
 // Snapshots are immutable so saves can read them outside the wallet lock.
 type stateSnapshot map[string]storage.Blob
@@ -454,9 +458,9 @@ func (s *WalletStore) saveEntities(w *Wallet) error {
 	own := make(map[string]storage.Stamp)
 	for section := range touched {
 		key := s.revisionKey(section)
-		stamp, err := s.backend.WriteIf(key, revisionMark, 0o600, revisions[section].Version)
+		stamp, err := s.backend.WriteIf(key, revisionMark(), 0o600, revisions[section].Version)
 		if errors.Is(err, storage.ErrConflict) {
-			_, err = s.backend.Write(key, revisionMark, 0o600)
+			_, err = s.backend.Write(key, revisionMark(), 0o600)
 		} else if err == nil {
 			own[section] = stamp
 		}
@@ -502,10 +506,10 @@ func (s *WalletStore) appendLogEntry(w *Wallet, entry LogEntry) error {
 	w.mu.RLock()
 	expected := w.revisions[logSection].Version
 	w.mu.RUnlock()
-	revision, err := s.backend.WriteIf(s.revisionKey(logSection), revisionMark, 0o600, expected)
+	revision, err := s.backend.WriteIf(s.revisionKey(logSection), revisionMark(), 0o600, expected)
 	own := err == nil
 	if errors.Is(err, storage.ErrConflict) {
-		_, err = s.backend.Write(s.revisionKey(logSection), revisionMark, 0o600)
+		_, err = s.backend.Write(s.revisionKey(logSection), revisionMark(), 0o600)
 	}
 	if err != nil {
 		return fmt.Errorf("writing wallet revision: %w", err)
@@ -546,7 +550,7 @@ func (s *WalletStore) trimLogRows() error {
 			return fmt.Errorf("trimming the wallet log: %w", err)
 		}
 	}
-	_, err = s.backend.Write(s.revisionKey(logSection), revisionMark, 0o600)
+	_, err = s.backend.Write(s.revisionKey(logSection), revisionMark(), 0o600)
 	return err
 }
 
@@ -571,7 +575,10 @@ func (s *WalletStore) currentEntities(w *Wallet, snapshot stateSnapshot) (map[st
 	}
 
 	seqs := make(map[string]int)
-	creds := s.withStoredAssets(append([]StoredCredential(nil), w.Credentials...))
+	creds, err := s.withStoredAssets(append([]StoredCredential(nil), w.Credentials...))
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	saved := make(map[string]StoredCredential, len(creds))
 	credentialSeqs := s.orderedSeqs(credentialsSection, w.entitySeqs, len(creds), func(i int) string { return creds[i].ID })
 	for i, cred := range creds {
@@ -711,7 +718,11 @@ func (s *WalletStore) allocateStatusIndex(w *Wallet) (int, error) {
 		// Read the version before the value. If the value changed meanwhile, WriteIf
 		// fails and retries.
 		next, expected := 0, ""
-		if stamp, ok := s.backend.Stat(key); ok {
+		stamp, err := s.backend.Stat(key)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return 0, fmt.Errorf("reading the status counter: %w", err)
+		}
+		if err == nil {
 			expected = stamp.Version
 			data, err := s.backend.Read(key)
 			if errors.Is(err, fs.ErrNotExist) {
@@ -725,14 +736,14 @@ func (s *WalletStore) allocateStatusIndex(w *Wallet) (int, error) {
 			}
 		}
 		stored := []byte(strconv.Itoa(next + 1))
-		stamp, err := s.backend.WriteIf(key, stored, 0o600, expected)
+		stamp, err = s.backend.WriteIf(key, stored, 0o600, expected)
 		if errors.Is(err, storage.ErrConflict) {
 			continue
 		}
 		if err != nil {
 			return 0, err
 		}
-		if _, err := s.backend.Write(s.revisionKey(statusSection), revisionMark, 0o600); err != nil {
+		if _, err := s.backend.Write(s.revisionKey(statusSection), revisionMark(), 0o600); err != nil {
 			return 0, fmt.Errorf("writing wallet revision: %w", err)
 		}
 		w.mu.Lock()

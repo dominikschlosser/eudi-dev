@@ -25,10 +25,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
@@ -77,6 +80,32 @@ func TestOneShotAcceptAppliesHAIPToPresentations(t *testing.T) {
 				t.Fatalf("err = %v, want it to mention %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// A presentation runs on the wallet of its wallet directory. A server that the
+// URL handler registered for another wallet does not take it over.
+func TestPresentationStaysWithItsWalletDirectory(t *testing.T) {
+	resetRemoteTestState(t)
+	var hits atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Write([]byte(`{"status":"submitted"}`))
+	}))
+	defer other.Close()
+	if err := os.WriteFile(filepath.Join(config.BaseDir(), "url-handler.sh"), []byte(`LISTENER="`+other.URL+`"`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	uri := `openid4vp://?client_id=redirect_uri:https://verifier.example/cb&response_type=vp_token&response_mode=direct_post&nonce=n-0` +
+		`&response_uri=https://verifier.example/cb&dcql_query=` +
+		url.QueryEscape(`{"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["urn:test:unheld"]}}]}`)
+	err := acceptOID4URI(uri, dispatchOID4Opts{autoAccept: true, mode: walletValidationMode})
+	if err == nil || !strings.Contains(err.Error(), "no matching credentials") {
+		t.Fatalf("err = %v, want the local wallet to find no match", err)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("the server of another wallet received %d requests", n)
 	}
 }
 

@@ -70,7 +70,7 @@ eudi wallet scan --screen              # macOS interactive screen capture
 eudi wallet scan --screen --auto-accept # auto-approve if it's a presentation
 ```
 
-`wallet scan` reads the QR code, then runs the same flow as `wallet accept`. If a remote target is configured or a wallet is running, it sends the request to that wallet and opens its consent UI. Otherwise it handles the request locally.
+`wallet scan` reads the QR code, then runs the same flow as `wallet accept`. If a remote target is configured or a wallet server runs for the same wallet directory, it sends the request to that wallet and opens its consent UI. Otherwise it handles the request locally. See [automatic routing](http-api.md#automatic-routing-single-writer).
 
 The wallet handling the flow fetches the offer and prompts for a transaction code when one is required. For a local flow, the CLI prompts when stdin is a terminal and `--tx-code` was not given. See [ADR-0012](../adr/0012-every-entry-point-runs-the-same-flow.md).
 

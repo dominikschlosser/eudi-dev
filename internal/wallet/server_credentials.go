@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,8 +77,6 @@ func (s *Server) handleCredentialDisplayImage(w http.ResponseWriter, r *http.Req
 
 // Returns an array. X-Total-Count gives the total before applying limit and offset.
 func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
-	// Count each batch once to match the paginated result.
-	total := len(s.wallet.ListedCredentials())
 	limit, err := intParam(r, "limit", 0)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid limit: " + err.Error()})
@@ -89,7 +88,7 @@ func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listing := s.wallet.CredentialsListingWindow(offset, limit)
+	listing, total := s.management().CredentialListing(offset, limit)
 	for _, summary := range listing {
 		withPublicImagePaths(r, summary)
 	}
@@ -131,53 +130,25 @@ func (s *Server) handleImportCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var imported *StoredCredential
-	var importErr error
-	s.saveMutation(func() bool {
-		imported, importErr = s.wallet.ImportCredential(raw)
-		if importErr != nil {
-			return false
-		}
-		s.wallet.AddLog("management", fmt.Sprintf("Imported %s credential %s", imported.Format, credentialLabel(*imported)), true)
-		return true
-	})
-	if importErr != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": importErr.Error()})
+	summary, err := s.management().ImportCredential(raw)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, withPublicImagePaths(r, s.wallet.CredentialSummaryWithStatus(*imported)))
+	writeJSON(w, http.StatusCreated, withPublicImagePaths(r, summary))
 }
 
 func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	label := id
-	if cred, ok := s.wallet.GetCredential(id); ok {
-		if cred.VCT != "" {
-			label = cred.VCT
-		} else if cred.DocType != "" {
-			label = cred.DocType
-		}
+	switch err := s.management().RemoveCredential(r.PathValue("id")); {
+	case errors.Is(err, ErrCredentialProtected):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+	case errors.Is(err, ErrCredentialNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	default:
+		w.WriteHeader(http.StatusNoContent)
 	}
-	if s.wallet.IsProtected(id) {
-		writeJSON(w, http.StatusForbidden, map[string]string{
-			"error": "credential is protected and can only be removed through the wallet file",
-		})
-		return
-	}
-	var removed bool
-	s.saveMutation(func() bool {
-		removed = s.wallet.RemoveCredential(id)
-		if !removed {
-			return false
-		}
-		s.wallet.AddLog("management", fmt.Sprintf("Deleted credential %s", label), true)
-		return true
-	})
-	if !removed {
-		http.Error(w, "credential not found", http.StatusNotFound)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleSetCredentialStatus(w http.ResponseWriter, r *http.Request) {

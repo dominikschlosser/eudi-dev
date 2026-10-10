@@ -59,11 +59,8 @@ type Server struct {
 	// mutations that already hold it.
 	store       atomic.Pointer[WalletStore]
 	storeSyncMu sync.Mutex
-	// Skip reparsing unchanged files. Periodic reloads also catch writes that leave
-	// the same modification time and size on filesystems with coarse timestamps.
-	// Guarded by storeSyncMu.
+	// Skips reparsing an unchanged wallet file. Guarded by storeSyncMu.
 	lastWalletStamp storage.Stamp
-	lastReloadAt    time.Time
 	staleClientOnce sync.Once
 	demo            *demoState
 	renewalBackoff  map[string]time.Time
@@ -395,10 +392,6 @@ func (s *Server) reloading(withLog bool, handler http.HandlerFunc) http.HandlerF
 	}
 }
 
-// Force periodic reloads to catch changes with the same mtime and size on filesystems
-// with coarse timestamps.
-const reloadMaxStale = 2 * time.Second
-
 func (s *Server) reloadFromStore() error {
 	s.storeSyncMu.Lock()
 	defer s.storeSyncMu.Unlock()
@@ -434,10 +427,12 @@ func (s *Server) reloadLocked(withLog bool) error {
 		return store.loadSections(s.wallet, changed)
 	}
 
-	// Skip unchanged files briefly. The time limit catches changes hidden by coarse
-	// timestamps.
-	stamp, ok := store.WalletStamp()
-	if ok && stamp == s.lastWalletStamp && time.Since(s.lastReloadAt) < reloadMaxStale {
+	stamp, err := store.WalletStamp()
+	exists := err == nil
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if exists && stamp == s.lastWalletStamp {
 		return nil
 	}
 
@@ -446,8 +441,7 @@ func (s *Server) reloadLocked(withLog bool) error {
 		return err
 	}
 	s.applyPersistedWalletState(reloaded)
-	s.lastReloadAt = time.Now()
-	if ok {
+	if exists {
 		s.lastWalletStamp = stamp
 	}
 	return nil

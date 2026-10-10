@@ -257,7 +257,7 @@ func parityCases() []parityCase {
 		}},
 		{method: "RemoveAllCredentials", observe: func(t *testing.T, s walletService) any {
 			importedCredential(t, s)
-			deleted, err := s.RemoveAllCredentials()
+			removed, err := s.RemoveAllCredentials()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -265,7 +265,7 @@ func parityCases() []parityCase {
 			if err != nil {
 				t.Fatal(err)
 			}
-			return []int{deleted, len(left)}
+			return []int{removed.Deleted, removed.KeptProtected, len(left)}
 		}},
 		{method: "Issue", observe: func(t *testing.T, s walletService) any {
 			doc, err := s.Issue(map[string]any{
@@ -577,6 +577,43 @@ func TestWalletServiceBackendsAgree(t *testing.T) {
 				t.Errorf("%s differs between backends:\n  local:  %v\n  remote: %v", c.method, localObs, remoteObs)
 			}
 		})
+	}
+}
+
+// Management operations write the same activity log entries whether a server
+// runs or the CLI changes the store directly.
+func TestManagementLogsTheSameEntriesOnBothBackends(t *testing.T) {
+	resetRemoteTestState(t)
+	localSvc, remoteSvc := parityWallets(t, seedPID)
+	observe := func(s walletService) []string {
+		if err := s.ClearLogs(); err != nil {
+			t.Fatal(err)
+		}
+		id := importedCredential(t, s)
+		if err := s.RemoveCredential(id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Issue(map[string]any{"format": "sdjwt", "vct": "urn:test:parity:1", "claims": map[string]any{"given_name": "Alice"}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.RemoveAllCredentials(); err != nil {
+			t.Fatal(err)
+		}
+		entries, err := s.Logs()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var details []string
+		for _, entry := range entries {
+			if entry.Action == "management" {
+				details = append(details, entry.Detail)
+			}
+		}
+		return details
+	}
+	local, remote := observe(localSvc), observe(remoteSvc)
+	if len(local) != 4 || !reflect.DeepEqual(local, remote) {
+		t.Fatalf("management log entries differ:\n  local:  %q\n  remote: %q", local, remote)
 	}
 }
 

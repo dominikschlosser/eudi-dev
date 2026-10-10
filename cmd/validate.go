@@ -127,7 +127,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	// Without a supplied key or trusted list, the trusted list of the
 	// credential's catalogue entry is the trust source. Its revocation
 	// services anchor the status list when they sign it.
-	anchoring, catalogued := catalogueAnchoring(raw)
+	anchoring, catalogued, err := catalogueAnchoring(raw)
+	if err != nil {
+		return fmt.Errorf("reading the wallet catalogue: %w", err)
+	}
 	var statusCandidates []trustlist.CertInfo
 	if keyFile == "" && trustListFile == "" && anchoring.AnchoredBy != "" {
 		tlCerts = trustlist.CertInfos(anchoring.IssuanceAnchors)
@@ -314,15 +317,20 @@ func runValidate(cmd *cobra.Command, args []string) error {
 // catalogueAnchoring validates the credential with the trusted lists of its
 // entry in the wallet's attestation catalogue. Without a wallet there is no
 // catalogue, and validate creates none.
-func catalogueAnchoring(raw string) (wallet.CatalogueAnchoring, bool) {
-	if store, err := openStore(); err != nil || !store.Exists() {
-		return wallet.CatalogueAnchoring{}, false
+func catalogueAnchoring(raw string) (wallet.CatalogueAnchoring, bool, error) {
+	store, err := openStore()
+	if err != nil {
+		return wallet.CatalogueAnchoring{}, false, err
+	}
+	if exists, err := store.Exists(); err != nil || !exists {
+		return wallet.CatalogueAnchoring{}, false, err
 	}
 	w, _, err := loadWallet()
 	if err != nil {
-		return wallet.CatalogueAnchoring{}, false
+		return wallet.CatalogueAnchoring{}, false, err
 	}
-	return w.CheckCatalogueAnchoring(raw)
+	anchoring, found := w.CheckCatalogueAnchoring(raw)
+	return anchoring, found, nil
 }
 
 // reportCatalogueTrust reports the catalogue result. It is informational and

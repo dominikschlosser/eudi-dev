@@ -45,8 +45,9 @@ type Store interface {
 	Write(key string, data []byte, perm fs.FileMode) (Stamp, error)
 	// Delete removes the blob at key. A missing key is not an error.
 	Delete(key string) error
-	// Stat returns the blob's change stamp, or ok=false when it is missing.
-	Stat(key string) (stamp Stamp, ok bool)
+	// Stat returns the blob's stamp. A missing key returns an error that
+	// satisfies errors.Is(err, fs.ErrNotExist).
+	Stat(key string) (Stamp, error)
 	// List returns the names of the blobs directly under prefix, sorted. A
 	// missing prefix lists nothing.
 	List(prefix string) ([]string, error)
@@ -73,9 +74,9 @@ type Blob struct {
 	Stamp Stamp
 }
 
-// Stamp identifies a blob's current content. Two stamps of the same key are
-// equal only while the blob is unchanged. A reader that cached a parse
-// compares stamps to skip reparsing.
+// Stamp identifies a blob's current content. The version changes whenever the
+// content changes. A rewrite with identical content may keep it. A reader that
+// cached a parse compares stamps to skip reparsing.
 type Stamp struct {
 	Version string
 	Size    int64
@@ -154,7 +155,7 @@ func (f failingStore) Write(string, []byte, fs.FileMode) (Stamp, error) {
 	return Stamp{}, f.err
 }
 func (f failingStore) Delete(string) error                     { return f.err }
-func (f failingStore) Stat(string) (Stamp, bool)               { return Stamp{}, false }
+func (f failingStore) Stat(string) (Stamp, error)              { return Stamp{}, f.err }
 func (f failingStore) List(string) ([]string, error)           { return nil, f.err }
 func (f failingStore) ReadAll(string) (map[string]Blob, error) { return nil, f.err }
 func (f failingStore) Stamps(string) (map[string]Stamp, error) { return nil, f.err }

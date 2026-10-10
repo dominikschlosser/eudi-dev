@@ -16,8 +16,13 @@ package wallet
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,10 +56,10 @@ func TestWalletStore_LoadOrCreate_NewWallet(t *testing.T) {
 		t.Errorf("expected 0 credentials, got %d", len(w.Credentials))
 	}
 
-	if _, ok := store.Backend().Stat(store.key("holder.pem")); !ok {
+	if _, err := store.Backend().Stat(store.key("holder.pem")); err != nil {
 		t.Error("expected holder.pem to exist")
 	}
-	if _, ok := store.Backend().Stat(store.key("issuer.pem")); !ok {
+	if _, err := store.Backend().Stat(store.key("issuer.pem")); err != nil {
 		t.Error("expected issuer.pem to exist")
 	}
 }
@@ -384,10 +389,10 @@ func TestWalletStore_LoadOrCreateIssuerTLSCertificate_Persists(t *testing.T) {
 	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, DNSName: "localhost"}); err != nil {
 		t.Fatalf("expected wallet TLS cert to chain to shared CA: %v", err)
 	}
-	if _, ok := store.Backend().Stat(store.key("wallet-tls-cert.pem")); !ok {
+	if _, err := store.Backend().Stat(store.key("wallet-tls-cert.pem")); err != nil {
 		t.Fatal("expected wallet-tls-cert.pem to exist")
 	}
-	if _, ok := store.Backend().Stat(store.key("wallet-tls-key.pem")); !ok {
+	if _, err := store.Backend().Stat(store.key("wallet-tls-key.pem")); err != nil {
 		t.Fatal("expected wallet-tls-key.pem to exist")
 	}
 }
@@ -414,10 +419,10 @@ func TestWalletStore_LoadOrCreateIssuerTLSCertificate_MigratesLegacyPaths(t *tes
 	if len(cert.Certificate) == 0 {
 		t.Fatal("expected migrated wallet TLS certificate")
 	}
-	if _, ok := store.Backend().Stat(store.key("wallet-tls-cert.pem")); !ok {
+	if _, err := store.Backend().Stat(store.key("wallet-tls-cert.pem")); err != nil {
 		t.Fatal("expected wallet-tls-cert.pem to exist after migration")
 	}
-	if _, ok := store.Backend().Stat(store.key("wallet-tls-key.pem")); !ok {
+	if _, err := store.Backend().Stat(store.key("wallet-tls-key.pem")); err != nil {
 		t.Fatal("expected wallet-tls-key.pem to exist after migration")
 	}
 }
@@ -456,6 +461,66 @@ func TestWalletStore_LoadOrCreateSharedCA_SameParentDir(t *testing.T) {
 
 	if !bytes.Equal(cert1.Raw, cert2.Raw) {
 		t.Fatal("expected stores under the same parent directory to share the same CA certificate")
+	}
+}
+
+// Corrupt or mismatched CA material is reported, and the stored files stay as
+// they are so the user can inspect them.
+func TestWalletStore_LoadOrCreateSharedCA_RefusesUnusableMaterial(t *testing.T) {
+	otherKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, corrupt := range map[string]func(store *WalletStore) []byte{
+		"unparseable certificate": func(*WalletStore) []byte { return []byte("not a certificate") },
+		"certificate of another key": func(*WalletStore) []byte {
+			cert, err := mock.GenerateRootCACert(otherKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return certPEM(cert)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := NewWalletStore(filepath.Join(t.TempDir(), "wallet"))
+			if _, _, err := store.LoadOrCreateSharedCA(); err != nil {
+				t.Fatal(err)
+			}
+			keyBefore, err := store.Backend().Read(store.sharedCAKeyPEM())
+			if err != nil {
+				t.Fatal(err)
+			}
+			stored := corrupt(store)
+			if _, err := store.Backend().Write(store.sharedCACertPEM(), stored, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := store.LoadOrCreateSharedCA(); err == nil {
+				t.Fatal("LoadOrCreateSharedCA accepted unusable CA material")
+			}
+			keyAfter, _ := store.Backend().Read(store.sharedCAKeyPEM())
+			certAfter, _ := store.Backend().Read(store.sharedCACertPEM())
+			if !bytes.Equal(keyAfter, keyBefore) || !bytes.Equal(certAfter, stored) {
+				t.Fatal("the stored CA material changed")
+			}
+		})
+	}
+}
+
+// A CA certificate without its key cannot sign anything, so creating a new key
+// beside it would leave two CAs under one name.
+func TestWalletStore_LoadOrCreateSharedCA_RefusesACertificateWithoutKey(t *testing.T) {
+	store := NewWalletStore(filepath.Join(t.TempDir(), "wallet"))
+	if _, _, err := store.LoadOrCreateSharedCA(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Backend().Delete(store.sharedCAKeyPEM()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.LoadOrCreateSharedCA(); err == nil {
+		t.Fatal("LoadOrCreateSharedCA created a key beside an existing certificate")
+	}
+	if _, err := store.Backend().Stat(store.sharedCAKeyPEM()); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("CA key Stat = %v, want no key", err)
 	}
 }
 
@@ -579,5 +644,46 @@ func TestStoreSavesDoNotLoseConcurrentWrites(t *testing.T) {
 		if _, ok := w.GetCredential(id); !ok {
 			t.Fatalf("credential %s was lost by a concurrent save", id)
 		}
+	}
+}
+
+// statFailingBackend reports an outage on Stat while reads and writes work.
+type statFailingBackend struct {
+	storage.Store
+}
+
+func (statFailingBackend) Stat(string) (storage.Stamp, error) {
+	return storage.Stamp{}, errors.New("database unreachable")
+}
+
+// A storage outage must not look like a missing counter. Allocating would
+// restart the status list at index 0 and hand out used indices again.
+func TestAllocateStatusIndexReportsAStorageOutage(t *testing.T) {
+	backend := storage.NewMemory()
+	store := NewWalletStoreOn(filepath.Join(t.TempDir(), "wallet"), backend)
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.allocateStatusIndex(w); err != nil {
+		t.Fatal(err)
+	}
+	store.backend = statFailingBackend{backend}
+	if _, err := store.allocateStatusIndex(w); err == nil {
+		t.Fatal("allocateStatusIndex succeeded while the backend failed")
+	}
+	data, err := backend.Read(store.counterKey())
+	if err != nil || string(data) != "1" {
+		t.Fatalf("status counter = %q, %v, want 1", data, err)
+	}
+}
+
+// A storage outage fails storing a display image. The image is not kept embedded.
+func TestStoreDisplayAssetReportsAStorageOutage(t *testing.T) {
+	backend := storage.NewMemory()
+	store := NewWalletStoreOn(filepath.Join(t.TempDir(), "wallet"), backend)
+	store.backend = statFailingBackend{backend}
+	if _, _, err := store.storeDisplayAsset(tinyPNGDataURI); err == nil {
+		t.Fatal("storeDisplayAsset succeeded while the backend failed")
 	}
 }

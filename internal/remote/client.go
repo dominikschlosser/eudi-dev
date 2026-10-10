@@ -50,6 +50,16 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
+// apiPath escapes every segment, so an identifier with a slash or a question mark
+// stays one segment.
+func apiPath(segments ...string) string {
+	escaped := make([]string, len(segments))
+	for i, segment := range segments {
+		escaped[i] = url.PathEscape(segment)
+	}
+	return "/api/" + strings.Join(escaped, "/")
+}
+
 func (c *Client) do(method, path string, body any, out any) error {
 	return c.doWithTimeout(0, method, path, body, out)
 }
@@ -132,70 +142,68 @@ func (c *Client) doWithTimeout(timeout time.Duration, method, path string, body 
 
 func (c *Client) Version() (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodGet, "/api/version", nil, &out)
+	err := c.do(http.MethodGet, apiPath("version"), nil, &out)
 	return out, err
 }
 
 func (c *Client) ServerConfig() (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodGet, "/api/config", nil, &out)
+	err := c.do(http.MethodGet, apiPath("config"), nil, &out)
 	return out, err
 }
 
 func (c *Client) Credentials() ([]map[string]any, error) {
 	var out []map[string]any
-	err := c.do(http.MethodGet, "/api/credentials", nil, &out)
+	err := c.do(http.MethodGet, apiPath("credentials"), nil, &out)
 	return out, err
 }
 
 func (c *Client) Credential(id string) (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodGet, "/api/credentials/"+id, nil, &out)
+	err := c.do(http.MethodGet, apiPath("credentials", id), nil, &out)
 	return out, err
 }
 
 func (c *Client) ImportCredential(raw string) (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodPost, "/api/credentials", raw, &out)
+	err := c.do(http.MethodPost, apiPath("credentials"), raw, &out)
 	return out, err
 }
 
 func (c *Client) RefreshCredential(id string) (map[string]any, error) {
 	var out map[string]any
-	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, "/api/credentials/"+id+"/refresh", nil, &out)
+	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, apiPath("credentials", id, "refresh"), nil, &out)
 	return out, err
 }
 
 func (c *Client) RemoveCredential(id string) error {
-	return c.do(http.MethodDelete, "/api/credentials/"+id, nil, nil)
+	return c.do(http.MethodDelete, apiPath("credentials", id), nil, nil)
 }
 
-func (c *Client) RemoveAllCredentials() (int, error) {
-	var out struct {
-		Deleted int `json:"deleted"`
-	}
-	err := c.do(http.MethodDelete, "/api/credentials", nil, &out)
-	return out.Deleted, err
+// RemoveAllCredentials removes every deletable credential and decodes the
+// counts into out.
+func (c *Client) RemoveAllCredentials(out any) error {
+	return c.do(http.MethodDelete, apiPath("credentials"), nil, out)
 }
 
 // Issue issues a credential with the remote wallet's issuer key. The request
 // map uses the POST /api/issue field names.
 func (c *Client) Issue(req map[string]any) (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodPost, "/api/issue", req, &out)
+	err := c.do(http.MethodPost, apiPath("issue"), req, &out)
 	return out, err
 }
 
 // RegistrationCertificate asks the wallet's registrar to sign a registration
 // certificate for a relying party and decodes the answer into out.
 func (c *Client) RegistrationCertificate(req, out any) error {
-	return c.do(http.MethodPost, "/api/registrar/registration-certificates", req, out)
+	return c.do(http.MethodPost, apiPath("registrar", "registration-certificates"), req, out)
 }
 
 // RegisterRelyingParty stores a relying party with the wallet's registrar
 // (TS05 v1.5 POST /wrp) and decodes the stored record into out.
 func (c *Client) RegisterRelyingParty(rp, out any) error {
-	return c.do(http.MethodPost, "/api/registrar/wrp", rp, out)
+	return c.do(http.MethodPost, apiPath("registrar", "wrp"), rp, out)
 }
 
 // UpdateRelyingParty replaces a registration (TS05 v1.5 PUT /wrp) and decodes
@@ -204,7 +212,7 @@ func (c *Client) UpdateRelyingParty(rp, out any) error {
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if err := c.do(http.MethodPut, "/api/registrar/wrp", rp, &envelope); err != nil {
+	if err := c.do(http.MethodPut, apiPath("registrar", "wrp"), rp, &envelope); err != nil {
 		return err
 	}
 	return json.Unmarshal(envelope.Data, out)
@@ -213,14 +221,14 @@ func (c *Client) UpdateRelyingParty(rp, out any) error {
 // RegistrationCertificateViews lists the registration certificates of a
 // relying party with the value of each stored certificate.
 func (c *Client) RegistrationCertificateViews(identifier string, out any) error {
-	return c.do(http.MethodGet, "/api/registrar/registration-certificates?identifier="+url.QueryEscape(identifier), nil, out)
+	return c.do(http.MethodGet, apiPath("registrar", "registration-certificates")+"?identifier="+url.QueryEscape(identifier), nil, out)
 }
 
 // SetRegistrationCertificateStatus revokes or reactivates the registration
 // certificates of a relying party or one of its intended uses and decodes the
 // count into out.
 func (c *Client) SetRegistrationCertificateStatus(req, out any) error {
-	return c.do(http.MethodPost, "/api/registrar/registration-certificates/status", req, out)
+	return c.do(http.MethodPost, apiPath("registrar", "registration-certificates", "status"), req, out)
 }
 
 // RegistrarRecords reads every record of the wallet's registrar (TS05 v1.5
@@ -229,7 +237,7 @@ func (c *Client) RegistrarRecords(out any) error {
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if err := c.do(http.MethodGet, "/api/registrar/wrp?limit="+strconv.Itoa(registrar.MaxRelyingParties), nil, &envelope); err != nil {
+	if err := c.do(http.MethodGet, apiPath("registrar", "wrp")+"?limit="+strconv.Itoa(registrar.MaxRelyingParties), nil, &envelope); err != nil {
 		return err
 	}
 	return json.Unmarshal(envelope.Data, out)
@@ -237,57 +245,57 @@ func (c *Client) RegistrarRecords(out any) error {
 
 // DeleteRelyingParty deletes a registration and revokes its certificates.
 func (c *Client) DeleteRelyingParty(identifier string) error {
-	return c.do(http.MethodDelete, "/api/registrar/wrp/"+url.PathEscape(identifier), nil, nil)
+	return c.do(http.MethodDelete, apiPath("registrar", "wrp", identifier), nil, nil)
 }
 
 // TrustState reads the providers and external lists that users added to the
 // wallet's trusted lists.
 func (c *Client) TrustState(out any) error {
-	return c.do(http.MethodGet, "/api/trust", nil, out)
+	return c.do(http.MethodGet, apiPath("trust"), nil, out)
 }
 
 // AddTrustedEntity puts a provider on one of the wallet's lists.
 func (c *Client) AddTrustedEntity(entity, out any) error {
-	return c.do(http.MethodPost, "/api/trust/entities", entity, out)
+	return c.do(http.MethodPost, apiPath("trust", "entities"), entity, out)
 }
 
 // RemoveTrustedEntity takes a provider off its list.
 func (c *Client) RemoveTrustedEntity(id string) error {
-	return c.do(http.MethodDelete, "/api/trust/entities/"+url.PathEscape(id), nil, nil)
+	return c.do(http.MethodDelete, apiPath("trust", "entities", id), nil, nil)
 }
 
 // AddTrustedList puts an external list on the wallet's list of trusted lists.
 func (c *Client) AddTrustedList(listURL string, out any) error {
-	return c.do(http.MethodPost, "/api/trust/lists", map[string]string{"url": listURL}, out)
+	return c.do(http.MethodPost, apiPath("trust", "lists"), map[string]string{"url": listURL}, out)
 }
 
 // RemoveTrustedList takes an external list off the list of trusted lists.
 func (c *Client) RemoveTrustedList(listURL string) error {
-	return c.do(http.MethodDelete, "/api/trust/lists?url="+url.QueryEscape(listURL), nil, nil)
+	return c.do(http.MethodDelete, apiPath("trust", "lists")+"?url="+url.QueryEscape(listURL), nil, nil)
 }
 
 // CatalogAttestations reads the wallet's attestation catalogue with names and
 // credential types.
 func (c *Client) CatalogAttestations(out any) error {
-	return c.do(http.MethodGet, "/api/catalog/attestations", nil, out)
+	return c.do(http.MethodGet, apiPath("catalog", "attestations"), nil, out)
 }
 
 // AddCatalogAttestation adds an attestation to the catalogue and decodes the
 // stored entry into out.
 func (c *Client) AddCatalogAttestation(entry, out any) error {
-	return c.do(http.MethodPost, "/api/catalog/attestations", entry, out)
+	return c.do(http.MethodPost, apiPath("catalog", "attestations"), entry, out)
 }
 
 // DeleteCatalogAttestation deletes an added attestation (EC TS11 v1.0
 // DELETE /schemas/{schemaId}).
 func (c *Client) DeleteCatalogAttestation(id string) error {
-	return c.do(http.MethodDelete, "/api/catalog/schemas/"+url.PathEscape(id), nil, nil)
+	return c.do(http.MethodDelete, apiPath("catalog", "schemas", id), nil, nil)
 }
 
 // AccessCertificate asks the wallet's access certificate authority to sign an
 // access certificate for a CSR and decodes the answer into out.
 func (c *Client) AccessCertificate(req, out any) error {
-	return c.do(http.MethodPost, "/api/registrar/access-certificates", req, out)
+	return c.do(http.MethodPost, apiPath("registrar", "access-certificates"), req, out)
 }
 
 func (c *Client) GeneratePID(claims map[string]any, vct string) error {
@@ -298,45 +306,45 @@ func (c *Client) GeneratePID(claims map[string]any, vct string) error {
 	if vct != "" {
 		body["vct"] = vct
 	}
-	return c.do(http.MethodPost, "/api/generate-pid", body, nil)
+	return c.do(http.MethodPost, apiPath("generate-pid"), body, nil)
 }
 
 func (c *Client) Log() ([]byte, error) {
 	var out []byte
-	err := c.do(http.MethodGet, "/api/log", nil, &out)
+	err := c.do(http.MethodGet, apiPath("log"), nil, &out)
 	return out, err
 }
 
 func (c *Client) ClearLog() error {
-	return c.do(http.MethodDelete, "/api/log", nil, nil)
+	return c.do(http.MethodDelete, apiPath("log"), nil, nil)
 }
 
 func (c *Client) Templates() ([]map[string]any, error) {
 	var out []map[string]any
-	err := c.do(http.MethodGet, "/api/templates", nil, &out)
+	err := c.do(http.MethodGet, apiPath("templates"), nil, &out)
 	return out, err
 }
 
 func (c *Client) Template(name string) (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodGet, "/api/templates/"+name, nil, &out)
+	err := c.do(http.MethodGet, apiPath("templates", name), nil, &out)
 	return out, err
 }
 
 func (c *Client) PutTemplate(name string, doc any) (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodPut, "/api/templates/"+name, doc, &out)
+	err := c.do(http.MethodPut, apiPath("templates", name), doc, &out)
 	return out, err
 }
 
 func (c *Client) DeleteTemplate(name string) error {
-	return c.do(http.MethodDelete, "/api/templates/"+name, nil, nil)
+	return c.do(http.MethodDelete, apiPath("templates", name), nil, nil)
 }
 
 // Certificate exports the remote wallet's CA or TLS certificate. kind is
 // "ca" or "tls", format is "pem" or "jwks".
 func (c *Client) Certificate(kind, format string) ([]byte, error) {
-	path := "/api/certificates/" + kind
+	path := apiPath("certificates", kind)
 	if format != "" && format != "pem" {
 		path += "?format=" + format
 	}
@@ -362,7 +370,7 @@ func (c *Client) Present(uri string, interactive bool, sessionTranscript string)
 		body["interactive"] = true
 		timeout = interactiveTimeout
 	}
-	err := c.doWithTimeout(timeout, http.MethodPost, "/api/presentations", body, &out)
+	err := c.doWithTimeout(timeout, http.MethodPost, apiPath("presentations"), body, &out)
 	return out, err
 }
 
@@ -382,7 +390,7 @@ func (c *Client) AcceptOffer(uri, txCode string, interactive bool) (map[string]a
 		body["interactive"] = true
 		timeout = interactiveTimeout
 	}
-	err := c.doWithTimeout(timeout, http.MethodPost, "/api/offers", body, &out)
+	err := c.doWithTimeout(timeout, http.MethodPost, apiPath("offers"), body, &out)
 	return out, err
 }
 
@@ -400,7 +408,7 @@ func (c *Client) TrustList(id, vct, docType string) (string, error) {
 // prints and fetches this path.
 func TrustListPath(id, vct, docType string) string {
 	if id != "" {
-		return "/api/trustlists/" + url.PathEscape(id)
+		return apiPath("trustlists", id)
 	}
 	query := url.Values{}
 	if vct != "" {
@@ -410,16 +418,16 @@ func TrustListPath(id, vct, docType string) string {
 		query.Set("doctype", docType)
 	}
 	if encoded := query.Encode(); encoded != "" {
-		return "/api/trustlist?" + encoded
+		return apiPath("trustlist") + "?" + encoded
 	}
-	return "/api/trustlist"
+	return apiPath("trustlist")
 }
 
 func (c *Client) TrustLists() ([]map[string]any, error) {
 	var out struct {
 		TrustLists []map[string]any `json:"trust_lists"`
 	}
-	if err := c.do(http.MethodGet, "/api/trustlists", nil, &out); err != nil {
+	if err := c.do(http.MethodGet, apiPath("trustlists"), nil, &out); err != nil {
 		return nil, err
 	}
 	return out.TrustLists, nil
@@ -429,36 +437,36 @@ func (c *Client) TrustLists() ([]map[string]any, error) {
 // sign-in. The id is the offer_id of the authorization_required response.
 func (c *Client) OfferStatus(id string) (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodGet, "/api/offers/"+id, nil, &out)
+	err := c.do(http.MethodGet, apiPath("offers", id), nil, &out)
 	return out, err
 }
 
 func (c *Client) DeferredIssuances() ([]map[string]any, error) {
 	var out []map[string]any
-	err := c.do(http.MethodGet, "/api/deferred", nil, &out)
+	err := c.do(http.MethodGet, apiPath("deferred"), nil, &out)
 	return out, err
 }
 
 func (c *Client) CollectDeferred(id string) (map[string]any, error) {
 	var out map[string]any
-	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, "/api/deferred/"+id+"/collect", nil, &out)
+	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, apiPath("deferred", id, "collect"), nil, &out)
 	return out, err
 }
 
 func (c *Client) AbandonDeferred(id string) (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodDelete, "/api/deferred/"+id, nil, &out)
+	err := c.do(http.MethodDelete, apiPath("deferred", id), nil, &out)
 	return out, err
 }
 
 // SetCredentialStatus revokes (1) or activates (0) a credential on the remote
 // wallet's own status list.
 func (c *Client) SetCredentialStatus(id string, status int) error {
-	return c.do(http.MethodPost, "/api/credentials/"+id+"/status", map[string]any{"status": status}, nil)
+	return c.do(http.MethodPost, apiPath("credentials", id, "status"), map[string]any{"status": status}, nil)
 }
 
 func (c *Client) Shutdown() error {
-	return c.do(http.MethodPost, "/api/shutdown", nil, nil)
+	return c.do(http.MethodPost, apiPath("shutdown"), nil, nil)
 }
 
 // version is the release of this binary. The cmd package sets it.

@@ -16,6 +16,7 @@ package remote
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -27,9 +28,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 )
 
 // Instance describes a running wallet server. Every `wallet serve` writes an
@@ -63,6 +66,8 @@ func instanceFile(pid int) string {
 	return filepath.Join(instancesDir(), fmt.Sprintf("%d.json", pid))
 }
 
+// RegisterInstance writes the file beside its final name and renames it, so
+// discovery never reads a partial entry.
 func RegisterInstance(inst Instance) error {
 	if err := os.MkdirAll(instancesDir(), 0o755); err != nil {
 		return fmt.Errorf("creating instances directory: %w", err)
@@ -71,7 +76,19 @@ func RegisterInstance(inst Instance) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(instanceFile(inst.PID), append(data, '\n'), 0o644)
+	tmp, err := os.CreateTemp(instancesDir(), ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("creating instance file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing instance file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("writing instance file: %w", err)
+	}
+	return os.Rename(tmp.Name(), instanceFile(inst.PID))
 }
 
 func UnregisterInstance(pid int) {
@@ -87,9 +104,11 @@ func (d *DiscoveredInstance) applyHealth(version map[string]any) {
 	}
 }
 
-func healthCheck(url string, timeout time.Duration) (map[string]any, bool) {
+// getInstanceJSON reads a JSON document from a wallet instance. ok is false when
+// the instance does not answer in time or answers with something else.
+func getInstanceJSON(baseURL, path string, timeout time.Duration) (doc map[string]any, ok bool) {
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Get(strings.TrimRight(url, "/") + "/api/version")
+	resp, err := client.Get(strings.TrimRight(baseURL, "/") + path)
 	if err != nil {
 		return nil, false
 	}
@@ -97,34 +116,25 @@ func healthCheck(url string, timeout time.Duration) (map[string]any, bool) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, false
 	}
-	var version map[string]any
-	if json.NewDecoder(resp.Body).Decode(&version) != nil {
+	if _, err := format.DecodeRemoteJSON(resp.Body, "wallet instance "+path, &doc); err != nil {
 		return nil, false
 	}
-	return version, true
+	return doc, true
 }
 
-func fetchInstanceConfig(url string, timeout time.Duration) map[string]any {
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Get(strings.TrimRight(url, "/") + "/api/config")
-	if err != nil {
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil
-	}
-	var cfg map[string]any
-	if json.NewDecoder(resp.Body).Decode(&cfg) != nil {
-		return nil
-	}
-	return cfg
+func instanceWalletDir(baseURL string, timeout time.Duration) string {
+	cfg, _ := getInstanceJSON(baseURL, "/api/config", timeout)
+	dir, _ := cfg["wallet_dir"].(string)
+	return dir
 }
 
 // Discover finds running wallet instances on the local system. It reads the
-// instance registry, removes entries whose server is gone and scans the process
-// list for wallet serve processes. It also includes the active remote target
-// set by "wallet use" when that target responds.
+// instance registry, removes entries whose process has exited and scans the
+// process list for wallet serve processes. It also includes the active remote
+// target set by "wallet use" when that target responds.
+//
+// A registered instance that is alive but does not answer in time stays listed.
+// A busy server still owns its wallet directory.
 func Discover(timeout time.Duration) []DiscoveredInstance {
 	if timeout <= 0 {
 		timeout = time.Second
@@ -134,37 +144,36 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 
 	entries, _ := os.ReadDir(instancesDir())
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		name := entry.Name()
+		pid, err := strconv.Atoi(strings.TrimSuffix(name, ".json"))
+		if entry.IsDir() || !strings.HasSuffix(name, ".json") || err != nil {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(instancesDir(), entry.Name()))
+		path := filepath.Join(instancesDir(), name)
+		if !processAlive(pid) {
+			_ = os.Remove(path)
+			continue
+		}
+		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
 		var inst Instance
 		if json.Unmarshal(data, &inst) != nil || inst.URL == "" {
-			_ = os.Remove(filepath.Join(instancesDir(), entry.Name()))
 			continue
 		}
-		version, alive := healthCheck(inst.URL, timeout)
-		if !alive {
-			_ = os.Remove(filepath.Join(instancesDir(), entry.Name()))
-			continue
-		}
-		livePID := inst.PID
-		if pid, ok := version["pid"].(float64); ok {
-			livePID = int(pid)
-		}
-		if livePID != inst.PID {
-			// A new process can reuse a dead server's port, so the process ID must match.
-			_ = os.Remove(filepath.Join(instancesDir(), entry.Name()))
+		di := DiscoveredInstance{Instance: inst, Source: "registry"}
+		if version, ok := getInstanceJSON(inst.URL, "/api/version", timeout); ok {
+			// Another server listens on the registered port. It is discovered
+			// through its own entry.
+			if livePID, ok := version["pid"].(float64); ok && int(livePID) != inst.PID {
+				continue
+			}
+			di.applyHealth(version)
 		}
 		if seenPorts[inst.Port] {
 			continue
 		}
-		di := DiscoveredInstance{Instance: inst, Source: "registry"}
-		di.PID = livePID
-		di.applyHealth(version)
 		found = append(found, di)
 		seenPorts[inst.Port] = true
 	}
@@ -174,20 +183,15 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 			continue
 		}
 		url := fmt.Sprintf("http://localhost:%d", proc.Port)
-		version, alive := healthCheck(url, timeout)
+		version, alive := getInstanceJSON(url, "/api/version", timeout)
 		if !alive {
 			continue
 		}
 		di := DiscoveredInstance{
-			Instance: Instance{PID: proc.PID, Port: proc.Port, URL: url},
+			Instance: Instance{PID: proc.PID, Port: proc.Port, URL: url, WalletDir: instanceWalletDir(url, timeout)},
 			Source:   "process",
 		}
 		di.applyHealth(version)
-		if cfg := fetchInstanceConfig(url, timeout); cfg != nil {
-			if dir, ok := cfg["wallet_dir"].(string); ok {
-				di.WalletDir = dir
-			}
-		}
 		found = append(found, di)
 		seenPorts[proc.Port] = true
 	}
@@ -203,8 +207,8 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 			}
 		}
 		if !known {
-			if version, alive := healthCheck(active, timeout); alive {
-				di := DiscoveredInstance{Instance: Instance{URL: active}, Source: "active"}
+			if version, alive := getInstanceJSON(active, "/api/version", timeout); alive {
+				di := DiscoveredInstance{Instance: Instance{URL: active, WalletDir: instanceWalletDir(active, timeout)}, Source: "active"}
 				if u, err := url.Parse(active); err == nil {
 					if p, err := strconv.Atoi(u.Port()); err == nil {
 						di.Port = p
@@ -214,11 +218,6 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 					di.PID = int(pid)
 				}
 				di.applyHealth(version)
-				if cfg := fetchInstanceConfig(active, timeout); cfg != nil {
-					if dir, ok := cfg["wallet_dir"].(string); ok {
-						di.WalletDir = dir
-					}
-				}
 				found = append(found, di)
 			}
 		}
@@ -226,6 +225,26 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 
 	sort.Slice(found, func(i, j int) bool { return found[i].Port < found[j].Port })
 	return found
+}
+
+// processAlive reports whether pid names a running process. On Unix, signal 0
+// tests for the process without delivering anything. EPERM means it runs under
+// another user. On Windows, FindProcess opens the process and fails once it
+// has exited.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = proc.Release() }()
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // InstanceForWalletDir returns the running wallet instance that serves the

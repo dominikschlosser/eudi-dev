@@ -86,7 +86,10 @@ func completeCredentialIDs(cmd *cobra.Command, args []string, toComplete string)
 
 	// Loading a missing wallet creates it. Completion must not do that.
 	store, err := openStore()
-	if err != nil || !store.Exists() {
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	if exists, err := store.Exists(); err != nil || !exists {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	w, err := store.LoadOrCreate()

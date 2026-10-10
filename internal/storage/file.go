@@ -16,6 +16,7 @@ package storage
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -23,7 +24,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/gofrs/flock"
@@ -112,8 +112,7 @@ func (s *fileStore) write(key string, data []byte, perm fs.FileMode) (Stamp, err
 	if err := os.Rename(tmp.Name(), target); err != nil {
 		return Stamp{}, err
 	}
-	stamp, _ := s.Stat(key)
-	return stamp, nil
+	return contentStamp(data), nil
 }
 
 func createTemp(dir, base string, perm fs.FileMode) (*os.File, error) {
@@ -147,16 +146,23 @@ func (s *fileStore) Delete(key string) error {
 	return nil
 }
 
-func (s *fileStore) Stat(key string) (Stamp, bool) {
+func (s *fileStore) Stat(key string) (Stamp, error) {
 	key, err := cleanKey(key)
 	if err != nil {
-		return Stamp{}, false
+		return Stamp{}, err
 	}
 	info, err := os.Stat(s.path(key))
-	if err != nil || info.IsDir() {
-		return Stamp{}, false
+	if err != nil {
+		return Stamp{}, err
 	}
-	return fileStamp(info), true
+	if info.IsDir() {
+		return Stamp{}, notExist("stat", key)
+	}
+	data, err := os.ReadFile(s.path(key))
+	if err != nil {
+		return Stamp{}, err
+	}
+	return contentStamp(data), nil
 }
 
 func (s *fileStore) List(prefix string) ([]string, error) {
@@ -184,12 +190,8 @@ func (s *fileStore) List(prefix string) ([]string, error) {
 
 func (s *fileStore) ReadAll(prefix string) (map[string]Blob, error) {
 	blobs := make(map[string]Blob)
-	err := s.walk(prefix, func(key string, info fs.FileInfo, root fs.FS) error {
-		data, err := fs.ReadFile(root, key)
-		if err != nil {
-			return err
-		}
-		blobs[key] = Blob{Data: data, Stamp: fileStamp(info)}
+	err := s.walk(prefix, func(key string, data []byte) error {
+		blobs[key] = Blob{Data: data, Stamp: contentStamp(data)}
 		return nil
 	})
 	if err != nil {
@@ -200,8 +202,8 @@ func (s *fileStore) ReadAll(prefix string) (map[string]Blob, error) {
 
 func (s *fileStore) Stamps(prefix string) (map[string]Stamp, error) {
 	stamps := make(map[string]Stamp)
-	err := s.walk(prefix, func(key string, info fs.FileInfo, _ fs.FS) error {
-		stamps[key] = fileStamp(info)
+	err := s.walk(prefix, func(key string, data []byte) error {
+		stamps[key] = contentStamp(data)
 		return nil
 	})
 	if err != nil {
@@ -210,7 +212,7 @@ func (s *fileStore) Stamps(prefix string) (map[string]Stamp, error) {
 	return stamps, nil
 }
 
-func (s *fileStore) walk(prefix string, visit func(key string, info fs.FileInfo, root fs.FS) error) error {
+func (s *fileStore) walk(prefix string, visit func(key string, data []byte) error) error {
 	prefix, err := cleanPrefix(prefix)
 	if err != nil {
 		return err
@@ -237,16 +239,19 @@ func (s *fileStore) walk(prefix string, visit func(key string, info fs.FileInfo,
 		if d.IsDir() || strings.HasPrefix(d.Name(), tempPrefix) {
 			return nil
 		}
-		info, err := d.Info()
+		data, err := fs.ReadFile(rootFS, p)
 		if err != nil {
 			return err
 		}
-		return visit(p, info, rootFS)
+		return visit(p, data)
 	})
 }
 
-func fileStamp(info fs.FileInfo) Stamp {
-	return Stamp{Version: strconv.FormatInt(info.ModTime().UnixNano(), 10), Size: info.Size()}
+// Modification times are too coarse on some filesystems to tell two writes
+// apart, so the file backend versions a blob by its content.
+func contentStamp(data []byte) Stamp {
+	sum := sha256.Sum256(data)
+	return Stamp{Version: hex.EncodeToString(sum[:]), Size: int64(len(data))}
 }
 
 func (s *fileStore) WriteIf(key string, data []byte, perm fs.FileMode, expected string) (Stamp, error) {
@@ -255,8 +260,12 @@ func (s *fileStore) WriteIf(key string, data []byte, perm fs.FileMode, expected 
 		return Stamp{}, err
 	}
 	defer func() { _ = lock.Close() }()
-	current, ok := s.Stat(key)
-	if (ok && current.Version != expected) || (!ok && expected != "") {
+	current, err := s.Stat(key)
+	exists := err == nil
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return Stamp{}, err
+	}
+	if (exists && current.Version != expected) || (!exists && expected != "") {
 		return Stamp{}, ErrConflict
 	}
 	return s.write(key, data, perm)

@@ -157,20 +157,23 @@ func (s *postgresStore) Delete(key string) error {
 	return nil
 }
 
-func (s *postgresStore) Stat(key string) (Stamp, bool) {
+func (s *postgresStore) Stat(key string) (Stamp, error) {
 	key, err := cleanKey(key)
 	if err != nil {
-		return Stamp{}, false
+		return Stamp{}, err
 	}
 	if err := s.prepare(); err != nil {
-		return Stamp{}, false
+		return Stamp{}, err
 	}
 	var version, size int64
 	err = s.db.QueryRow(`SELECT version, octet_length(data) FROM `+postgresTable+` WHERE key = $1`, key).Scan(&version, &size)
-	if err != nil {
-		return Stamp{}, false
+	if errors.Is(err, sql.ErrNoRows) {
+		return Stamp{}, notExist("stat", key)
 	}
-	return postgresStamp(version, size), true
+	if err != nil {
+		return Stamp{}, fmt.Errorf("reading %s: %w", key, err)
+	}
+	return postgresStamp(version, size), nil
 }
 
 func (s *postgresStore) List(prefix string) ([]string, error) {

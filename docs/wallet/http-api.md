@@ -36,7 +36,7 @@ Protected baseline credentials cannot be deleted or revoked through the API. Ind
 | `GET`    | `/api/credentials/{id}` | None                  | Show one credential (id, format, claims, raw)      | `wallet show <id>`    |
 | `POST`   | `/api/credentials`      | raw credential string | Import a credential (see [Credential import](#credential-import)) | `wallet import`       |
 | `DELETE` | `/api/credentials/{id}` | None                  | Remove a credential by ID (`204` on success)       | `wallet remove <id>`  |
-| `DELETE` | `/api/credentials`      | None                  | Remove all credentials (returns `{"deleted": n}`)  | `wallet remove --all` |
+| `DELETE` | `/api/credentials`      | None                  | Remove all credentials (returns `{"deleted": n, "kept_protected": m}`)  | `wallet remove --all` |
 
 ```bash
 # List credentials, pick one, inspect it, then delete it
@@ -499,7 +499,9 @@ The instance version is shown when a target is selected, in the `VERSION` column
 
 When a live instance serves the same wallet directory and no remote target is configured, the CLI routes commands through that instance's REST API. It prints `Routing through the running wallet instance <url>`, the release and the process ID to stderr. Version incompatibilities are reported there as well.
 
-Use `--remote local` or an explicit `--templates-dir` to bypass routing and access storage directly. While a server is running, prefer routing so the server sees each change immediately.
+Use `--remote local` to bypass routing and access storage directly. While a server is running, prefer routing so the server sees each change immediately.
+
+A running or remote wallet keeps its own store. A command that manages it refuses `--storage`, `--templates-dir` and `--seed`. A remote target from `--remote` or `wallet use` also refuses `--wallet-dir`. Add `--remote local` to use the local store with these flags.
 
 A routed command uses the settings of the running wallet for every step of a flow, including a credential collected later. So it refuses `--mode`, `--haip`, `--arf`, `--key-attestation-level`, `--relying-party-ca`, `--trusted-list-ca` and `--trusted-list`. Set the mode, HAIP, ARF and key attestation level on `wallet serve` or with `PUT /api/config/conformance`. Put CAs and lists on the wallet's trusted lists with `wallet trust`. `wallet trust add-ca --list trusted-list-ca` adds the CA of a list operator.
 
@@ -516,7 +518,7 @@ eudi wallet kill --all               # stop every running instance
 
 `wallet instances list`, `wallet instances use`, and `wallet instances kill` are hidden deprecated aliases.
 
-Each server registers in `~/.eudi-dev/instances/` and removes its entry on shutdown. Discovery checks registry entries and local processes through `GET /api/version`, then removes stale entries. The response contains the release and build ID. `wallet kill` requests shutdown through the API and falls back to SIGTERM for unresponsive local processes.
+Each server registers in `~/.eudi-dev/instances/` and removes its entry on shutdown. Discovery removes an entry only when its process has exited. It asks each instance for its release and build ID through `GET /api/version`. An instance whose process runs but does not answer stays listed without a version, and commands for its wallet directory still route to it. `wallet kill` requests shutdown through the API and falls back to SIGTERM for unresponsive local processes.
 
 Discovery includes local instances and the active remote target. A responding remote target appears with source `active`. The `ACTIVE` column marks the wallet currently managed by the CLI, including automatically routed local instances. JSON output uses the `active` field. An unreachable remote target produces a warning.
 

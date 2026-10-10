@@ -34,13 +34,12 @@ import (
 )
 
 func (s *Server) handleGetCredential(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	cred, ok := s.wallet.GetCredential(id)
-	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential not found"})
+	summary, err := s.management().Credential(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, withPublicImagePaths(r, s.wallet.CredentialSummaryWithBatch(cred)))
+	writeJSON(w, http.StatusOK, withPublicImagePaths(r, summary))
 }
 
 // Use the local status list for managed entries. Otherwise fetch the list referenced
@@ -119,15 +118,25 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleDeleteAllCredentials(w http.ResponseWriter, r *http.Request) {
-	count := s.wallet.ClearCredentials()
-	kept := len(s.wallet.GetCredentials())
-	detail := fmt.Sprintf("Deleted all credentials (%d)", count)
-	if kept > 0 {
-		detail = fmt.Sprintf("Deleted all deletable credentials (%d, kept %d protected)", count, kept)
+	removed, err := s.management().RemoveAllCredentials()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
 	}
-	s.wallet.AddLog("management", detail, true)
-	s.triggerSave()
-	writeJSON(w, http.StatusOK, map[string]int{"deleted": count, "kept_protected": kept})
+	writeJSON(w, http.StatusOK, removed)
+}
+
+// management persists each change under the reload lock, so a concurrent reload
+// cannot drop it.
+func (s *Server) management() *Management {
+	return &Management{wallet: s.wallet, commit: func(change func() error) error {
+		var err error
+		s.saveMutation(func() bool {
+			err = change()
+			return err == nil
+		})
+		return err
+	}}
 }
 
 // IssueAPIRequest is shared by HTTP and local CLI issuance so issue --wallet behaves
@@ -265,24 +274,9 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts, err := req.Options()
+	summary, err := s.management().Issue(req)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-
-	var summary map[string]any
-	var issueErr error
-	s.saveMutation(func() bool {
-		summary, issueErr = s.wallet.IssueSummary(opts)
-		if issueErr != nil {
-			return false
-		}
-		s.wallet.AddLog("management", fmt.Sprintf("Issued %s credential %s", summary["format"], credentialTypeLabel(summary)), true)
-		return true
-	})
-	if issueErr != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": issueErr.Error()})
 		return
 	}
 	writeJSON(w, http.StatusCreated, withPublicImagePaths(r, summary))

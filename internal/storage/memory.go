@@ -89,18 +89,18 @@ func (s *memoryStore) Delete(key string) error {
 	return nil
 }
 
-func (s *memoryStore) Stat(key string) (Stamp, bool) {
+func (s *memoryStore) Stat(key string) (Stamp, error) {
 	key, err := cleanKey(key)
 	if err != nil {
-		return Stamp{}, false
+		return Stamp{}, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	blob, ok := s.blobs[key]
 	if !ok {
-		return Stamp{}, false
+		return Stamp{}, notExist("stat", key)
 	}
-	return blob.stamp(), true
+	return blob.stamp(), nil
 }
 
 func (s *memoryStore) List(prefix string) ([]string, error) {

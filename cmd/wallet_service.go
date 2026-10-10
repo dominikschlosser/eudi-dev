@@ -39,7 +39,7 @@ type walletService interface {
 	ImportCredential(raw string) (map[string]any, error)
 	RefreshCredential(id string) (map[string]any, error)
 	RemoveCredential(id string) error
-	RemoveAllCredentials() (int, error)
+	RemoveAllCredentials() (wallet.RemovedCredentials, error)
 	Issue(req map[string]any) (map[string]any, error)
 	Logs() ([]wallet.LogEntry, error)
 	ClearLogs() error
@@ -118,7 +118,11 @@ func (r *remoteWallet) RefreshCredential(id string) (map[string]any, error) {
 
 func (r *remoteWallet) RemoveCredential(id string) error { return r.c.RemoveCredential(id) }
 
-func (r *remoteWallet) RemoveAllCredentials() (int, error) { return r.c.RemoveAllCredentials() }
+func (r *remoteWallet) RemoveAllCredentials() (wallet.RemovedCredentials, error) {
+	var out wallet.RemovedCredentials
+	err := r.c.RemoveAllCredentials(&out)
+	return out, err
+}
 
 func (r *remoteWallet) Issue(req map[string]any) (map[string]any, error) { return r.c.Issue(req) }
 
@@ -299,21 +303,27 @@ type localWallet struct {
 
 func (l *localWallet) URL() string { return "" }
 
+// management loads the wallet and runs the operations that the HTTP API runs.
+func (l *localWallet) management() (*wallet.Management, *wallet.Wallet, *wallet.WalletStore, error) {
+	w, store, err := l.load()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return wallet.NewManagement(w, func() error {
+		if err := store.Save(w); err != nil {
+			return fmt.Errorf("saving wallet: %w", err)
+		}
+		return nil
+	}), w, store, nil
+}
+
 func (l *localWallet) Credentials() ([]map[string]any, error) {
-	w, _, err := l.load()
+	m, _, _, err := l.management()
 	if err != nil {
 		return nil, err
 	}
-	// Collapse batches just as the HTTP listing does so local and remote output agree.
-	creds := w.ListedCredentials()
-	wallet.SortCredentialsNewestFirst(creds)
-	summaries := make([]map[string]any, len(creds))
-	for i, c := range creds {
-		summaries[i] = w.CredentialSummaryWithBatch(c)
-		// Omit raw credentials and claim values to match the HTTP listing.
-		wallet.TrimCredentialListing(summaries[i])
-	}
-	return summaries, nil
+	listing, _ := m.CredentialListing(0, 0)
+	return listing, nil
 }
 
 func (l *localWallet) RefreshCredential(id string) (map[string]any, error) {
@@ -347,63 +357,39 @@ func (l *localWallet) DeferredIssuances() ([]map[string]any, error) {
 }
 
 func (l *localWallet) Credential(id string) (map[string]any, error) {
-	w, _, err := l.load()
+	m, _, _, err := l.management()
 	if err != nil {
 		return nil, err
 	}
-	cred, ok := w.GetCredential(id)
-	if !ok {
-		return nil, fmt.Errorf("credential %s not found", id)
-	}
-	return w.CredentialSummaryWithBatch(cred), nil
+	return m.Credential(id)
 }
 
 func (l *localWallet) ImportCredential(raw string) (map[string]any, error) {
-	w, store, err := l.load()
+	m, _, _, err := l.management()
 	if err != nil {
 		return nil, err
 	}
-	imported, err := w.ImportCredential(raw)
-	if err != nil {
-		return nil, fmt.Errorf("importing credential: %w", err)
-	}
-	if err := store.Save(w); err != nil {
-		return nil, fmt.Errorf("saving wallet: %w", err)
-	}
-	return w.CredentialSummaryWithStatus(*imported), nil
+	return m.ImportCredential(raw)
 }
 
 func (l *localWallet) RemoveCredential(id string) error {
-	w, store, err := l.load()
+	m, _, _, err := l.management()
 	if err != nil {
 		return err
 	}
-	if w.IsProtected(id) {
-		return fmt.Errorf("credential %s is protected: remove it from the wallet file to delete it", id)
-	}
-	if !w.RemoveCredential(id) {
-		return fmt.Errorf("credential %s not found", id)
-	}
-	if err := store.Save(w); err != nil {
-		return fmt.Errorf("saving wallet: %w", err)
-	}
-	return nil
+	return m.RemoveCredential(id)
 }
 
-func (l *localWallet) RemoveAllCredentials() (int, error) {
-	w, store, err := l.load()
+func (l *localWallet) RemoveAllCredentials() (wallet.RemovedCredentials, error) {
+	m, _, _, err := l.management()
 	if err != nil {
-		return 0, err
+		return wallet.RemovedCredentials{}, err
 	}
-	count := w.ClearCredentials()
-	if err := store.Save(w); err != nil {
-		return 0, fmt.Errorf("saving wallet: %w", err)
-	}
-	return count, nil
+	return m.RemoveAllCredentials()
 }
 
 func (l *localWallet) Issue(req map[string]any) (map[string]any, error) {
-	w, store, err := l.load()
+	m, w, store, err := l.management()
 	if err != nil {
 		return nil, err
 	}
@@ -415,16 +401,9 @@ func (l *localWallet) Issue(req map[string]any) (map[string]any, error) {
 	if err := json.Unmarshal(data, &apiReq); err != nil {
 		return nil, fmt.Errorf("building issue request: %w", err)
 	}
-	opts, err := apiReq.Options()
+	summary, err := m.Issue(apiReq)
 	if err != nil {
 		return nil, err
-	}
-	summary, err := w.IssueSummary(opts)
-	if err != nil {
-		return nil, err
-	}
-	if err := store.Save(w); err != nil {
-		return nil, fmt.Errorf("saving wallet: %w", err)
 	}
 	warnIssuedEndpointsOffline(store, w)
 	return summary, nil

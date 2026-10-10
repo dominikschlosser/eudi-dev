@@ -117,11 +117,15 @@ func TestClientEndpoints(t *testing.T) {
 		},
 		{
 			name:  "RemoveAllCredentials",
-			reply: `{"deleted":4}`,
+			reply: `{"deleted":4,"kept_protected":2}`,
 			call: func(c *Client) error {
-				n, err := c.RemoveAllCredentials()
-				if err == nil && n != 4 {
-					t.Errorf("deleted = %d, want 4", n)
+				var out struct {
+					Deleted       int `json:"deleted"`
+					KeptProtected int `json:"kept_protected"`
+				}
+				err := c.RemoveAllCredentials(&out)
+				if err == nil && (out.Deleted != 4 || out.KeptProtected != 2) {
+					t.Errorf("removed = %+v, want 4 deleted and 2 kept", out)
 				}
 				return err
 			},
@@ -476,5 +480,56 @@ func TestPresentSendsTheSessionTranscript(t *testing.T) {
 	}
 	if !strings.Contains(r.body, `"session_transcript":"iso"`) {
 		t.Errorf("Present body = %q, want the session transcript", r.body)
+	}
+}
+
+// An identifier stays one path segment, whatever characters it holds.
+func TestClientEscapesEveryIdentifierSegment(t *testing.T) {
+	const id = "a/b?c#d e"
+	got := make(chan string, 16)
+	mux := http.NewServeMux()
+	for _, pattern := range []string{
+		"GET /api/credentials/{id}",
+		"POST /api/credentials/{id}/refresh",
+		"POST /api/credentials/{id}/status",
+		"DELETE /api/credentials/{id}",
+		"GET /api/templates/{id}",
+		"PUT /api/templates/{id}",
+		"DELETE /api/templates/{id}",
+		"GET /api/offers/{id}",
+		"POST /api/deferred/{id}/collect",
+		"DELETE /api/deferred/{id}",
+		"GET /api/certificates/{id}",
+	} {
+		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+			got <- r.PathValue("id")
+			w.Write([]byte(`{}`))
+		})
+	}
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	c := NewClient(srv.URL)
+
+	calls := map[string]func() error{
+		"Credential":          func() error { _, err := c.Credential(id); return err },
+		"RefreshCredential":   func() error { _, err := c.RefreshCredential(id); return err },
+		"SetCredentialStatus": func() error { return c.SetCredentialStatus(id, 1) },
+		"RemoveCredential":    func() error { return c.RemoveCredential(id) },
+		"Template":            func() error { _, err := c.Template(id); return err },
+		"PutTemplate":         func() error { _, err := c.PutTemplate(id, map[string]any{}); return err },
+		"DeleteTemplate":      func() error { return c.DeleteTemplate(id) },
+		"OfferStatus":         func() error { _, err := c.OfferStatus(id); return err },
+		"CollectDeferred":     func() error { _, err := c.CollectDeferred(id); return err },
+		"AbandonDeferred":     func() error { _, err := c.AbandonDeferred(id); return err },
+		"Certificate":         func() error { _, err := c.Certificate(id, "pem"); return err },
+	}
+	for name, call := range calls {
+		if err := call(); err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if segment := <-got; segment != id {
+			t.Errorf("%s sent the segment %q, want %q", name, segment, id)
+		}
 	}
 }

@@ -642,12 +642,15 @@ func TestValidateHAIPFindingsInJSON(t *testing.T) {
 // validate reads the catalogue of an existing wallet and creates none.
 func TestValidateCreatesNoWallet(t *testing.T) {
 	resetRemoteTestState(t)
-	catalogueAnchoring("eyJhbGciOiJFUzI1NiJ9.e30.sig~")
+	useLocalTestWallet(t)
+	if _, _, err := catalogueAnchoring("eyJhbGciOiJFUzI1NiJ9.e30.sig~"); err != nil {
+		t.Fatal(err)
+	}
 	store, err := openStore()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if store.Exists() {
-		t.Error("validate created a wallet")
+	if exists, err := store.Exists(); err != nil || exists {
+		t.Errorf("Exists = %v, %v after validate, want no wallet", exists, err)
 	}
 }

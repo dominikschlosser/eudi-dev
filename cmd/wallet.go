@@ -356,11 +356,16 @@ func walletRemoveCmd() *cobra.Command {
 				return err
 			}
 			if all {
-				count, err := svc.RemoveAllCredentials()
+				removed, err := svc.RemoveAllCredentials()
 				if err != nil {
 					return err
 				}
-				printResult(map[string]any{"removed": count}, func() { fmt.Printf("Removed %d credential(s)\n", count) })
+				printResult(map[string]any{"removed": removed.Deleted, "kept_protected": removed.KeptProtected}, func() {
+					fmt.Printf("Removed %d credential(s)\n", removed.Deleted)
+					if removed.KeptProtected > 0 {
+						fmt.Printf("Kept %d protected credential(s)\n", removed.KeptProtected)
+					}
+				})
 				return nil
 			}
 			if err := svc.RemoveCredential(args[0]); err != nil {

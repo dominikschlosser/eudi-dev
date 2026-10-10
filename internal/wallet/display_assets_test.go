@@ -87,16 +87,16 @@ func TestDisplayImagesStoredAsAssetsBesideWallet(t *testing.T) {
 // Identical image content produces one stored asset and one reference.
 func TestStoreDisplayAssetDedupes(t *testing.T) {
 	store := NewWalletStore(t.TempDir())
-	refA, okA := store.storeDisplayAsset(tinyPNGDataURI)
-	refB, okB := store.storeDisplayAsset(tinyPNGDataURI)
-	if !okA || !okB || refA != refB {
+	refA, okA, errA := store.storeDisplayAsset(tinyPNGDataURI)
+	refB, okB, errB := store.storeDisplayAsset(tinyPNGDataURI)
+	if errA != nil || errB != nil || !okA || !okB || refA != refB {
 		t.Fatalf("expected one shared reference, got %q and %q", refA, refB)
 	}
 	entries, _ := store.Backend().List(store.key("assets"))
 	if len(entries) != 1 {
 		t.Fatalf("expected a single asset file, got %d", len(entries))
 	}
-	if ref, converted := store.storeDisplayAsset("https://issuer.example/logo.svg"); converted || ref != "https://issuer.example/logo.svg" {
+	if ref, converted, err := store.storeDisplayAsset("https://issuer.example/logo.svg"); err != nil || converted || ref != "https://issuer.example/logo.svg" {
 		t.Fatalf("an external URL should pass through unchanged, got %q converted=%v", ref, converted)
 	}
 }
@@ -129,9 +129,9 @@ func TestAdhocDisplayImagesKeepsTheURL(t *testing.T) {
 
 func TestPruneUnreferencedAssets(t *testing.T) {
 	store := NewWalletStore(t.TempDir())
-	usedRef, ok1 := store.storeDisplayAsset(tinyPNGDataURI)
-	orphanRef, ok2 := store.storeDisplayAsset("data:image/png;base64," + base64.StdEncoding.EncodeToString(tinyPNG))
-	if !ok1 || !ok2 || usedRef == orphanRef {
+	usedRef, ok1, err1 := store.storeDisplayAsset(tinyPNGDataURI)
+	orphanRef, ok2, err2 := store.storeDisplayAsset("data:image/png;base64," + base64.StdEncoding.EncodeToString(tinyPNG))
+	if err1 != nil || err2 != nil || !ok1 || !ok2 || usedRef == orphanRef {
 		t.Fatalf("expected two distinct assets, got %q and %q", usedRef, orphanRef)
 	}
 	if entries, _ := store.Backend().List(store.key("assets")); len(entries) != 2 {

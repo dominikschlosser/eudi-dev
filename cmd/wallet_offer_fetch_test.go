@@ -60,6 +60,9 @@ func TestRemoteAcceptLeavesTheOfferForTheWallet(t *testing.T) {
 	previous := remoteFlag
 	remoteFlag = walletSrv.URL
 	t.Cleanup(func() { remoteFlag = previous })
+	previousWalletDir := walletDir
+	walletDir = ""
+	t.Cleanup(func() { walletDir = previousWalletDir })
 	noOpen = true
 	t.Cleanup(func() { noOpen = false })
 

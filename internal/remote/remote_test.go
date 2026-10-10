@@ -15,10 +15,12 @@
 package remote
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"testing"
 	"time"
@@ -154,25 +156,40 @@ func indexOf(s, sub string) int {
 	return -1
 }
 
-func TestDiscoverRegistryAndPrune(t *testing.T) {
-	withTempConfigDir(t)
+// exitedPID returns the process ID of a child that has exited.
+func exitedPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	return cmd.Process.Pid
+}
 
+func versionServer(t *testing.T, pid int) (*httptest.Server, int) {
+	t.Helper()
 	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/version" {
 			http.NotFound(w, r)
 			return
 		}
-		w.Write([]byte(`{"build_id": "test-build", "pid": 4242}`))
+		fmt.Fprintf(w, `{"build_id": "test-build", "pid": %d}`, pid)
 	}))
-	defer live.Close()
-
+	t.Cleanup(live.Close)
 	liveURL, _ := url.Parse(live.URL)
-	livePort, _ := strconv.Atoi(liveURL.Port())
+	port, _ := strconv.Atoi(liveURL.Port())
+	return live, port
+}
 
-	if err := RegisterInstance(Instance{PID: 4242, Port: livePort, URL: live.URL, WalletDir: "/tmp/w", StartedAt: time.Now()}); err != nil {
+func TestDiscoverRegistryAndPrune(t *testing.T) {
+	withTempConfigDir(t)
+	self, dead := os.Getpid(), exitedPID(t)
+	live, livePort := versionServer(t, self)
+
+	if err := RegisterInstance(Instance{PID: self, Port: livePort, URL: live.URL, WalletDir: "/tmp/w", StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := RegisterInstance(Instance{PID: 9999, Port: 1, URL: "http://localhost:1", StartedAt: time.Now()}); err != nil {
+	if err := RegisterInstance(Instance{PID: dead, Port: 1, URL: "http://localhost:1", StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -186,39 +203,47 @@ func TestDiscoverRegistryAndPrune(t *testing.T) {
 	if len(registryHits) != 1 {
 		t.Fatalf("expected exactly the live registry instance, got %v", found)
 	}
-	if registryHits[0].PID != 4242 || registryHits[0].BuildID != "test-build" || registryHits[0].WalletDir != "/tmp/w" {
+	if registryHits[0].PID != self || registryHits[0].BuildID != "test-build" || registryHits[0].WalletDir != "/tmp/w" {
 		t.Errorf("unexpected instance: %+v", registryHits[0])
 	}
 
-	if _, err := os.Stat(instanceFile(9999)); !os.IsNotExist(err) {
-		t.Error("stale instance file not pruned")
+	if _, err := os.Stat(instanceFile(dead)); !os.IsNotExist(err) {
+		t.Error("the entry of an exited process was not pruned")
 	}
-	if _, err := os.Stat(instanceFile(4242)); err != nil {
+	if _, err := os.Stat(instanceFile(self)); err != nil {
 		t.Error("live instance file must remain")
 	}
 
-	UnregisterInstance(4242)
-	if _, err := os.Stat(instanceFile(4242)); !os.IsNotExist(err) {
+	UnregisterInstance(self)
+	if _, err := os.Stat(instanceFile(self)); !os.IsNotExist(err) {
 		t.Error("unregister did not remove the instance file")
+	}
+}
+
+// A server that is too busy to answer the health check still owns its wallet
+// directory. Only an exited process loses its entry.
+func TestDiscoverKeepsALiveInstanceThatDoesNotAnswer(t *testing.T) {
+	withTempConfigDir(t)
+	walletDir := t.TempDir()
+	if err := RegisterInstance(Instance{PID: os.Getpid(), Port: 1, URL: "http://localhost:1", WalletDir: walletDir, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	inst := InstanceForWalletDir(walletDir, 200*time.Millisecond)
+	if inst == nil || inst.PID != os.Getpid() {
+		t.Fatalf("InstanceForWalletDir = %+v, want the registered live process", inst)
+	}
+	if _, err := os.Stat(instanceFile(os.Getpid())); err != nil {
+		t.Fatalf("the entry of a live process was removed: %v", err)
 	}
 }
 
 func TestInstanceForWalletDir(t *testing.T) {
 	withTempConfigDir(t)
 	walletDir := t.TempDir()
+	self := os.Getpid()
+	live, port := versionServer(t, self)
 
-	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/version" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Write([]byte(`{"build_id": "b", "pid": 7777}`))
-	}))
-	defer live.Close()
-	liveURL, _ := url.Parse(live.URL)
-	port, _ := strconv.Atoi(liveURL.Port())
-
-	if err := RegisterInstance(Instance{PID: 7777, Port: port, URL: live.URL, WalletDir: walletDir, StartedAt: time.Now()}); err != nil {
+	if err := RegisterInstance(Instance{PID: self, Port: port, URL: live.URL, WalletDir: walletDir, StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -226,7 +251,7 @@ func TestInstanceForWalletDir(t *testing.T) {
 	if inst == nil {
 		t.Fatal("expected to find the instance for its wallet dir")
 	}
-	if inst.PID != 7777 || inst.URL != live.URL {
+	if inst.PID != self || inst.URL != live.URL {
 		t.Errorf("unexpected instance: %+v", inst)
 	}
 
@@ -240,24 +265,15 @@ func TestInstanceForWalletDir(t *testing.T) {
 
 func TestDiscoverDedupesStaleRegistryFilesOnSamePort(t *testing.T) {
 	withTempConfigDir(t)
+	self, dead := os.Getpid(), exitedPID(t)
+	live, port := versionServer(t, self)
 
-	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/version" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Write([]byte(`{"build_id": "b", "pid": 5555}`))
-	}))
-	defer live.Close()
-	liveURL, _ := url.Parse(live.URL)
-	port, _ := strconv.Atoi(liveURL.Port())
-
-	// The current server reused the old port, so both registry files reach it.
-	// Discovery must remove the stale process entry.
-	if err := RegisterInstance(Instance{PID: 1111, Port: port, URL: live.URL, StartedAt: time.Now()}); err != nil {
+	// The current server reused the port of an exited one, so both registry
+	// files name it. Discovery removes the entry of the exited process.
+	if err := RegisterInstance(Instance{PID: dead, Port: port, URL: live.URL, StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := RegisterInstance(Instance{PID: 5555, Port: port, URL: live.URL, StartedAt: time.Now()}); err != nil {
+	if err := RegisterInstance(Instance{PID: self, Port: port, URL: live.URL, StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -266,18 +282,18 @@ func TestDiscoverDedupesStaleRegistryFilesOnSamePort(t *testing.T) {
 	for _, di := range found {
 		if di.Port == port {
 			count++
-			if di.PID != 5555 {
-				t.Errorf("expected live pid 5555, got %d", di.PID)
+			if di.PID != self {
+				t.Errorf("expected live pid %d, got %d", self, di.PID)
 			}
 		}
 	}
 	if count != 1 {
 		t.Fatalf("expected exactly one instance for the port, got %d (%v)", count, found)
 	}
-	if _, err := os.Stat(instanceFile(1111)); !os.IsNotExist(err) {
+	if _, err := os.Stat(instanceFile(dead)); !os.IsNotExist(err) {
 		t.Error("stale registry file for the dead pid not pruned")
 	}
-	if _, err := os.Stat(instanceFile(5555)); err != nil {
+	if _, err := os.Stat(instanceFile(self)); err != nil {
 		t.Error("live instance file must remain")
 	}
 }

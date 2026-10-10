@@ -15,13 +15,9 @@
 package cmd
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -95,13 +91,6 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		}
 		if err := w.EnsureRequestEncryptionKey(); err != nil {
 			return err
-		}
-		handled, err := tryPresentViaRunningServer(uri, opts)
-		if err != nil {
-			return err
-		}
-		if handled {
-			return nil
 		}
 		port, err := resolvePresentationPort(opts.port, opts.autoAccept, opts.portExplicit)
 		if err != nil {
@@ -264,130 +253,6 @@ func findFreePresentationPortPair(start int) (int, error) {
 	return 0, fmt.Errorf("could not find free adjacent presentation ports near %d", start)
 }
 
-// tryPresentViaRunningServer hands the request to a wallet server on this
-// machine. The instance registry only knows servers of the same wallet
-// directory, while the URL handler (url-handler.sh) points to the server that
-// registered it. --remote local keeps the flow in this process.
-func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error) {
-	if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") {
-		return false, nil
-	}
-	var baseURL string
-	for _, candidate := range runningWalletServerBaseURLs(opts) {
-		if isRunningWalletServer(candidate) {
-			baseURL = candidate
-			break
-		}
-	}
-	if baseURL == "" {
-		return false, nil
-	}
-
-	if err := checkRemoteOutboundFlags(); err != nil {
-		return true, err
-	}
-	if err := checkRemoteConformanceFlags(opts.conformanceFlags); err != nil {
-		return true, err
-	}
-	payload := runningWalletPresentationPayload(uri, opts)
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return false, fmt.Errorf("marshaling running-wallet request: %w", err)
-	}
-
-	resp, err := http.Post(baseURL+"/api/presentations", "application/json", bytes.NewReader(body))
-	if err != nil {
-		return true, fmt.Errorf("submitting presentation to running wallet server: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Status           string                  `json:"status"`
-		Error            string                  `json:"error"`
-		ErrorDescription string                  `json:"error_description"`
-		Response         wallet.DirectPostResult `json:"response"`
-		VPTokenKeys      []string                `json:"vp_token_keys"`
-	}
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return true, fmt.Errorf("reading running-wallet response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return true, fmt.Errorf("running wallet server returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return true, fmt.Errorf("decoding running-wallet response: %w", err)
-	}
-
-	// The document prints before any error (ADR 0020).
-	if jsonOutput {
-		fmt.Println(string(raw))
-	}
-	switch result.Status {
-	case "submitted":
-		if !jsonOutput {
-			green := color.New(color.FgGreen)
-			green.Fprintf(humanOut(), "  Submitted: %s\n", wallet.FormatDirectPostResult(&result.Response))
-			if len(result.VPTokenKeys) > 0 {
-				fmt.Fprintf(humanOut(), "  VP tokens: %v\n", result.VPTokenKeys)
-			}
-		}
-		return true, verifierRejection(&result.Response)
-	case "denied":
-		return true, fmt.Errorf("presentation denied")
-	case "no_match":
-		if result.Error != "" {
-			return true, fmt.Errorf("%s", result.Error)
-		}
-		return true, fmt.Errorf("no matching credentials found")
-	case "error", "refused":
-		if result.ErrorDescription != "" {
-			return true, fmt.Errorf("%s: %s", result.Error, result.ErrorDescription)
-		}
-		if result.Error != "" {
-			return true, fmt.Errorf("%s", result.Error)
-		}
-		return true, fmt.Errorf("running wallet server returned an authorization error")
-	default:
-		if result.Error != "" {
-			return true, fmt.Errorf("%s", result.Error)
-		}
-		return true, fmt.Errorf("unexpected running-wallet response status %q", result.Status)
-	}
-}
-
-func runningWalletPresentationPayload(uri string, opts dispatchOID4Opts) map[string]any {
-	payload := map[string]any{
-		"uri": uri,
-	}
-	if opts.autoAccept {
-		payload["auto_accept"] = true
-	}
-	if opts.sessionTranscript != "" && opts.sessionTranscript != string(wallet.SessionTranscriptOID4VP) {
-		payload["session_transcript"] = opts.sessionTranscript
-	}
-	return payload
-}
-
-func runningWalletServerBaseURLs(opts dispatchOID4Opts) []string {
-	seen := map[string]bool{}
-	add := func(url string, urls []string) []string {
-		if strings.TrimSpace(url) == "" || seen[url] {
-			return urls
-		}
-		seen[url] = true
-		return append(urls, url)
-	}
-
-	var urls []string
-	if !opts.portExplicit {
-		urls = add(registeredWalletListenerBaseURL(), urls)
-	}
-	urls = add(fmt.Sprintf("http://localhost:%d", effectivePresentationPort(opts.port)), urls)
-	return urls
-}
-
 func registeredWalletListenerBaseURL() string {
 	raw, err := os.ReadFile(filepath.Join(config.BaseDir(), "url-handler.sh"))
 	if err != nil {
@@ -458,15 +323,6 @@ func isLocalhostIssuerURL(raw string) bool {
 		return false
 	}
 	return u.Scheme == "https" && u.Hostname() == "localhost"
-}
-
-func isRunningWalletServer(baseURL string) bool {
-	resp, err := http.Get(baseURL + "/api/log")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
 }
 
 func effectivePresentationPort(port int) int {

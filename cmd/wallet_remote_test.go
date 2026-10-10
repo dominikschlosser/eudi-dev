@@ -62,8 +62,19 @@ func resetRemoteTestState(t *testing.T) {
 	t.Helper()
 	t.Setenv("OID4VC_DEV_HOME", t.TempDir())
 	resetTemplateTestState(t)
+	// A remote wallet refuses --wallet-dir.
+	walletDir = ""
 	remoteFlag = ""
 	t.Cleanup(func() { remoteFlag = "" })
+}
+
+// useLocalTestWallet gives the test its own wallet directory. The memory
+// backend keeps one store per process, and the default directory would share
+// its keys with other tests.
+func useLocalTestWallet(t *testing.T) {
+	t.Helper()
+	walletDir = t.TempDir()
+	t.Cleanup(func() { walletDir = "" })
 }
 
 func TestRemoteWalletLifecycleViaCLI(t *testing.T) {
@@ -117,6 +128,7 @@ func TestRemoteWalletLifecycleViaCLI(t *testing.T) {
 
 func TestAutoRouteThroughInstanceForSameWalletDir(t *testing.T) {
 	resetRemoteTestState(t)
+	useLocalTestWallet(t)
 	url, _ := startRemoteTestWallet(t)
 
 	// The registry says this running server owns the local wallet dir. The
@@ -144,8 +156,8 @@ func TestAutoRouteThroughInstanceForSameWalletDir(t *testing.T) {
 	if len(creds) != 1 {
 		t.Fatalf("expected the credential on the running instance, got %d", len(creds))
 	}
-	if wallet.NewWalletStore(walletDir).Exists() {
-		t.Error("auto-routed issue must not write the local store")
+	if exists, err := wallet.NewWalletStore(walletDir).Exists(); err != nil || exists {
+		t.Errorf("local store Exists = %v, %v, want no wallet after an auto-routed issue", exists, err)
 	}
 
 	resetIssueFlagChanges(t)
@@ -166,18 +178,26 @@ func TestAutoRouteThroughInstanceForSameWalletDir(t *testing.T) {
 		t.Fatalf("instance credentials must be untouched by --remote local: %v %v", creds, err)
 	}
 
+	// The running wallet reads its own templates, so a routed command refuses
+	// --templates-dir.
 	resetIssueFlagChanges(t)
 	tplDir := t.TempDir()
 	rootCmd.SetArgs([]string{"issue", "sdjwt", "--wallet", "--template", "german-pid-sdjwt", "--templates-dir", tplDir})
+	if err := rootCmd.Execute(); err == nil || !strings.Contains(err.Error(), "--templates-dir") || !strings.Contains(err.Error(), "--remote local") {
+		t.Fatalf("routed issue with --templates-dir: %v, want a refusal naming the flag", err)
+	}
+
+	resetIssueFlagChanges(t)
+	rootCmd.SetArgs([]string{"issue", "sdjwt", "--wallet", "--template", "german-pid-sdjwt", "--templates-dir", tplDir, "--remote", "local"})
 	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("issue with --templates-dir: %v", err)
+		t.Fatalf("issue with --templates-dir and --remote local: %v", err)
 	}
 	w, err = store.LoadOrCreate()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(w.GetCredentials()) != 2 {
-		t.Fatalf("expected 2 local credentials after --templates-dir issue, got %d", len(w.GetCredentials()))
+		t.Fatalf("expected 2 local credentials after the local --templates-dir issue, got %d", len(w.GetCredentials()))
 	}
 }
 
@@ -347,7 +367,7 @@ func TestWalletKillViaShutdownEndpoint(t *testing.T) {
 	srv.ShutdownFunc = func() { close(shutdownCalled) }
 
 	port := portFromURL(t, url)
-	if err := remote.RegisterInstance(remote.Instance{PID: 999999, Port: port, URL: url, StartedAt: time.Now()}); err != nil {
+	if err := remote.RegisterInstance(remote.Instance{PID: os.Getpid(), Port: port, URL: url, StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -408,7 +428,7 @@ func TestRemoteShowImportLogsInfoViaCLI(t *testing.T) {
 		t.Fatalf("remote show --decoded: %v", err)
 	}
 
-	if _, err := client.RemoveAllCredentials(); err != nil {
+	if err := client.RemoveAllCredentials(nil); err != nil {
 		t.Fatal(err)
 	}
 	credFile := filepath.Join(t.TempDir(), "cred.txt")
@@ -469,6 +489,7 @@ func TestRemoteTemplatesListShowUseRemoteStore(t *testing.T) {
 
 func TestCompletionFunctions(t *testing.T) {
 	resetRemoteTestState(t)
+	useLocalTestWallet(t)
 
 	names, directive := completeTemplateNames(nil, nil, "")
 	if directive != cobra.ShellCompDirectiveNoFileComp {
@@ -484,8 +505,8 @@ func TestCompletionFunctions(t *testing.T) {
 	if len(ids) != 0 {
 		t.Errorf("expected no completions without a wallet, got %v", ids)
 	}
-	if wallet.NewWalletStore(walletDir).Exists() {
-		t.Error("completion must not create a wallet store")
+	if exists, err := wallet.NewWalletStore(walletDir).Exists(); err != nil || exists {
+		t.Errorf("local store Exists = %v, %v, want no wallet after completion", exists, err)
 	}
 
 	url, _ := startRemoteTestWallet(t)
@@ -499,7 +520,7 @@ func TestCompletionFunctions(t *testing.T) {
 		t.Errorf("expected remote template in completion, got %v", names)
 	}
 
-	if err := remote.RegisterInstance(remote.Instance{PID: 424242, Port: portFromURL(t, url), URL: url, StartedAt: time.Now()}); err != nil {
+	if err := remote.RegisterInstance(remote.Instance{PID: os.Getpid(), Port: portFromURL(t, url), URL: url, StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	targets, _ := completeUseTargets(nil, nil, "")
@@ -791,5 +812,38 @@ func TestMatchInstanceAmbiguousPort(t *testing.T) {
 	}
 	if _, err := matchInstance(instances, "8085"); err == nil {
 		t.Fatal("expected an ambiguity error when two instances share a port")
+	}
+}
+
+// A remote wallet keeps its own store. Every remote path refuses the flags that
+// shape the local store instead of ignoring them.
+func TestRemoteWalletRefusesLocalStateFlags(t *testing.T) {
+	resetRemoteTestState(t)
+	url, _ := startRemoteTestWallet(t)
+	if _, err := remote.SetActive(url); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		flag string
+		set  *string
+	}{
+		{"--wallet-dir", &walletDir},
+		{"--storage", &storageSpec},
+		{"--templates-dir", &templatesDir},
+		{"--seed", &keySeed},
+	} {
+		t.Run(tc.flag, func(t *testing.T) {
+			*tc.set = "x"
+			t.Cleanup(func() { *tc.set = "" })
+			_, err := remoteClientIfConfigured()
+			if err == nil || !strings.Contains(err.Error(), tc.flag) || !strings.Contains(err.Error(), url) {
+				t.Fatalf("remoteClientIfConfigured = %v, want a refusal naming %s", err, tc.flag)
+			}
+			remoteFlag = "local"
+			t.Cleanup(func() { remoteFlag = "" })
+			if c, err := remoteClientIfConfigured(); err != nil || c != nil {
+				t.Fatalf("with --remote local: client %v, err %v, want the local store", c, err)
+			}
+		})
 	}
 }

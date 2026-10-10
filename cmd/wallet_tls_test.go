@@ -104,6 +104,9 @@ func TestRemoteWalletTLSFlagsAreNotIgnored(t *testing.T) {
 	originalVerify, originalChanged, originalRemote := walletTLSVerify, flag.Changed, remoteFlag
 	t.Cleanup(func() { walletTLSVerify, flag.Changed, remoteFlag = originalVerify, originalChanged, originalRemote })
 	remoteFlag = remoteServer.URL
+	previousWalletDir := walletDir
+	walletDir = ""
+	t.Cleanup(func() { walletDir = previousWalletDir })
 	if err := walletCmd.PersistentFlags().Set("tls-verify", "false"); err != nil {
 		t.Fatal(err)
 	}

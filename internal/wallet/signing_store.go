@@ -227,10 +227,14 @@ func (s *signingStore) cachedCertificate(identity []byte, ca *x509.Certificate, 
 func (s *signingStore) retainCertificate(cert *x509.Certificate) (*x509.Certificate, error) {
 	digest := sha256.Sum256(cert.Raw)
 	key := path.Join(s.prefix, "certificate-der", fmt.Sprintf("%x.der", digest))
-	if _, exists := s.backend.Stat(key); !exists {
-		if _, err := s.backend.WriteIf(key, cert.Raw, 0644, ""); err != nil && !errors.Is(err, storage.ErrConflict) {
-			return nil, fmt.Errorf("publishing signing certificate: %w", err)
+	_, err := s.backend.Stat(key)
+	if errors.Is(err, fs.ErrNotExist) {
+		if _, err = s.backend.WriteIf(key, cert.Raw, 0644, ""); errors.Is(err, storage.ErrConflict) {
+			err = nil
 		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("publishing signing certificate: %w", err)
 	}
 	return cert, nil
 }

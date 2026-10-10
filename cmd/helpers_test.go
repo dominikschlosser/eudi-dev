@@ -17,7 +17,6 @@ package cmd
 import (
 	"crypto"
 	"fmt"
-	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -252,62 +251,6 @@ func TestIsLocalWalletIssuerURL(t *testing.T) {
 	}
 	if isLocalWalletIssuerURL("https://wallet-test.ngrok.dev") {
 		t.Fatal("public issuer URL should not be considered local")
-	}
-}
-
-func TestRunningWalletServerBaseURLsPrefersRegisteredWhenPortNotExplicit(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	handlerDir := filepath.Join(home, ".oid4vc-dev")
-	if err := os.MkdirAll(handlerDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(handlerDir, "url-handler.sh"), []byte(`LISTENER="http://localhost:8091"`), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	got := runningWalletServerBaseURLs(dispatchOID4Opts{port: config.DefaultWalletPort})
-	want := []string{"http://localhost:8091", "http://localhost:8085"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("runningWalletServerBaseURLs() = %#v, want %#v", got, want)
-	}
-}
-
-func TestRunningWalletServerBaseURLsHonorsExplicitPort(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	handlerDir := filepath.Join(home, ".oid4vc-dev")
-	if err := os.MkdirAll(handlerDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(handlerDir, "url-handler.sh"), []byte(`LISTENER="http://localhost:8091"`), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	got := runningWalletServerBaseURLs(dispatchOID4Opts{port: 8123, portExplicit: true})
-	want := []string{"http://localhost:8123"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("runningWalletServerBaseURLs() = %#v, want %#v", got, want)
-	}
-}
-
-func TestRunningWalletPresentationPayloadOmitsDefaultOverrides(t *testing.T) {
-	got := runningWalletPresentationPayload("openid4vp://request", dispatchOID4Opts{
-		sessionTranscript: string(wallet.SessionTranscriptOID4VP),
-	})
-	if want := map[string]any{"uri": "openid4vp://request"}; !maps.Equal(got, want) {
-		t.Fatalf("payload %#v, want %#v", got, want)
-	}
-}
-
-func TestRunningWalletPresentationPayloadIncludesNonDefaultOverrides(t *testing.T) {
-	got := runningWalletPresentationPayload("openid4vp://request", dispatchOID4Opts{
-		autoAccept:        true,
-		sessionTranscript: string(wallet.SessionTranscriptISO),
-	})
-	want := map[string]any{"uri": "openid4vp://request", "auto_accept": true, "session_transcript": string(wallet.SessionTranscriptISO)}
-	if !maps.Equal(got, want) {
-		t.Fatalf("payload %#v, want %#v", got, want)
 	}
 }
 

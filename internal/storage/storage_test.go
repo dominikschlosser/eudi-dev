@@ -57,8 +57,8 @@ func TestStore_ReadWriteDeleteRoundTrip(t *testing.T) {
 			if _, err := store.Read(key); !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("missing key: got %v, want fs.ErrNotExist", err)
 			}
-			if _, ok := store.Stat(key); ok {
-				t.Fatal("Stat reports a missing key")
+			if _, err := store.Stat(key); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("Stat of a missing key: got %v, want fs.ErrNotExist", err)
 			}
 
 			if _, err := store.Write(key, []byte("one"), 0o600); err != nil {
@@ -68,9 +68,9 @@ func TestStore_ReadWriteDeleteRoundTrip(t *testing.T) {
 			if err != nil || string(data) != "one" {
 				t.Fatalf("Read = %q, %v", data, err)
 			}
-			first, ok := store.Stat(key)
-			if !ok || first.Size != 3 {
-				t.Fatalf("Stat = %+v, %v", first, ok)
+			first, err := store.Stat(key)
+			if err != nil || first.Size != 3 {
+				t.Fatalf("Stat = %+v, %v", first, err)
 			}
 
 			if _, err := store.Write(key, []byte("second"), 0o600); err != nil {
@@ -83,16 +83,11 @@ func TestStore_ReadWriteDeleteRoundTrip(t *testing.T) {
 			if data, _ := store.Read(key); string(data) != "second" {
 				t.Fatalf("Read after rewrite = %q", data)
 			}
-			// A rewrite with the same size still changes the stamp. The file
-			// backend uses the modification time, which coarse filesystems
-			// round, so it is left out here.
-			if kind != KindFile {
-				if _, err := store.Write(key, []byte("SECOND"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				if third, _ := store.Stat(key); third == second {
-					t.Fatal("stamp did not change on a same-size rewrite")
-				}
+			if _, err := store.Write(key, []byte("SECOND"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if third, _ := store.Stat(key); third == second {
+				t.Fatal("stamp did not change on a same-size rewrite")
 			}
 
 			if err := store.Delete(key); err != nil {
@@ -212,7 +207,7 @@ func TestStore_WriteIfSerialisesConcurrentIncrements(t *testing.T) {
 					for n := 0; n < 25; n++ {
 						for {
 							next, expected := 0, ""
-							if stamp, ok := store.Stat(key); ok {
+							if stamp, err := store.Stat(key); err == nil {
 								expected = stamp.Version
 								data, err := store.Read(key)
 								if err != nil {
@@ -400,6 +395,54 @@ func TestFile_ListHidesInFlightWrites(t *testing.T) {
 	names, err := store.List("wallet/assets")
 	if err != nil || !reflect.DeepEqual(names, []string{"a.png"}) {
 		t.Fatalf("List = %v, %v", names, err)
+	}
+}
+
+// Coarse filesystem timestamps give two quick writes the same modification
+// time. WriteIf must still refuse the version read before the second write.
+func TestFile_WriteIfRefusesAVersionFromTheSameTimestampTick(t *testing.T) {
+	root := t.TempDir()
+	store := NewFile(root)
+	stale, err := store.Write("wallet/counter", []byte("aaaa"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "wallet", "counter")
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Write("wallet/counter", []byte("bbbb"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(target, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.WriteIf("wallet/counter", []byte("cccc"), 0o600, stale.Version); !errors.Is(err, ErrConflict) {
+		t.Fatalf("WriteIf with the stale version: %v, want ErrConflict", err)
+	}
+}
+
+// A blob that exists but cannot be read is an error, never a missing key.
+func TestStat_ReportsErrorsOtherThanAMissingKey(t *testing.T) {
+	failing := failingStore{err: errors.New("database unreachable")}
+	if _, err := failing.Stat("wallet/wallet.json"); err == nil || errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Stat on an unreachable backend = %v, want the backend error", err)
+	}
+
+	if os.Geteuid() == 0 {
+		t.Skip("root reads files regardless of their mode")
+	}
+	root := t.TempDir()
+	store := NewFile(root)
+	if _, err := store.Write("wallet/wallet.json", []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(root, "wallet", "wallet.json"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Stat("wallet/wallet.json"); err == nil || errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Stat of an unreadable blob = %v, want a read error", err)
 	}
 }
 

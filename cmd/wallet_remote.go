@@ -38,7 +38,7 @@ var remoteFlag string
 // then the target persisted by `wallet use`. Empty means local management.
 func activeRemoteURL() (string, error) {
 	if strings.TrimSpace(remoteFlag) != "" {
-		if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") {
+		if forcedLocal() {
 			return "", nil
 		}
 		return remote.NormalizeURL(remoteFlag)
@@ -48,19 +48,25 @@ func activeRemoteURL() (string, error) {
 
 // Route through a running server to keep one writer per wallet directory. Selection
 // order is --remote, the saved remote target, then a server for the same directory.
-// --remote local and --templates-dir force direct storage access.
+// --remote local forces direct storage access.
 func remoteClientIfConfigured() (*remote.Client, error) {
 	url, err := activeRemoteURL()
 	if err != nil {
 		return nil, err
 	}
 	if url != "" {
+		if err := refuseLocalStateFlags(url, ""); err != nil {
+			return nil, err
+		}
 		return remoteFlowClient(url), nil
 	}
-	if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") || templatesDir != "" {
+	if forcedLocal() {
 		return nil, nil
 	}
-	if inst := remote.InstanceForWalletDir(resolvedWalletDir(), 500*time.Millisecond); inst != nil {
+	if inst := remote.InstanceForWalletDir(resolvedWalletDir(), instanceProbeTimeout); inst != nil {
+		if err := refuseLocalStateFlags(inst.URL, "wallet-dir"); err != nil {
+			return nil, err
+		}
 		version := inst.Version
 		if version == "" {
 			version = "unknown version"
@@ -74,6 +80,41 @@ func remoteClientIfConfigured() (*remote.Client, error) {
 		return remoteFlowClient(inst.URL), nil
 	}
 	return nil, nil
+}
+
+// instanceProbeTimeout bounds each health check of a registered instance while
+// the CLI picks its target.
+const instanceProbeTimeout = 2 * time.Second
+
+func forcedLocal() bool {
+	return strings.EqualFold(strings.TrimSpace(remoteFlag), "local")
+}
+
+// localStateFlags shape the local wallet store. A remote wallet keeps its own
+// store, so every remote path refuses them.
+var localStateFlags = []struct {
+	name string
+	set  func() bool
+}{
+	{"wallet-dir", func() bool { return walletDir != "" }},
+	{"storage", func() bool { return storageSpec != "" }},
+	{"templates-dir", func() bool { return templatesDir != "" }},
+	{"seed", func() bool { return keySeed != "" }},
+}
+
+// refuseLocalStateFlags reports the local state flags set for a command that
+// manages the wallet at target. selector names the flag that chose target.
+func refuseLocalStateFlags(target, selector string) error {
+	var set []string
+	for _, flag := range localStateFlags {
+		if flag.name != selector && flag.set() {
+			set = append(set, "--"+flag.name)
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	return fmt.Errorf("the wallet at %s keeps its own store, so it can't use %s. Add --remote local to use the local store", target, strings.Join(set, ", "))
 }
 
 // remoteFlowClient builds a client for a remote wallet. A remote wallet's
@@ -237,8 +278,8 @@ func walletPsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ps",
 		Short: "List running wallet instances",
-		Long: "Scans the instance registry and the local process list for running wallet servers and checks " +
-			"that they respond. The active remote target set by `wallet use <url>` is listed too " +
+		Long: "Scans the instance registry and the local process list for running wallet servers and asks " +
+			"each for its version. A registered server whose process runs stays listed when it does not answer. The active remote target set by `wallet use <url>` is listed too " +
 			"when it responds, even when it runs elsewhere (for example in a Docker container). " +
 			"Use `wallet use <url>` to manage one of them and " +
 			"`wallet kill <target>` to stop one.",
@@ -334,7 +375,7 @@ func managedInstanceURL(instances []remote.DiscoveredInstance) string {
 	if url, err := activeRemoteURL(); err == nil && url != "" {
 		return url
 	}
-	if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") || templatesDir != "" {
+	if forcedLocal() {
 		return ""
 	}
 	localDir := resolvedWalletDir()
@@ -497,7 +538,10 @@ func warnServingConfigDivergence(cfg map[string]any) {
 		return
 	}
 	store, err := openStore()
-	if err != nil || !remote.SamePath(instanceDir, store.Dir) || store.Backend().Kind() != storage.KindFile || !store.Exists() {
+	if err != nil || !remote.SamePath(instanceDir, store.Dir) || store.Backend().Kind() != storage.KindFile {
+		return
+	}
+	if exists, err := store.Exists(); err != nil || !exists {
 		return
 	}
 	w, err := store.LoadOrCreate()
