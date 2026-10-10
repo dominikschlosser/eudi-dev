@@ -57,7 +57,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 		credential = raw
 	}
 
-	opts := web.MuxOptions{Credential: credential, Version: Version}
+	// The decoder reads the catalogue of a stored wallet and creates none.
+	store, err := openStore()
+	if err != nil {
+		return err
+	}
+	opts := web.MuxOptions{Credential: credential, Version: Version, WalletStore: store}
 	if serveImprintFile != "" {
 		page, err := imprint.Load(serveImprintFile)
 		if err != nil {

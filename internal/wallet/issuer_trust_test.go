@@ -135,9 +135,11 @@ func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 	}
 }
 
-// ISSU_10 asks for the check of an EAA only when the wallet has the anchors. A
-// list signed by an unknown operator gives none.
-func TestAnEAAWithAnUntrustedListIsNotChecked(t *testing.T) {
+// eaaWithUntrustedList returns a wallet with --arf whose catalogue links an
+// EAA type to a list signed by an unknown operator, and a credential of that
+// type.
+func eaaWithUntrustedList(t *testing.T) (*Wallet, string) {
+	t.Helper()
 	issuer := generateTestWallet(t)
 	result, err := issuer.IssueCredential(IssueOptions{Format: "sdjwt", VCT: "urn:example:badge:1", Claims: map[string]any{"level": "gold"}})
 	if err != nil {
@@ -160,8 +162,35 @@ func TestAnEAAWithAnUntrustedListIsNotChecked(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if findings := w.trustAnchorFindings(receivedCredential(result.Raw)); len(findings) != 0 {
+	return w, result.Raw
+}
+
+// ISSU_10 asks for the check of an EAA only when the wallet has the anchors. A
+// list signed by an unknown operator gives none.
+func TestAnEAAWithAnUntrustedListIsNotChecked(t *testing.T) {
+	w, raw := eaaWithUntrustedList(t)
+	if findings := w.trustAnchorFindings(receivedCredential(raw)); len(findings) != 0 {
 		t.Errorf("findings %v, want none", findings)
+	}
+}
+
+// The catalogue check returns the untrusted EAA list as a warning. The
+// issuance check writes it to the activity log.
+func TestTheCatalogueCheckReturnsAnUntrustedEAAListAsAWarning(t *testing.T) {
+	w, raw := eaaWithUntrustedList(t)
+	logged := len(w.GetLog())
+	anchoring, found := w.CheckCatalogueAnchoring(raw)
+	if !found || len(anchoring.Warnings) != 1 || !strings.Contains(anchoring.Warnings[0], "gives no anchors") {
+		t.Fatalf("anchoring = %+v, want one warning for the untrusted list", anchoring)
+	}
+	if got := len(w.GetLog()); got != logged {
+		t.Errorf("the catalogue check wrote %d log entries, want it to only return the warning", got-logged)
+	}
+
+	w.trustAnchorFindings(receivedCredential(raw))
+	log := w.GetLog()
+	if last := log[len(log)-1]; last.Severity != "warning" || last.Details["event"] != "trusted_list" {
+		t.Errorf("last log entry %+v, want the trusted list warning", last)
 	}
 }
 

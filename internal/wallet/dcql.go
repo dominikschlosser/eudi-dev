@@ -1494,81 +1494,16 @@ func extractCredentialCertificates(cred StoredCredential) ([]*x509.Certificate, 
 		if err != nil {
 			return nil, err
 		}
-		return extractX5CCertificates(token.Header)
+		return validate.X5CCertificates(token.Header)
 	case "mso_mdoc":
 		doc, err := mdoc.Parse(cred.Raw)
 		if err != nil {
 			return nil, err
 		}
-		return extractMDOCX5Chain(doc)
+		return validate.ExtractMDOCX5ChainCertificates(doc)
 	default:
 		return nil, nil
 	}
-}
-
-func extractX5CCertificates(header map[string]any) ([]*x509.Certificate, error) {
-	x5cRaw, ok := header["x5c"].([]any)
-	if !ok || len(x5cRaw) == 0 {
-		return nil, nil
-	}
-
-	certs := make([]*x509.Certificate, 0, len(x5cRaw))
-	for _, entry := range x5cRaw {
-		b64, ok := entry.(string)
-		if !ok {
-			return nil, nil
-		}
-		der, err := format.DecodeBase64Std(b64)
-		if err != nil {
-			return nil, err
-		}
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, err
-		}
-		certs = append(certs, cert)
-	}
-	return certs, nil
-}
-
-func extractMDOCX5Chain(doc *mdoc.Document) ([]*x509.Certificate, error) {
-	if doc.IssuerAuth == nil || doc.IssuerAuth.UnprotectedHeader == nil {
-		return nil, nil
-	}
-
-	x5chainRaw, ok := doc.IssuerAuth.UnprotectedHeader[int64(33)]
-	if !ok {
-		x5chainRaw, ok = doc.IssuerAuth.UnprotectedHeader[uint64(33)]
-		if !ok {
-			return nil, nil
-		}
-	}
-
-	var certDERs [][]byte
-	switch v := x5chainRaw.(type) {
-	case []byte:
-		certDERs = append(certDERs, v)
-	case []any:
-		for _, entry := range v {
-			b, ok := entry.([]byte)
-			if !ok {
-				return nil, nil
-			}
-			certDERs = append(certDERs, b)
-		}
-	default:
-		return nil, nil
-	}
-
-	certs := make([]*x509.Certificate, 0, len(certDERs))
-	for _, der := range certDERs {
-		cert, err := x509.ParseCertificate(der)
-		if err != nil {
-			return nil, err
-		}
-		certs = append(certs, cert)
-	}
-	return certs, nil
 }
 
 func checkETSITrustList(cred StoredCredential, trustListURL string, clients ...*http.Client) bool {
@@ -1583,7 +1518,7 @@ func checkETSITrustList(cred StoredCredential, trustListURL string, clients ...*
 	return true
 }
 
-func fetchTrustListCertificates(trustListURL string, clients ...*http.Client) ([]trustlist.CertInfo, error) {
+func fetchTrustListCertificates(trustListURL string, clients ...*http.Client) ([]*x509.Certificate, error) {
 	tlRaw, err := format.FetchURL(trustListURL, clients...)
 	// A verifier in Docker reaches the host as host.docker.internal. The wallet
 	// on the host reaches the same server as localhost.
@@ -1598,14 +1533,17 @@ func fetchTrustListCertificates(trustListURL string, clients ...*http.Client) ([
 	return parseTrustListAnchors(tlRaw)
 }
 
-func parseTrustListAnchors(tlRaw string) ([]trustlist.CertInfo, error) {
+func parseTrustListAnchors(tlRaw string) ([]*x509.Certificate, error) {
 	tl, err := trustlist.Parse(tlRaw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing the trusted list: %w", err)
 	}
 	// The issuance services anchor credentials (ETSI TS 119 602 V1.1.1 Table
 	// D.3).
-	certs := trustlist.ServiceCertificates(tl, trustlist.IssuanceServices)
+	certs, err := trustlist.Anchors(tl, trustlist.IssuanceServices, time.Now())
+	if err != nil {
+		return nil, err
+	}
 	if len(certs) == 0 {
 		return nil, fmt.Errorf("the trusted list names no issuance service")
 	}
@@ -1615,7 +1553,7 @@ func parseTrustListAnchors(tlRaw string) ([]trustlist.CertInfo, error) {
 // credentialChainKey checks that the issuer certificate chain of cred (x5c of
 // an SD-JWT, x5chain of an mdoc) ends in one of the anchors. It returns the
 // key of the chain's leaf.
-func credentialChainKey(cred StoredCredential, anchors []trustlist.CertInfo) (crypto.PublicKey, error) {
+func credentialChainKey(cred StoredCredential, anchors []*x509.Certificate) (crypto.PublicKey, error) {
 	var key crypto.PublicKey
 	var err error
 	switch cred.Format {
@@ -1624,7 +1562,7 @@ func credentialChainKey(cred StoredCredential, anchors []trustlist.CertInfo) (cr
 		if parseErr != nil {
 			return nil, fmt.Errorf("failed to parse SD-JWT: %w", parseErr)
 		}
-		if key, err = validate.ExtractAndValidateX5C(token.Header, anchors); err != nil {
+		if key, err = validate.ExtractAndValidateX5C(token.Header, trustlist.CertInfos(anchors)); err != nil {
 			return nil, fmt.Errorf("x5c chain validation failed: %w", err)
 		}
 	case "mso_mdoc":
@@ -1632,7 +1570,7 @@ func credentialChainKey(cred StoredCredential, anchors []trustlist.CertInfo) (cr
 		if parseErr != nil {
 			return nil, fmt.Errorf("failed to parse mdoc: %w", parseErr)
 		}
-		if key, err = validate.ExtractAndValidateMDOCX5Chain(doc, anchors); err != nil {
+		if key, err = validate.ExtractAndValidateMDOCX5Chain(doc, trustlist.CertInfos(anchors)); err != nil {
 			return nil, fmt.Errorf("x5chain validation failed: %w", err)
 		}
 	default:

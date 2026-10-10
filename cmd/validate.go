@@ -15,8 +15,8 @@
 package cmd
 
 import (
-	"crypto"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,11 +24,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/output"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
@@ -47,14 +43,15 @@ var validateCmd = &cobra.Command{
 	Long: `Decode and validate a credential. Unlike 'decode' (which only parses and displays),
 'validate' actively checks correctness:
 
-  - Signature verification (requires --key or --trusted-list)
-  - Expiry check (use --allow-expired to skip)
+  - Type header and disclosure digests
+  - Signature verification (with --key or --trusted-list, else the embedded certificate or issuer metadata)
+  - Validity period (use --allow-expired to skip)
   - Revocation status via status list when the credential contains a status reference
   - With --haip, the rules HAIP 1.0 adds on top, reported without failing
 
-If neither --key nor --trusted-list is provided, signature verification is skipped
-and only expiry/status checks are performed. This is useful for quick revocation
-checks without needing the issuer's key.`,
+If neither --key nor --trusted-list is provided and the credential carries no
+usable key, signature verification is skipped and the other checks still run.
+This is useful for quick revocation checks without the issuer's key.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runValidate,
 }
@@ -63,7 +60,7 @@ func init() {
 	validateCmd.Flags().StringVar(&keyFile, "key", "", "Public key file (PEM or JWK)")
 	validateCmd.Flags().StringVar(&trustListFile, "trusted-list", "", "ETSI trusted list JWT (file path or URL)")
 	validateCmd.Flags().BoolVar(&statusListFlag, "status-list", true, "Check revocation via status list when the credential contains a status reference")
-	validateCmd.Flags().BoolVar(&allowExpired, "allow-expired", false, "Don't fail on expired credentials")
+	validateCmd.Flags().BoolVar(&allowExpired, "allow-expired", false, "Don't fail on credentials outside their validity period")
 	validateCmd.Flags().BoolVar(&validateHAIP, "haip", false, "Also check the credential against HAIP 1.0 and report what it breaks")
 	rootCmd.AddCommand(validateCmd)
 }
@@ -85,260 +82,190 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		Verbose: verbose,
 	}
 
-	var report jsonReport
-	if opts.JSON {
-		defer func() {
-			if report != nil {
-				output.PrintJSON(report)
-			}
-		}()
+	trust, err := validateTrust()
+	if err != nil {
+		return err
+	}
+	result, err := validate.Credential(raw, trust, validate.Options{Status: statusListFlag, HAIP: validateHAIP})
+	if err != nil {
+		return err
+	}
+	// RFC 9901 §7.1: "If any step fails, the SD-JWT is not valid, and
+	// processing MUST be aborted."
+	if result.SDJWT != nil && len(result.SDJWT.Deviations) > 0 {
+		return fmt.Errorf("parsing SD-JWT: %s", strings.Join(result.SDJWT.Deviations, ". "))
 	}
 
-	var pubKeys []crypto.PublicKey
+	var report jsonReport
+	if opts.JSON {
+		report = credentialReport(result)
+		defer output.PrintJSON(report)
+	} else {
+		printCredential(result, opts)
+	}
+	printValidation(result, opts, report)
+	return validationError(result)
+}
+
+// validateTrust reads the supplied key and trusted list, and the stored
+// wallet when it exists. Its catalogue anchors credentials and its HTTP client
+// fetches remote documents. validate creates no wallet.
+func validateTrust() (validate.Trust, error) {
+	var trust validate.Trust
+	w, err := storedWallet()
+	if err != nil {
+		trust.CatalogueErr = err
+	} else if w != nil {
+		trust.Catalogue = w
+		trust.HTTPClient = w.HTTPClient()
+	}
 
 	if keyFile != "" {
 		key, err := keys.LoadPublicKey(keyFile)
 		if err != nil {
-			return fmt.Errorf("loading key: %w", err)
+			return trust, fmt.Errorf("loading key: %w", err)
 		}
-		pubKeys = append(pubKeys, key)
+		trust.AddKey(key)
 	}
-
-	// The issuance services of a trusted list anchor credentials, its
-	// revocation services their status lists (ETSI TS 119 602 V1.1.1 Table
-	// D.3).
-	var tlCerts, statusCerts []trustlist.CertInfo
 	if trustListFile != "" {
-		tlRaw, err := format.ReadInput(trustListFile)
+		tlRaw, err := format.ReadInput(trustListFile, trust.HTTPClient)
 		if err != nil {
-			return fmt.Errorf("reading trusted list: %w", err)
+			return trust, fmt.Errorf("reading trusted list: %w", err)
 		}
-		tl, err := trustlist.Parse(tlRaw)
-		if err != nil {
-			return fmt.Errorf("parsing trusted list: %w", err)
-		}
-		tlCerts = trustlist.ServiceCertificates(tl, trustlist.IssuanceServices)
-		statusCerts = trustlist.ServiceCertificates(tl, trustlist.RevocationServices)
-		for _, ci := range tlCerts {
-			pubKeys = append(pubKeys, ci.PublicKey)
+		if err := trust.AddTrustedList(tlRaw, time.Now()); err != nil {
+			return trust, err
 		}
 	}
-
-	// Without a supplied key or trusted list, the trusted list of the
-	// credential's catalogue entry is the trust source. Its revocation
-	// services anchor the status list when they sign it.
-	anchoring, catalogued, err := catalogueAnchoring(raw)
-	if err != nil {
-		return fmt.Errorf("reading the wallet catalogue: %w", err)
-	}
-	var statusCandidates []trustlist.CertInfo
-	if keyFile == "" && trustListFile == "" && anchoring.AnchoredBy != "" {
-		tlCerts = trustlist.CertInfos(anchoring.IssuanceAnchors)
-		statusCandidates = trustlist.CertInfos(anchoring.StatusAnchors)
-	}
-
-	detected := format.Detect(raw)
-
-	switch detected {
-	case format.FormatSDJWT:
-		token, err := sdjwt.Parse(raw)
-		if err != nil {
-			return fmt.Errorf("parsing SD-JWT: %w", err)
-		}
-		if opts.JSON {
-			report = output.BuildSDJWTJSON(token)
-		} else {
-			output.PrintSDJWT(token, opts)
-		}
-
-		if validateHAIP {
-			printHAIPFindings(haipCredentialFindings(token), report)
-		}
-
-		if bestResult, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
-			report.add("verification", bestResult, func() { output.PrintVerifyResultSDJWT(bestResult, opts) })
-			printLeafSourceNote(source, opts)
-
-			if !bestResult.SignatureValid {
-				return fmt.Errorf("signature verification failed")
-			}
-			if bestResult.Expired && !allowExpired {
-				return fmt.Errorf("credential expired")
-			}
-		} else if err != nil {
-			return err
-		} else {
-			if !opts.JSON {
-				printSkippedSignatureNote(token)
-			}
-			if exp, ok := token.ResolvedClaims["exp"]; ok {
-				if expFloat, ok := exp.(float64); ok {
-					if time.Unix(int64(expFloat), 0).Before(time.Now()) {
-						if !opts.JSON {
-							fmt.Println("  ✗ Credential expired")
-						}
-						if !allowExpired {
-							return fmt.Errorf("credential expired")
-						}
-					}
-				}
-			}
-		}
-
-		reportCatalogueTrust(anchoring, catalogued, report)
-
-		if statusListFlag {
-			if err := checkStatus(token.ResolvedClaims, statuslist.FormatJWT, statusCerts, statusCandidates, report); err != nil {
-				return err
-			}
-		}
-
-	case format.FormatJWT:
-		token, err := sdjwt.Parse(raw)
-		if err != nil {
-			return fmt.Errorf("parsing JWT: %w", err)
-		}
-		if opts.JSON {
-			report = output.BuildJWTJSON(token)
-		} else {
-			output.PrintJWT(token, opts)
-		}
-
-		if validateHAIP {
-			printHAIPFindings(haipCredentialFindings(token), report)
-		}
-
-		if bestResult, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
-			report.add("verification", bestResult, func() { output.PrintVerifyResultSDJWT(bestResult, opts) })
-			printLeafSourceNote(source, opts)
-
-			if !bestResult.SignatureValid {
-				return fmt.Errorf("signature verification failed")
-			}
-			if bestResult.Expired && !allowExpired {
-				return fmt.Errorf("credential expired")
-			}
-		} else if err != nil {
-			return err
-		} else {
-			if !opts.JSON {
-				printSkippedSignatureNote(token)
-			}
-			if exp, ok := token.ResolvedClaims["exp"]; ok {
-				if expFloat, ok := exp.(float64); ok {
-					if time.Unix(int64(expFloat), 0).Before(time.Now()) {
-						if !opts.JSON {
-							fmt.Println("  ✗ Credential expired")
-						}
-						if !allowExpired {
-							return fmt.Errorf("credential expired")
-						}
-					}
-				}
-			}
-		}
-
-		if statusListFlag {
-			if err := checkStatus(token.ResolvedClaims, statuslist.FormatJWT, statusCerts, statusCandidates, report); err != nil {
-				return err
-			}
-		}
-
-	case format.FormatMDOC:
-		doc, err := mdoc.Parse(raw)
-		if err != nil {
-			return fmt.Errorf("parsing mdoc: %w", err)
-		}
-		if opts.JSON {
-			report = output.BuildMDOCJSON(doc)
-		} else {
-			output.PrintMDOC(doc, opts)
-		}
-
-		leafKey, _ := validate.ExtractMDOCX5ChainLeafKey(doc)
-		if len(pubKeys) > 0 {
-			x5cKey, _ := validate.ExtractAndValidateMDOCX5Chain(doc, tlCerts)
-			bestResult := verifyWithBestKey(pubKeys, x5cKey, func(key crypto.PublicKey) (*mdoc.VerifyResult, bool) {
-				r := mdoc.Verify(doc, key)
-				return r, r.SignatureValid
-			})
-			report.add("verification", bestResult, func() { output.PrintVerifyResultMDOC(bestResult, opts) })
-
-			if !bestResult.SignatureValid {
-				return fmt.Errorf("signature verification failed")
-			}
-			if bestResult.Expired && !allowExpired {
-				return fmt.Errorf("credential expired")
-			}
-		} else if leafKey != nil {
-			result := mdoc.Verify(doc, leafKey)
-			report.add("verification", result, func() { output.PrintVerifyResultMDOC(result, opts) })
-			printLeafSourceNote(validate.SourceX5CLeaf, opts)
-
-			if !result.SignatureValid {
-				return fmt.Errorf("signature verification failed")
-			}
-			if result.Expired && !allowExpired {
-				return fmt.Errorf("credential expired")
-			}
-		} else {
-			if !opts.JSON {
-				fmt.Println("\n  Signature verification skipped (no --key or --trusted-list provided)")
-			}
-			if doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil && doc.IssuerAuth.MSO.ValidityInfo != nil {
-				if doc.IssuerAuth.MSO.ValidityInfo.ValidUntil != nil && doc.IssuerAuth.MSO.ValidityInfo.ValidUntil.Before(time.Now()) {
-					if !opts.JSON {
-						fmt.Println("  ✗ Credential expired")
-					}
-					if !allowExpired {
-						return fmt.Errorf("credential expired")
-					}
-				}
-			}
-		}
-
-		reportCatalogueTrust(anchoring, catalogued, report)
-
-		// ExtractStatusRef expects {"status": {"status_list": ...}} and
-		// MSO.Status is the inner map.
-		if statusListFlag && doc.StatusClaims() != nil {
-			if err := checkStatus(doc.StatusClaims(), statuslist.FormatCWT, statusCerts, statusCandidates, report); err != nil {
-				return err
-			}
-		}
-
-	default:
-		return fmt.Errorf("unable to auto-detect credential format")
-	}
-
-	return nil
+	return trust, nil
 }
 
-// catalogueAnchoring validates the credential with the trusted lists of its
-// entry in the wallet's attestation catalogue. Without a wallet there is no
-// catalogue, and validate creates none.
-func catalogueAnchoring(raw string) (wallet.CatalogueAnchoring, bool, error) {
+// storedWallet loads the wallet of the store when it exists.
+func storedWallet() (*wallet.Wallet, error) {
 	store, err := openStore()
 	if err != nil {
-		return wallet.CatalogueAnchoring{}, false, err
+		return nil, err
 	}
 	if exists, err := store.Exists(); err != nil || !exists {
-		return wallet.CatalogueAnchoring{}, false, err
+		return nil, err
 	}
 	w, _, err := loadWallet()
-	if err != nil {
-		return wallet.CatalogueAnchoring{}, false, err
+	return w, err
+}
+
+func credentialReport(result *validate.Result) jsonReport {
+	switch result.Format {
+	case validate.FormatSDJWT:
+		return output.BuildSDJWTJSON(result.SDJWT)
+	case validate.FormatJWT:
+		return output.BuildJWTJSON(result.SDJWT)
 	}
-	anchoring, found := w.CheckCatalogueAnchoring(raw)
-	return anchoring, found, nil
+	return output.BuildMDOCJSON(result.MDOC)
+}
+
+func printCredential(result *validate.Result, opts output.Options) {
+	switch result.Format {
+	case validate.FormatSDJWT:
+		output.PrintSDJWT(result.SDJWT, opts)
+	case validate.FormatJWT:
+		output.PrintJWT(result.SDJWT, opts)
+	default:
+		output.PrintMDOC(result.MDOC, opts)
+	}
+}
+
+// printValidation prints the checks of the result in text mode, or adds them
+// to the JSON report.
+func printValidation(result *validate.Result, opts output.Options, report jsonReport) {
+	report.add("checks", result.Checks, func() {})
+	if result.HAIPFindings != nil {
+		printHAIPFindings(result.HAIPFindings, report)
+	}
+	for _, name := range []string{validate.CheckType, validate.CheckIntegrity, validate.CheckTrustedList} {
+		if c, ok := result.Find(name); ok && (c.Status == validate.Fail || c.Status == validate.Warning) {
+			report.text(func() { printCheck(c) })
+		}
+	}
+
+	switch {
+	case result.SDJWTVerify != nil:
+		report.add("verification", result.SDJWTVerify, func() { output.PrintVerifyResultSDJWT(result.SDJWTVerify, opts) })
+	case result.MDOCVerify != nil:
+		report.add("verification", result.MDOCVerify, func() { output.PrintVerifyResultMDOC(result.MDOCVerify, opts) })
+	}
+	if sig, ok := result.Find(validate.CheckSignature); ok {
+		report.text(func() {
+			switch {
+			case sig.Status == validate.Skipped:
+				fmt.Printf("\n  Signature verification skipped: %s\n", sig.Detail)
+			case sig.Status == validate.Fail:
+				printCheck(sig)
+			case result.SignatureSource == validate.SourceX5CLeaf:
+				// A green leaf result is no trust statement.
+				fmt.Println("  Note: verified with the credential's embedded certificate (chain not validated). Pass --trusted-list to also validate trust.")
+			}
+		})
+	}
+	// The verification printer shows the validity period with the signature.
+	if c, ok := result.Find(validate.CheckExpiry); ok && (c.Status == validate.Warning || (c.Status == validate.Fail && result.SDJWTVerify == nil && result.MDOCVerify == nil)) {
+		report.text(func() { printCheck(c) })
+	}
+
+	if result.Catalogue != nil {
+		reportCatalogueTrust(*result.Catalogue, report)
+	} else if c, ok := result.Find(validate.CheckTrust); ok && c.Status == validate.Fail {
+		report.text(func() { printCheck(c) })
+	}
+
+	if result.Status != nil {
+		status := result.Status
+		sig, _ := result.Find(validate.CheckStatusSignature)
+		report.add("status", status, func() {
+			mark := "✗"
+			if status.IsValid {
+				mark = "✓"
+			}
+			fmt.Printf("\n  %s Status: %s (index %d, status=%d, %s)\n", mark, status.StatusName, status.Index, status.Status, strings.ToUpper(status.Format))
+			if sig.Status == validate.Pass {
+				fmt.Printf("  ✓ Status list signature: %s\n", status.SignatureInfo)
+			} else if status.IsValid {
+				fmt.Printf("  ! Status list signature: %s (not anchored by a trusted list)\n", status.SignatureInfo)
+			}
+			for _, warning := range status.Warnings {
+				fmt.Printf("  ! Status list: %s\n", warning)
+			}
+		})
+	} else if c, ok := result.Find(validate.CheckStatus); ok && (c.Status == validate.Fail || c.Status == validate.Warning) {
+		report.text(func() { printCheck(c) })
+	}
+}
+
+func printCheck(c validate.Check) {
+	mark := "✗"
+	if c.Status == validate.Warning {
+		mark = "!"
+	}
+	fmt.Printf("  %s %s: %s\n", mark, c.Name, c.Detail)
+}
+
+// validationError fails on the credential's own checks. The catalogue trust
+// and HAIP checks are informational.
+func validationError(result *validate.Result) error {
+	failing := []string{validate.CheckType, validate.CheckIntegrity, validate.CheckSignature, validate.CheckExpiry, validate.CheckStatus}
+	for _, c := range result.Checks {
+		if c.Status != validate.Fail || !slices.Contains(failing, c.Name) {
+			continue
+		}
+		if c.Name == validate.CheckExpiry && allowExpired {
+			continue
+		}
+		return fmt.Errorf("%s: %s", c.Name, c.Detail)
+	}
+	return nil
 }
 
 // reportCatalogueTrust reports the catalogue result. It is informational and
 // leaves the exit code alone.
-func reportCatalogueTrust(anchoring wallet.CatalogueAnchoring, found bool, report jsonReport) {
-	if !found {
-		return
-	}
+func reportCatalogueTrust(anchoring wallet.CatalogueAnchoring, report jsonReport) {
 	report.add("trust", anchoring, func() {
 		switch {
 		case anchoring.AnchoredBy != "":
@@ -349,96 +276,14 @@ func reportCatalogueTrust(anchoring wallet.CatalogueAnchoring, found bool, repor
 			}
 		default:
 			fmt.Printf("  – The catalogue entry %q links no readable trusted list\n", anchoring.Entry)
+			for _, w := range anchoring.Warnings {
+				fmt.Printf("  ! %s\n", w)
+			}
 		}
 	})
 }
 
-// printLeafSourceNote explains a leaf-only verification so a green result is
-// not mistaken for a trust statement.
-func printLeafSourceNote(source string, opts output.Options) {
-	if source == validate.SourceX5CLeaf && !opts.JSON {
-		fmt.Println("  Note: verified with the credential's embedded certificate (chain not validated). Pass --trusted-list to also validate trust.")
-	}
-}
-
-// verifyWithBestKey verifies with x5cKey when the credential carries one,
-// because the issuer bound the token to its embedded certificate. Otherwise
-// it tries pubKeys and returns the first valid result, or the last one.
-func verifyWithBestKey[T any](pubKeys []crypto.PublicKey, x5cKey crypto.PublicKey, verify func(crypto.PublicKey) (T, bool)) T {
-	if x5cKey != nil {
-		result, _ := verify(x5cKey)
-		return result
-	}
-	var best T
-	for _, key := range pubKeys {
-		result, valid := verify(key)
-		best = result
-		if valid {
-			break
-		}
-	}
-	return best
-}
-
-func checkStatus(claims map[string]any, prefer string, tlCerts, candidates []trustlist.CertInfo, report jsonReport) error {
-	ref := statuslist.ExtractStatusRef(claims)
-	if ref == nil {
-		return nil
-	}
-	if ref.Invalid != "" {
-		return fmt.Errorf("status check: %s", ref.Invalid)
-	}
-
-	checkOpts := statuslist.CheckOptions{Prefer: prefer}
-	for _, ci := range tlCerts {
-		checkOpts.TrustListCerts = append(checkOpts.TrustListCerts, statuslist.TrustCert{Raw: ci.Raw})
-	}
-	for _, ci := range candidates {
-		checkOpts.CandidateAnchors = append(checkOpts.CandidateAnchors, statuslist.TrustCert{Raw: ci.Raw})
-	}
-
-	// Every failed section 8.3 step returns an error, so a printed status is
-	// always covered by the verified signature.
-	result, err := statuslist.CheckWithOptions(ref, checkOpts)
-	if err != nil {
-		return fmt.Errorf("status check: %w", err)
-	}
-	report.add("status", result, func() {
-		mark := "✗"
-		if result.IsValid {
-			mark = "✓"
-		}
-		fmt.Printf("\n  %s Status: %s (index %d, status=%d, %s)\n", mark, result.StatusName, result.Index, result.Status, strings.ToUpper(result.Format))
-		fmt.Printf("  ✓ Status list signature: %s\n", result.SignatureInfo)
-		for _, warning := range result.Warnings {
-			fmt.Printf("  ! Status list: %s\n", warning)
-		}
-	})
-	if !result.IsValid {
-		return fmt.Errorf("credential status is %s", result.StatusName)
-	}
-	return nil
-}
-
-// HAIP 1.0 §6.1.1 requires the issuer's signing certificate and chain in x5c, excludes
-// the trust anchor and forbids a self-signed leaf.
-func haipCredentialFindings(token *sdjwt.Token) []string {
-	return validate.HAIPCredentialFindings(token.Header, token.Payload)
-}
-
-// Report unsupported DID key resolution separately from a missing key so the user can
-// identify the cause.
-func printSkippedSignatureNote(token *sdjwt.Token) {
-	kid, _ := token.Header["kid"].(string)
-	iss, _ := token.Payload["iss"].(string)
-	if did := keys.DIDReference(kid, iss); did != "" {
-		fmt.Printf("\n  Signature verification skipped (the issuer key is named by the DID %s, which this tool does not resolve)\n", did)
-		return
-	}
-	fmt.Println("\n  Signature verification skipped (no --key/--trusted-list and issuer metadata resolution unavailable)")
-}
-
-// HAIP findings are informational here. Only signature, expiry and revocation checks
+// HAIP findings are informational here. Only the credential's own checks
 // affect the exit code.
 func printHAIPFindings(findings []string, report jsonReport) {
 	report.add("haipFindings", append([]string{}, findings...), func() {
@@ -453,7 +298,8 @@ func printHAIPFindings(findings []string, report jsonReport) {
 	})
 }
 
-// jsonReport collects one validation as a JSON document. It is nil in text mode.
+// jsonReport collects one validation as a JSON document. It is nil in text
+// mode.
 type jsonReport map[string]any
 
 func (r jsonReport) add(key string, v any, printText func()) {
@@ -462,4 +308,11 @@ func (r jsonReport) add(key string, v any, printText func()) {
 		return
 	}
 	r[key] = v
+}
+
+// text prints only in text mode.
+func (r jsonReport) text(printText func()) {
+	if r == nil {
+		printText()
+	}
 }

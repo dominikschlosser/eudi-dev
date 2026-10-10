@@ -246,9 +246,9 @@ func TestDecode_SDJWTIncludesIssuerMetadataValidation(t *testing.T) {
 		t.Fatalf("GenerateSDJWT: %v", err)
 	}
 
-	result, err := Decode(raw)
+	result, err := Validate(raw, ValidateOpts{})
 	if err != nil {
-		t.Fatalf("Decode() error: %v", err)
+		t.Fatalf("Validate() error: %v", err)
 	}
 
 	validation, ok := result["validation"].(map[string]any)

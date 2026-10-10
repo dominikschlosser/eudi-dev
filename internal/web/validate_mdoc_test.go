@@ -24,6 +24,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
 )
 
 func testMDoc(t *testing.T, cfg mock.MDOCConfig) *mdoc.Document {
@@ -53,11 +54,20 @@ func pidConfig(t *testing.T) mock.MDOCConfig {
 	}
 }
 
+func mdocCheck(t *testing.T, doc *mdoc.Document, trust validate.Trust, name string) CheckResult {
+	t.Helper()
+	check, ok := validate.MDOC(doc, trust, validate.Options{Offline: true}).Find(name)
+	if !ok {
+		t.Fatalf("no %s check", name)
+	}
+	return check
+}
+
 func TestCheckMDOCExpiry(t *testing.T) {
 	t.Run("a credential still inside its validity", func(t *testing.T) {
 		cfg := pidConfig(t)
 		cfg.ExpiresIn = 48 * time.Hour
-		got := checkMDOCExpiry(testMDoc(t, cfg))
+		got := mdocCheck(t, testMDoc(t, cfg), validate.Trust{}, validate.CheckExpiry)
 		if got.Status != "pass" {
 			t.Errorf("status = %q (%s), want pass", got.Status, got.Detail)
 		}
@@ -66,7 +76,7 @@ func TestCheckMDOCExpiry(t *testing.T) {
 	t.Run("a credential past validUntil", func(t *testing.T) {
 		cfg := pidConfig(t)
 		cfg.ExpiresIn = -time.Hour
-		got := checkMDOCExpiry(testMDoc(t, cfg))
+		got := mdocCheck(t, testMDoc(t, cfg), validate.Trust{}, validate.CheckExpiry)
 		if got.Status != "fail" {
 			t.Errorf("status = %q (%s), want fail", got.Status, got.Detail)
 		}
@@ -80,7 +90,7 @@ func TestCheckMDOCExpiry(t *testing.T) {
 		validFrom := time.Now().Add(72 * time.Hour)
 		cfg.ValidFrom = &validFrom
 		cfg.ExpiresIn = 30 * 24 * time.Hour
-		got := checkMDOCExpiry(testMDoc(t, cfg))
+		got := mdocCheck(t, testMDoc(t, cfg), validate.Trust{}, validate.CheckExpiry)
 		if got.Status != "fail" {
 			t.Errorf("status = %q (%s), want fail", got.Status, got.Detail)
 		}
@@ -90,7 +100,7 @@ func TestCheckMDOCExpiry(t *testing.T) {
 	})
 
 	t.Run("no validity info at all", func(t *testing.T) {
-		got := checkMDOCExpiry(&mdoc.Document{})
+		got := mdocCheck(t, &mdoc.Document{}, validate.Trust{}, validate.CheckExpiry)
 		if got.Status != "skipped" {
 			t.Errorf("status = %q, want skipped", got.Status)
 		}
@@ -99,7 +109,7 @@ func TestCheckMDOCExpiry(t *testing.T) {
 	t.Run("validity info without validUntil", func(t *testing.T) {
 		doc := testMDoc(t, pidConfig(t))
 		doc.IssuerAuth.MSO.ValidityInfo.ValidUntil = nil
-		got := checkMDOCExpiry(doc)
+		got := mdocCheck(t, doc, validate.Trust{}, validate.CheckExpiry)
 		if got.Status != "skipped" {
 			t.Errorf("status = %q (%s), want skipped", got.Status, got.Detail)
 		}
@@ -115,7 +125,7 @@ func TestCheckMDOCSignature(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := checkMDOCSignature(doc, resolveTrust("", ValidateOpts{Key: string(jwk), Offline: true}), ValidateOpts{Key: string(jwk)})
+		got := mdocCheck(t, doc, resolveTrust(ValidateOpts{Key: string(jwk), Offline: true}), validate.CheckSignature)
 		if got.Status != "pass" {
 			t.Errorf("status = %q (%s), want pass", got.Status, got.Detail)
 		}
@@ -130,14 +140,14 @@ func TestCheckMDOCSignature(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := checkMDOCSignature(doc, resolveTrust("", ValidateOpts{Key: string(jwk), Offline: true}), ValidateOpts{Key: string(jwk)})
+		got := mdocCheck(t, doc, resolveTrust(ValidateOpts{Key: string(jwk), Offline: true}), validate.CheckSignature)
 		if got.Status != "fail" {
 			t.Errorf("status = %q (%s), want fail", got.Status, got.Detail)
 		}
 	})
 
 	t.Run("a key that does not parse", func(t *testing.T) {
-		got := checkMDOCSignature(doc, resolveTrust("", ValidateOpts{Key: "not a key", Offline: true}), ValidateOpts{Key: "not a key"})
+		got := mdocCheck(t, doc, resolveTrust(ValidateOpts{Key: "not a key", Offline: true}), validate.CheckSignature)
 		if got.Status != "fail" {
 			t.Errorf("status = %q (%s), want fail", got.Status, got.Detail)
 		}
@@ -148,14 +158,20 @@ func TestCheckMDOCSignature(t *testing.T) {
 }
 
 func TestSuppliedTrustErrors(t *testing.T) {
+	suppliedTrust := func(opts ValidateOpts) (validate.Trust, error) {
+		var trust validate.Trust
+		err := addSuppliedTrust(&trust, opts)
+		return trust, err
+	}
+
 	t.Run("a key that does not parse", func(t *testing.T) {
-		if _, _, _, err := suppliedTrust(ValidateOpts{Key: "nonsense"}); err == nil {
+		if _, err := suppliedTrust(ValidateOpts{Key: "nonsense"}); err == nil {
 			t.Error("an unparseable key was accepted")
 		}
 	})
 
 	t.Run("a trusted list that does not parse", func(t *testing.T) {
-		_, _, _, err := suppliedTrust(ValidateOpts{TrustListRaw: "not a trusted list"})
+		_, err := suppliedTrust(ValidateOpts{TrustListRaw: "not a trusted list"})
 		if err == nil || !strings.Contains(err.Error(), "parsing trusted list") {
 			t.Errorf("error = %v, want a trusted list parse failure", err)
 		}
@@ -167,7 +183,7 @@ func TestSuppliedTrustErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, _, _, err := suppliedTrust(ValidateOpts{TrustListURL: srv.URL})
+		_, err := suppliedTrust(ValidateOpts{TrustListURL: srv.URL})
 		if err == nil {
 			t.Error("a trusted list URL that answers 404 was accepted")
 		}
@@ -179,40 +195,19 @@ func TestSuppliedTrustErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, _, _, err := suppliedTrust(ValidateOpts{TrustListURL: srv.URL})
+		_, err := suppliedTrust(ValidateOpts{TrustListURL: srv.URL})
 		if err == nil || !strings.Contains(err.Error(), "parsing trusted list") {
 			t.Errorf("error = %v, want a trusted list parse failure", err)
 		}
 	})
 
 	t.Run("nothing to resolve", func(t *testing.T) {
-		pubKeys, tlCerts, _, err := suppliedTrust(ValidateOpts{})
+		trust, err := suppliedTrust(ValidateOpts{})
 		if err != nil {
 			t.Fatalf("suppliedTrust: %v", err)
 		}
-		if len(pubKeys) != 0 || len(tlCerts) != 0 {
-			t.Errorf("keys = %d, certs = %d, want none", len(pubKeys), len(tlCerts))
+		if trust.Supplied || len(trust.Keys) != 0 || len(trust.Issuance) != 0 {
+			t.Errorf("trust = %+v, want nothing supplied", trust)
 		}
 	})
-}
-
-func TestHashForAlgorithm(t *testing.T) {
-	for _, alg := range []string{"SHA-256", "SHA-384", "SHA-512"} {
-		t.Run(alg, func(t *testing.T) {
-			h := hashForAlgorithm(alg)
-			if h == nil {
-				t.Fatalf("hashForAlgorithm(%q) = nil", alg)
-			}
-			if h().Size() == 0 {
-				t.Error("the returned hash produces no output")
-			}
-		})
-	}
-
-	if hashForAlgorithm("SHA-1") != nil {
-		t.Error("an unsupported digest algorithm was accepted")
-	}
-	if hashForAlgorithm("") != nil {
-		t.Error("an empty digest algorithm was accepted")
-	}
 }

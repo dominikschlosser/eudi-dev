@@ -330,7 +330,7 @@ test.describe("Verification panel", () => {
     );
   });
 
-  test("JWT shows integrity and status as Not applicable", async ({
+  test("JWT shows integrity as Not applicable and no status reference", async ({
     page,
   }) => {
     await page.goto("/");
@@ -349,7 +349,7 @@ test.describe("Verification panel", () => {
     }
 
     expect(details["integrity"]).toBe("Not applicable for plain JWT");
-    expect(details["status"]).toBe("Not applicable for plain JWT");
+    expect(details["status"]).toBe("No status list reference in credential");
     expect(details["signature"]).toBe("No key provided");
   });
 

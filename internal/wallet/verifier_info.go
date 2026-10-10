@@ -17,13 +17,13 @@ package wallet
 import (
 	"crypto/x509"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/certchain"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
@@ -66,27 +66,6 @@ func verifyRegistrationEntries(entries []map[string]any) (registrations []verifi
 		registrations = append(registrations, verifiedRegistration{claims: claims, chain: chain})
 	}
 	return registrations, problems
-}
-
-// verifyToAnchor checks that the chain's leaf chains to one of the anchors,
-// with the rest of the chain as intermediates.
-func verifyToAnchor(chain []*x509.Certificate, anchors []*x509.Certificate) error {
-	if len(chain) == 0 {
-		return errors.New("no certificate")
-	}
-	if len(anchors) == 0 {
-		return errors.New("no trusted CA")
-	}
-	roots := x509.NewCertPool()
-	for _, anchor := range anchors {
-		roots.AddCert(anchor)
-	}
-	intermediates := x509.NewCertPool()
-	for _, cert := range chain[1:] {
-		intermediates.AddCert(cert)
-	}
-	_, err := chain[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}})
-	return err
 }
 
 // Unsigned requests carry verifier_info as a parameter. Signed requests use only the
@@ -185,7 +164,7 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 	accessChain := requestAccessChain(authReq)
 	if len(accessChain) == 0 {
 		findings = append(findings, "ARF RPA_03: the request is not signed with a relying party access certificate in x5c")
-	} else if err := verifyToAnchor(accessChain, authReq.RelyingPartyCAs); err != nil {
+	} else if _, err := certchain.Verify(accessChain, authReq.RelyingPartyCAs); err != nil {
 		findings = append(findings, fmt.Sprintf("ARF RPA_04: the access certificate %q does not chain to a trusted access certificate authority: %v", accessChain[0].Subject.String(), err))
 	}
 	for _, r := range registrations {
@@ -195,7 +174,7 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 		if len(accessChain) > 0 {
 			findings = append(findings, registrationBindingFindings(cert, accessChain[0], "ARF RPRC_17a")...)
 		}
-		if err := verifyToAnchor(r.chain, authReq.RegistrarCAs); err != nil {
+		if _, err := certchain.Verify(r.chain, authReq.RegistrarCAs); err != nil {
 			findings = append(findings, fmt.Sprintf("ARF RPRC_02a: the registration certificate of %s does not chain to a trusted registrar: %v", name, err))
 		}
 		findings = append(findings, registrationStatusFindings(cert, authReq.StatusClient, authReq.RegistrationStatusCAs, "ARF RPRC_17")...)
@@ -212,7 +191,8 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 // signed the request (ARF RPA_03 and RPA_04).
 func relyingPartyAuthenticated(authReq *AuthorizationRequestParams) bool {
 	chain := requestAccessChain(authReq)
-	return len(chain) > 0 && verifyToAnchor(chain, authReq.RelyingPartyCAs) == nil
+	_, err := certchain.Verify(chain, authReq.RelyingPartyCAs)
+	return err == nil
 }
 
 // requestAccessChain returns the request object's x5c chain, leaf first, if the

@@ -21,7 +21,9 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/certchain"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
@@ -77,30 +79,22 @@ func (w *Wallet) reportCatalogueFindings(issuer string, findings []string) {
 }
 
 // trustAnchorFindings validates the signature of a received credential with
-// the trusted lists of its catalogue entry when --arf is on.
+// the trusted lists of its catalogue entry when --arf is on. The lists of an
+// EAA entry that give no anchors go to the activity log.
 func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	if !w.ARFChecks() {
 		return nil
 	}
 	anchoring, _ := w.catalogueAnchoring(cred)
+	for _, warning := range anchoring.Warnings {
+		w.addProtocolWarning("issuance", "trusted_list", warning, nil)
+	}
 	return anchoring.Findings
 }
 
 // CatalogueAnchoring is the result of validating a credential with the
 // trusted lists of its catalogue entry.
-type CatalogueAnchoring struct {
-	Entry    string `json:"entry"`
-	Category string `json:"category"`
-	// AnchoredBy is the list whose issuance service anchors the credential.
-	AnchoredBy string   `json:"anchored_by,omitempty"`
-	Findings   []string `json:"findings,omitempty"`
-	// IssuanceAnchors and StatusAnchors are the certificates of the issuance
-	// and revocation services of that list. The revocation service anchors
-	// the credential's status list (ETSI TS 119 602 V1.1.1 Tables D.3 and
-	// H.3).
-	IssuanceAnchors []*x509.Certificate `json:"-"`
-	StatusAnchors   []*x509.Certificate `json:"-"`
-}
+type CatalogueAnchoring = validate.CatalogueAnchoring
 
 // StatusListAnchors returns the anchors of a credential's status list: the
 // revocation service of the trusted list that anchors the credential. It is
@@ -152,22 +146,30 @@ func (w *Wallet) catalogueAnchoring(cred StoredCredential) (CatalogueAnchoring, 
 	}
 	var problems []string
 	read := false
+	now := time.Now()
 	for _, c := range candidates {
 		switch {
 		case c.Err != nil && eaa:
-			// ISSU_10 needs anchors, so the wallet only reports the list.
-			w.addProtocolWarning("issuance", "trusted_list", fmt.Sprintf("The trusted list %s of the catalogue entry %q gives no anchors: %v", c.URL, entry.Name, c.Err), nil)
+			// ISSU_10 needs anchors, so the list is only a warning.
+			result.Warnings = append(result.Warnings, fmt.Sprintf("The trusted list %s of the catalogue entry %q gives no anchors: %v", c.URL, entry.Name, c.Err))
 			continue
 		case c.Err != nil:
 			problems = append(problems, fmt.Sprintf("%s (%v)", c.URL, c.Err))
 			continue
 		}
 		read = true
-		err := validateWithAnchors(cred, trustlist.ServiceCertificates(c.List, trustlist.IssuanceServices))
+		issuance, err := trustlist.Anchors(c.List, trustlist.IssuanceServices, now)
+		if err == nil {
+			err = validateWithAnchors(cred, issuance)
+		}
+		var revocation []*x509.Certificate
+		if err == nil {
+			revocation, err = trustlist.Anchors(c.List, trustlist.RevocationServices, now)
+		}
 		if err == nil {
 			result.AnchoredBy = c.URL
-			result.IssuanceAnchors = parsedAnchors(trustlist.ServiceCertificates(c.List, trustlist.IssuanceServices))
-			result.StatusAnchors = parsedAnchors(trustlist.ServiceCertificates(c.List, trustlist.RevocationServices))
+			result.IssuanceAnchors = issuance
+			result.StatusAnchors = revocation
 			return result, true
 		}
 		problems = append(problems, fmt.Sprintf("%s (%v)", c.URL, err))
@@ -194,7 +196,7 @@ func categoryListType(category string) string {
 	return ""
 }
 
-func validateWithAnchors(cred StoredCredential, anchors []trustlist.CertInfo) error {
+func validateWithAnchors(cred StoredCredential, anchors []*x509.Certificate) error {
 	if len(anchors) == 0 {
 		return fmt.Errorf("the trusted list names no issuance service")
 	}
@@ -240,7 +242,7 @@ func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
 	if _, err := jws.Verify(strings.TrimSpace(raw), chain[0].PublicKey); err != nil {
 		return errors.New("the trusted list's signature does not verify")
 	}
-	if err := verifyToAnchor(chain, operators); err != nil {
+	if _, err := certchain.Verify(chain, operators); err != nil {
 		return fmt.Errorf("the list's signer does not chain to a trusted list CA. Add the list operator's CA to trusted-list-ca, or start the wallet with --trusted-list-ca: %w", err)
 	}
 	return nil

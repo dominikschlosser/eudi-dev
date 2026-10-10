@@ -35,8 +35,8 @@ type MuxOptions struct {
 	// CredentialByID resolves ?id= links, so the URL never holds the full
 	// credential. A decoder without a wallet returns 404.
 	CredentialByID func(id string) (string, bool)
-	// WalletStore provides the CA and issuer key for local verification. Nil selects
-	// the default wallet.
+	// WalletStore is a stored wallet. When it exists, its attestation
+	// catalogue anchors credentials. The decoder never creates a wallet.
 	WalletStore *wallet.WalletStore
 	// Wallet is the running wallet. Its trusted lists include the ones from
 	// the flags of wallet serve, which the store doesn't keep.
@@ -61,7 +61,6 @@ func NewMux(credential string) http.Handler {
 func NewMuxWithOptions(opts MuxOptions) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("POST /api/decode", handleDecode)
 	mux.HandleFunc("POST /api/validate", handleValidate(opts.WalletStore, opts.Wallet))
 	mux.HandleFunc("GET /api/prefill", handlePrefill(opts.Credential))
 	mux.HandleFunc("GET /api/credentials/{id}", handleCredentialByID(opts.CredentialByID))
@@ -121,36 +120,6 @@ func handleCredentialByID(resolve func(string) (string, bool)) http.HandlerFunc 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"credential": credential})
 	}
-}
-
-type decodeRequest struct {
-	Input string `json:"input"`
-}
-
-func handleDecode(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-
-	var req decodeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	if req.Input == "" {
-		writeError(w, http.StatusBadRequest, "input is required")
-		return
-	}
-
-	result, err := Decode(req.Input)
-	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	enc.Encode(result)
 }
 
 type validateRequest struct {

@@ -125,7 +125,7 @@ func readFile(path string) (string, error) {
 }
 
 // ReadInput reads credential input from a URL, a file path, "-" for stdin or a raw string.
-func ReadInput(input string) (string, error) {
+func ReadInput(input string, clients ...*http.Client) (string, error) {
 	input = strings.TrimSpace(input)
 
 	if input == "-" || input == "" {
@@ -133,7 +133,7 @@ func ReadInput(input string) (string, error) {
 	}
 
 	if strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://") {
-		return FetchURL(input)
+		return FetchURL(input, clients...)
 	}
 
 	// An input with a URI scheme such as openid-credential-offer:// is never a file
@@ -150,10 +150,10 @@ func ReadInput(input string) (string, error) {
 // ReadRemoteInput reads credential input in a server. It fetches http(s) URLs and
 // returns everything else verbatim. It never reads stdin or the local filesystem,
 // so a visitor cannot read files on the server.
-func ReadRemoteInput(input string) (string, error) {
+func ReadRemoteInput(input string, clients ...*http.Client) (string, error) {
 	input = strings.TrimSpace(input)
 	if strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://") {
-		return FetchURL(input)
+		return FetchURL(input, clients...)
 	}
 	return input, nil
 }

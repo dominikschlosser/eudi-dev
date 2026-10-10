@@ -62,6 +62,13 @@ func TestTheDecoderAnchorsACatalogueTypeWithItsTrustedLists(t *testing.T) {
 
 func TestTheDecoderSkipsTheTrustCheckForATypeOutsideTheCatalogue(t *testing.T) {
 	store := wallet.NewWalletStore(t.TempDir())
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(w); err != nil {
+		t.Fatal(err)
+	}
 	key, _ := mock.GenerateKey()
 	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{Issuer: "https://issuer.example", VCT: "urn:example:unknown:1", ExpiresIn: time.Hour, Claims: map[string]any{"a": 1}, Key: key})
 	if err != nil {
@@ -69,5 +76,22 @@ func TestTheDecoderSkipsTheTrustCheckForATypeOutsideTheCatalogue(t *testing.T) {
 	}
 	if check := trustCheck(t, raw, store); check.Status != "skipped" || !strings.Contains(check.Detail, "no entry") {
 		t.Errorf("%+v, want skipped without a catalogue entry", check)
+	}
+}
+
+// Trust comes only from an existing wallet. The decoder reads a store that
+// holds no wallet as no catalogue and leaves it empty.
+func TestTheDecoderCreatesNoWallet(t *testing.T) {
+	store := wallet.NewWalletStore(t.TempDir())
+	key, _ := mock.GenerateKey()
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{Issuer: "https://issuer.example", VCT: "urn:example:unknown:1", ExpiresIn: time.Hour, Claims: map[string]any{"a": 1}, Key: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check := trustCheck(t, raw, store); check.Status != "skipped" || check.Detail != "No wallet with an attestation catalogue" {
+		t.Errorf("%+v, want skipped without a wallet", check)
+	}
+	if exists, err := store.Exists(); err != nil || exists {
+		t.Errorf("the decoder created a wallet (%v)", err)
 	}
 }

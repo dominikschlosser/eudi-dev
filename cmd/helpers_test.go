@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"crypto"
 	"fmt"
 	"net"
 	"os"
@@ -314,94 +313,6 @@ func TestIsHTTPURL(t *testing.T) {
 			t.Errorf("isHTTPURL(%q) = %v, want %v", tt.input, got, tt.want)
 		}
 	}
-}
-
-func TestVerifyWithBestKey(t *testing.T) {
-	type result struct {
-		valid bool
-		keyID string
-	}
-
-	key1 := new(int)
-	*key1 = 1
-	key2 := new(int)
-	*key2 = 2
-
-	t.Run("x5cKey takes priority", func(t *testing.T) {
-		called := false
-		r := verifyWithBestKey(
-			[]crypto.PublicKey{key1},
-			key2,
-			func(key crypto.PublicKey) (result, bool) {
-				called = true
-				if key == key2 {
-					return result{valid: true, keyID: "x5c"}, true
-				}
-				return result{valid: false, keyID: "fallback"}, false
-			},
-		)
-		if !called {
-			t.Error("verify function was not called")
-		}
-		if r.keyID != "x5c" {
-			t.Errorf("expected x5c key used, got %s", r.keyID)
-		}
-	})
-
-	t.Run("falls back to pubKeys when no x5cKey", func(t *testing.T) {
-		callCount := 0
-		r := verifyWithBestKey(
-			[]crypto.PublicKey{key1, key2},
-			nil,
-			func(key crypto.PublicKey) (result, bool) {
-				callCount++
-				if key == key2 {
-					return result{valid: true, keyID: "key2"}, true
-				}
-				return result{valid: false, keyID: "key1"}, false
-			},
-		)
-		if r.keyID != "key2" {
-			t.Errorf("expected key2 to be selected, got %s", r.keyID)
-		}
-		if callCount != 2 {
-			t.Errorf("expected 2 calls, got %d", callCount)
-		}
-	})
-
-	t.Run("stops on first valid key", func(t *testing.T) {
-		callCount := 0
-		r := verifyWithBestKey(
-			[]crypto.PublicKey{key1, key2},
-			nil,
-			func(key crypto.PublicKey) (result, bool) {
-				callCount++
-				return result{valid: true, keyID: "first"}, true
-			},
-		)
-		if callCount != 1 {
-			t.Errorf("expected 1 call (early exit), got %d", callCount)
-		}
-		if !r.valid {
-			t.Error("expected valid result")
-		}
-	})
-
-	t.Run("returns last result when none valid", func(t *testing.T) {
-		r := verifyWithBestKey(
-			[]crypto.PublicKey{key1, key2},
-			nil,
-			func(key crypto.PublicKey) (result, bool) {
-				if key == key2 {
-					return result{valid: false, keyID: "last"}, false
-				}
-				return result{valid: false, keyID: "first"}, false
-			},
-		)
-		if r.keyID != "last" {
-			t.Errorf("expected last result, got %s", r.keyID)
-		}
-	})
 }
 
 func TestWalletRegisterOptions(t *testing.T) {

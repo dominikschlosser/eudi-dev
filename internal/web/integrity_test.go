@@ -15,318 +15,16 @@
 package web
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
-
-func TestCheckSDJWTIntegrity_AllMatch(t *testing.T) {
-	discRaw1 := base64.RawURLEncoding.EncodeToString([]byte(`["salt1","name","Alice"]`))
-	discRaw2 := base64.RawURLEncoding.EncodeToString([]byte(`["salt2","age",30]`))
-
-	digest1 := sha256Sum(discRaw1)
-	digest2 := sha256Sum(discRaw2)
-
-	token := &sdjwt.Token{
-		Payload: map[string]any{
-			"_sd_alg": "sha-256",
-			"_sd":     []any{digest1, digest2},
-		},
-		Disclosures: []sdjwt.Disclosure{
-			{Raw: discRaw1, Name: "name", Value: "Alice", Digest: digest1},
-			{Raw: discRaw2, Name: "age", Value: float64(30), Digest: digest2},
-		},
-	}
-
-	result := CheckSDJWTIntegrity(token)
-	if result.Status != "pass" {
-		t.Errorf("expected pass, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestCheckSDJWTIntegrity_Mismatch(t *testing.T) {
-	discRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt","name","Alice"]`))
-	digest := sha256Sum(discRaw)
-
-	token := &sdjwt.Token{
-		Payload: map[string]any{
-			"_sd": []any{"wrong-digest"},
-		},
-		Disclosures: []sdjwt.Disclosure{
-			{Raw: discRaw, Name: "name", Value: "Alice", Digest: digest},
-		},
-	}
-
-	result := CheckSDJWTIntegrity(token)
-	if result.Status != "fail" {
-		t.Errorf("expected fail, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestCheckSDJWTIntegrity_NoDisclosures(t *testing.T) {
-	token := &sdjwt.Token{
-		Payload: map[string]any{"sub": "user"},
-	}
-
-	result := CheckSDJWTIntegrity(token)
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped, got %s", result.Status)
-	}
-}
-
-func TestCheckSDJWTIntegrity_NestedSD(t *testing.T) {
-	discRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt","email","test@example.com"]`))
-	digest := sha256Sum(discRaw)
-
-	token := &sdjwt.Token{
-		Payload: map[string]any{
-			"address": map[string]any{
-				"_sd": []any{digest},
-			},
-		},
-		Disclosures: []sdjwt.Disclosure{
-			{Raw: discRaw, Name: "email", Value: "test@example.com", Digest: digest},
-		},
-	}
-
-	result := CheckSDJWTIntegrity(token)
-	if result.Status != "pass" {
-		t.Errorf("expected pass for nested _sd, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestCheckSDJWTIntegrity_NestedDisclosureValue(t *testing.T) {
-	// The address disclosure contains the locality digest in its own _sd array.
-
-	addressDiscRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt-addr","address",{"_sd":["LOCALITY_DIGEST_PLACEHOLDER"]}]`))
-	addressDigest := sha256Sum(addressDiscRaw)
-
-	localityDiscRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt-loc","locality","KOELN"]`))
-	localityDigest := sha256Sum(localityDiscRaw)
-
-	addressValue := map[string]any{
-		"_sd": []any{localityDigest},
-	}
-
-	token := &sdjwt.Token{
-		Payload: map[string]any{
-			"_sd_alg": "sha-256",
-			"_sd":     []any{addressDigest},
-		},
-		Disclosures: []sdjwt.Disclosure{
-			{Raw: addressDiscRaw, Name: "address", Value: addressValue, Digest: addressDigest},
-			{Raw: localityDiscRaw, Name: "locality", Value: "KOELN", Digest: localityDigest},
-		},
-	}
-
-	result := CheckSDJWTIntegrity(token)
-	if result.Status != "pass" {
-		t.Errorf("expected pass for nested disclosure value with _sd, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestCheckSDJWTIntegrity_NestedArrayDisclosure(t *testing.T) {
-	// The array disclosure contains element digest placeholders.
-
-	subDiscRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt-de","DE"]`))
-	subDigest := sha256Sum(subDiscRaw)
-
-	natDiscRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt-nat","nationalities",[]]`))
-	natDigest := sha256Sum(natDiscRaw)
-
-	natValue := []any{
-		map[string]any{"...": subDigest},
-	}
-
-	token := &sdjwt.Token{
-		Payload: map[string]any{
-			"_sd": []any{natDigest},
-		},
-		Disclosures: []sdjwt.Disclosure{
-			{Raw: natDiscRaw, Name: "nationalities", Value: natValue, Digest: natDigest},
-			{Raw: subDiscRaw, Value: "DE", Digest: subDigest, IsArrayEntry: true},
-		},
-	}
-
-	result := CheckSDJWTIntegrity(token)
-	if result.Status != "pass" {
-		t.Errorf("expected pass for nested array disclosure, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestCheckMDOCIntegrity_AllMatch(t *testing.T) {
-	rawCBOR1 := []byte{0xa4, 0x01, 0x02, 0x03, 0x04}
-	rawCBOR2 := []byte{0xb5, 0x06, 0x07, 0x08, 0x09}
-
-	hash1 := sha256.Sum256(rawCBOR1)
-	hash2 := sha256.Sum256(rawCBOR2)
-
-	doc := &mdoc.Document{
-		NameSpaces: map[string][]mdoc.IssuerSignedItem{
-			"org.iso.18013.5.1": {
-				{DigestID: 0, ElementIdentifier: "family_name", RawCBOR: rawCBOR1},
-				{DigestID: 1, ElementIdentifier: "given_name", RawCBOR: rawCBOR2},
-			},
-		},
-		IssuerAuth: &mdoc.IssuerAuth{
-			MSO: &mdoc.MSO{
-				DigestAlgorithm: "SHA-256",
-				ValueDigests: map[string]map[uint64][]byte{
-					"org.iso.18013.5.1": {
-						0: hash1[:],
-						1: hash2[:],
-					},
-				},
-			},
-		},
-	}
-
-	result := CheckMDOCIntegrity(doc)
-	if result.Status != "pass" {
-		t.Errorf("expected pass, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestCheckMDOCIntegrity_DigestMismatch(t *testing.T) {
-	rawCBOR := []byte{0xa4, 0x01, 0x02, 0x03, 0x04}
-
-	doc := &mdoc.Document{
-		NameSpaces: map[string][]mdoc.IssuerSignedItem{
-			"org.iso.18013.5.1": {
-				{DigestID: 0, ElementIdentifier: "family_name", RawCBOR: rawCBOR},
-			},
-		},
-		IssuerAuth: &mdoc.IssuerAuth{
-			MSO: &mdoc.MSO{
-				DigestAlgorithm: "SHA-256",
-				ValueDigests: map[string]map[uint64][]byte{
-					"org.iso.18013.5.1": {
-						0: []byte("wrong-digest-value-that-wont-match"),
-					},
-				},
-			},
-		},
-	}
-
-	result := CheckMDOCIntegrity(doc)
-	if result.Status != "fail" {
-		t.Errorf("expected fail, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestCheckMDOCIntegrity_NoMSO(t *testing.T) {
-	doc := &mdoc.Document{
-		NameSpaces: map[string][]mdoc.IssuerSignedItem{
-			"ns": {{DigestID: 0, ElementIdentifier: "x"}},
-		},
-	}
-
-	result := CheckMDOCIntegrity(doc)
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped, got %s", result.Status)
-	}
-}
-
-func sha256Sum(s string) string {
-	h := sha256.Sum256([]byte(s))
-	return base64.RawURLEncoding.EncodeToString(h[:])
-}
-
-func TestCheckSDJWTIntegrity_ArrayElementDisclosure(t *testing.T) {
-	discRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt","item1"]`))
-	digest := sha256Sum(discRaw)
-
-	token := &sdjwt.Token{
-		Payload: map[string]any{
-			"items": []any{
-				map[string]any{"...": digest},
-			},
-		},
-		Disclosures: []sdjwt.Disclosure{
-			{Raw: discRaw, Value: "item1", Digest: digest, IsArrayEntry: true},
-		},
-	}
-
-	result := CheckSDJWTIntegrity(token)
-	if result.Status != "pass" {
-		t.Errorf("expected pass for array element, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestCheckMDOCIntegrity_Tag24EncodedRawCBOR(t *testing.T) {
-	// MSO ValueDigests hash the full Tag-24 encoding (#6.24(bstr)).
-	innerCBOR := []byte{0xa4, 0x01, 0x02, 0x03, 0x04}
-
-	// Tag 24 with 5-byte content: 0xd8 0x18 0x45 <5 bytes>
-	tag24Bytes := append([]byte{0xd8, 0x18, 0x45}, innerCBOR...)
-
-	hash := sha256.Sum256(tag24Bytes)
-
-	doc := &mdoc.Document{
-		NameSpaces: map[string][]mdoc.IssuerSignedItem{
-			"org.iso.18013.5.1": {
-				{DigestID: 0, ElementIdentifier: "family_name", RawCBOR: tag24Bytes},
-			},
-		},
-		IssuerAuth: &mdoc.IssuerAuth{
-			MSO: &mdoc.MSO{
-				DigestAlgorithm: "SHA-256",
-				ValueDigests: map[string]map[uint64][]byte{
-					"org.iso.18013.5.1": {
-						0: hash[:],
-					},
-				},
-			},
-		},
-	}
-
-	result := CheckMDOCIntegrity(doc)
-	if result.Status != "pass" {
-		t.Errorf("expected pass for Tag-24 encoded RawCBOR, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestCheckMDOCIntegrity_Tag24FailsWithInnerBytesDigest(t *testing.T) {
-	// A digest over only the inner bytes must fail.
-	innerCBOR := []byte{0xa4, 0x01, 0x02, 0x03, 0x04}
-	tag24Bytes := append([]byte{0xd8, 0x18, 0x45}, innerCBOR...)
-
-	hashInner := sha256.Sum256(innerCBOR)
-
-	doc := &mdoc.Document{
-		NameSpaces: map[string][]mdoc.IssuerSignedItem{
-			"org.iso.18013.5.1": {
-				{DigestID: 0, ElementIdentifier: "family_name", RawCBOR: tag24Bytes},
-			},
-		},
-		IssuerAuth: &mdoc.IssuerAuth{
-			MSO: &mdoc.MSO{
-				DigestAlgorithm: "SHA-256",
-				ValueDigests: map[string]map[uint64][]byte{
-					"org.iso.18013.5.1": {
-						0: hashInner[:],
-					},
-				},
-			},
-		},
-	}
-
-	result := CheckMDOCIntegrity(doc)
-	if result.Status != "fail" {
-		t.Errorf("expected fail when digest is over inner bytes but RawCBOR is Tag-24, got %s: %s", result.Status, result.Detail)
-	}
-}
 
 func TestHandleValidate_SDJWTBasic(t *testing.T) {
 	jwt := makeSDJWT(
@@ -425,7 +123,7 @@ func TestHandleValidate_JWTExpired(t *testing.T) {
 	}
 }
 
-func TestHandleValidate_JWTSkipsIntegrityAndStatus(t *testing.T) {
+func TestHandleValidate_JWTSkipsIntegrity(t *testing.T) {
 	jwt := makeJWT(
 		map[string]any{"alg": "none", "typ": "JWT"},
 		map[string]any{
@@ -467,8 +165,8 @@ func TestHandleValidate_JWTSkipsIntegrityAndStatus(t *testing.T) {
 	if names["status"] != "skipped" {
 		t.Errorf("status check: got %s, want skipped", names["status"])
 	}
-	if details["status"] != "Not applicable for plain JWT" {
-		t.Errorf("status detail: got %q, want %q", details["status"], "Not applicable for plain JWT")
+	if details["status"] != "No status list reference in credential" {
+		t.Errorf("status detail: got %q, want %q", details["status"], "No status list reference in credential")
 	}
 
 	if names["expiry"] != "pass" {
@@ -480,7 +178,9 @@ func TestHandleValidate_JWTSkipsIntegrityAndStatus(t *testing.T) {
 	}
 }
 
-func TestHandleValidate_JWTStatusSkippedEvenWhenRequested(t *testing.T) {
+// Token Status List §6.2 lets any JWT reference a status list, so a plain JWT
+// gets the status check of an SD-JWT VC.
+func TestHandleValidate_JWTWithoutStatusReference(t *testing.T) {
 	jwt := makeJWT(
 		map[string]any{"alg": "none", "typ": "JWT"},
 		map[string]any{
@@ -509,8 +209,8 @@ func TestHandleValidate_JWTStatusSkippedEvenWhenRequested(t *testing.T) {
 			if cm["status"] != "skipped" {
 				t.Errorf("status check: got %s, want skipped", cm["status"])
 			}
-			if cm["detail"] != "Not applicable for plain JWT" {
-				t.Errorf("status detail: got %q, want %q", cm["detail"], "Not applicable for plain JWT")
+			if cm["detail"] != "No status list reference in credential" {
+				t.Errorf("status detail: got %q, want %q", cm["detail"], "No status list reference in credential")
 			}
 		}
 	}
@@ -584,129 +284,6 @@ func TestHandleValidate_SDJWTStatusCheckedWhenPresent(t *testing.T) {
 	}
 
 	t.Fatal("expected status check in validation response")
-}
-
-func TestValidate_MDOCStatusWrapping(t *testing.T) {
-	// MSO.Status is the inner {"status_list": ...} object.
-	doc := &mdoc.Document{
-		IssuerAuth: &mdoc.IssuerAuth{
-			MSO: &mdoc.MSO{
-				Status: map[string]any{
-					"status_list": map[string]any{
-						"idx": float64(42),
-						"uri": "https://example.com/statuslist",
-					},
-				},
-			},
-		},
-	}
-
-	result := checkMDOCStatus(doc, credentialTrust{}, ValidateOpts{CheckStatus: false})[0]
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped when CheckStatus=false, got %s", result.Status)
-	}
-	if result.Detail != "Not requested" {
-		t.Errorf("expected 'Not requested', got %q", result.Detail)
-	}
-}
-
-func TestValidate_MDOCStatusNoStatus(t *testing.T) {
-	doc := &mdoc.Document{
-		IssuerAuth: &mdoc.IssuerAuth{
-			MSO: &mdoc.MSO{},
-		},
-	}
-
-	result := checkMDOCStatus(doc, credentialTrust{}, ValidateOpts{CheckStatus: true})[0]
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped when no status in MSO, got %s", result.Status)
-	}
-	if result.Detail != "No status reference in credential" {
-		t.Errorf("expected 'No status reference in credential', got %q", result.Detail)
-	}
-}
-
-func TestValidate_SDJWTExpiryNotYetValid(t *testing.T) {
-	token := &sdjwt.Token{
-		Payload: map[string]any{
-			"nbf": float64(4102444800), // 2100-01-01
-			"exp": float64(4102444900),
-		},
-	}
-
-	result := checkSDJWTExpiry(token)
-	if result.Status != "fail" {
-		t.Errorf("expected fail for not-yet-valid token, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestValidate_SDJWTExpiryNoExp(t *testing.T) {
-	token := &sdjwt.Token{
-		Payload: map[string]any{"sub": "user"},
-	}
-
-	result := checkSDJWTExpiry(token)
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped when no exp, got %s", result.Status)
-	}
-}
-
-func TestValidate_MDOCExpiryNoValidityInfo(t *testing.T) {
-	doc := &mdoc.Document{
-		IssuerAuth: &mdoc.IssuerAuth{
-			MSO: &mdoc.MSO{},
-		},
-	}
-
-	result := checkMDOCExpiry(doc)
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped when no validity info, got %s", result.Status)
-	}
-}
-
-func TestValidate_SignatureSkippedNoKey(t *testing.T) {
-	token := &sdjwt.Token{
-		Payload: map[string]any{"sub": "user"},
-	}
-
-	result := checkSDJWTSignature(token, credentialTrust{}, ValidateOpts{})
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped when no key, got %s", result.Status)
-	}
-	if result.Detail != "No key provided" {
-		t.Errorf("expected 'No key provided', got %q", result.Detail)
-	}
-}
-
-func TestValidate_SignatureSkippedWhenIssuerMetadataLookupFails(t *testing.T) {
-	key, err := mock.GenerateKey()
-	if err != nil {
-		t.Fatalf("GenerateKey: %v", err)
-	}
-
-	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
-		Issuer:    "https://localhost:1",
-		VCT:       "urn:test",
-		ExpiresIn: time.Hour,
-		Claims:    map[string]any{"given_name": "Erika"},
-		Key:       key,
-	})
-	if err != nil {
-		t.Fatalf("GenerateSDJWT: %v", err)
-	}
-
-	token, err := sdjwt.Parse(raw)
-	if err != nil {
-		t.Fatalf("sdjwt.Parse: %v", err)
-	}
-
-	result := checkSDJWTSignature(token, credentialTrust{}, ValidateOpts{})
-	if result.Status != "skipped" {
-		t.Fatalf("expected skipped when issuer metadata lookup fails, got %s (%s)", result.Status, result.Detail)
-	}
-	if result.Detail == "" || result.Detail == "No key provided" {
-		t.Fatalf("expected issuer metadata lookup detail, got %q", result.Detail)
-	}
 }
 
 func TestHandleValidate_VerifyFormAlwaysPresent(t *testing.T) {
@@ -798,98 +375,6 @@ func TestHandleValidate_SDJWTValidExpiry(t *testing.T) {
 				t.Error("expiry detail should not be empty")
 			}
 		}
-	}
-}
-
-func TestValidate_MDOCStatusNilIssuerAuth(t *testing.T) {
-	doc := &mdoc.Document{}
-
-	result := checkMDOCStatus(doc, credentialTrust{}, ValidateOpts{CheckStatus: true})[0]
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped when no issuerAuth, got %s", result.Status)
-	}
-}
-
-func TestValidate_MDOCExpiryNilIssuerAuth(t *testing.T) {
-	doc := &mdoc.Document{}
-
-	result := checkMDOCExpiry(doc)
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped when no issuerAuth, got %s", result.Status)
-	}
-}
-
-func TestValidate_MDOCSignatureSkippedNoKey(t *testing.T) {
-	doc := &mdoc.Document{}
-
-	result := checkMDOCSignature(doc, credentialTrust{}, ValidateOpts{})
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped when no key, got %s", result.Status)
-	}
-	if result.Detail != "No key provided" {
-		t.Errorf("expected 'No key provided', got %q", result.Detail)
-	}
-}
-
-func TestValidate_SDJWTExpiryPass(t *testing.T) {
-	token := &sdjwt.Token{
-		Payload: map[string]any{
-			"exp": float64(4102444800), // far future
-		},
-	}
-
-	result := checkSDJWTExpiry(token)
-	if result.Status != "pass" {
-		t.Errorf("expected pass, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestValidate_SDJWTExpiryExpired(t *testing.T) {
-	token := &sdjwt.Token{
-		Payload: map[string]any{
-			"exp": float64(1000000000), // way in the past
-		},
-	}
-
-	result := checkSDJWTExpiry(token)
-	if result.Status != "fail" {
-		t.Errorf("expected fail, got %s: %s", result.Status, result.Detail)
-	}
-}
-
-func TestValidate_SDJWTStatusSkippedNotRequested(t *testing.T) {
-	token := &sdjwt.Token{
-		ResolvedClaims: map[string]any{
-			"sub": "user",
-			"status": map[string]any{
-				"status_list": map[string]any{
-					"idx": float64(7),
-					"uri": "https://issuer.example/status-list/1",
-				},
-			},
-		},
-	}
-
-	result := checkSDJWTStatus(token, credentialTrust{}, ValidateOpts{CheckStatus: false})[0]
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped, got %s", result.Status)
-	}
-	if result.Detail != "Not requested" {
-		t.Errorf("expected 'Not requested', got %q", result.Detail)
-	}
-}
-
-func TestValidate_SDJWTStatusNoRef(t *testing.T) {
-	token := &sdjwt.Token{
-		ResolvedClaims: map[string]any{"sub": "user"},
-	}
-
-	result := checkSDJWTStatus(token, credentialTrust{}, ValidateOpts{CheckStatus: true})[0]
-	if result.Status != "skipped" {
-		t.Errorf("expected skipped when no status ref, got %s", result.Status)
-	}
-	if result.Detail != "No status list reference in credential" {
-		t.Errorf("expected 'No status list reference in credential', got %q", result.Detail)
 	}
 }
 

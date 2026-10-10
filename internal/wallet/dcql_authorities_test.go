@@ -20,13 +20,11 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
 	"math/big"
 	"testing"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
@@ -97,114 +95,6 @@ func mdocWithChain(t *testing.T, chain ...*x509.Certificate) StoredCredential {
 		t.Fatal(err)
 	}
 	return StoredCredential{Format: "mso_mdoc", Raw: raw}
-}
-
-func TestExtractX5CCertificates(t *testing.T) {
-	caCert, leafCert, _, _ := authorityChain(t)
-	b64 := base64.StdEncoding.EncodeToString
-
-	t.Run("a chain", func(t *testing.T) {
-		certs, err := extractX5CCertificates(map[string]any{"x5c": []any{b64(leafCert.Raw), b64(caCert.Raw)}})
-		if err != nil {
-			t.Fatalf("extractX5CCertificates: %v", err)
-		}
-		if len(certs) != 2 {
-			t.Fatalf("certificates = %d, want 2", len(certs))
-		}
-		if certs[0].Subject.CommonName != "Document Signer" {
-			t.Errorf("first certificate = %q, want the leaf first", certs[0].Subject.CommonName)
-		}
-	})
-
-	t.Run("no x5c", func(t *testing.T) {
-		certs, err := extractX5CCertificates(map[string]any{"alg": "ES256"})
-		if err != nil || certs != nil {
-			t.Errorf("certs = %v, err = %v, want both empty", certs, err)
-		}
-	})
-
-	t.Run("an empty x5c", func(t *testing.T) {
-		certs, err := extractX5CCertificates(map[string]any{"x5c": []any{}})
-		if err != nil || certs != nil {
-			t.Errorf("certs = %v, err = %v, want both empty", certs, err)
-		}
-	})
-
-	t.Run("an entry that is not a string", func(t *testing.T) {
-		certs, err := extractX5CCertificates(map[string]any{"x5c": []any{42}})
-		if err != nil || certs != nil {
-			t.Errorf("certs = %v, err = %v, want both empty", certs, err)
-		}
-	})
-
-	t.Run("an entry that is not base64", func(t *testing.T) {
-		if _, err := extractX5CCertificates(map[string]any{"x5c": []any{"!!!"}}); err == nil {
-			t.Error("an unreadable x5c entry was accepted")
-		}
-	})
-
-	t.Run("an entry that is not a certificate", func(t *testing.T) {
-		if _, err := extractX5CCertificates(map[string]any{"x5c": []any{b64([]byte("nope"))}}); err == nil {
-			t.Error("bytes that are not a certificate were accepted")
-		}
-	})
-}
-
-// COSE decoders return the x5chain label as int64 or uint64, depending on the
-// encoder. A single certificate is a bare byte string.
-func TestExtractMDOCX5Chain(t *testing.T) {
-	caCert, leafCert, _, _ := authorityChain(t)
-	withHeader := func(h map[any]any) *mdoc.Document {
-		return &mdoc.Document{IssuerAuth: &mdoc.IssuerAuth{UnprotectedHeader: h}}
-	}
-
-	t.Run("one certificate under int64", func(t *testing.T) {
-		certs, err := extractMDOCX5Chain(withHeader(map[any]any{int64(33): leafCert.Raw}))
-		if err != nil || len(certs) != 1 {
-			t.Fatalf("certs = %d, err = %v, want 1", len(certs), err)
-		}
-	})
-
-	t.Run("a chain under uint64", func(t *testing.T) {
-		certs, err := extractMDOCX5Chain(withHeader(map[any]any{uint64(33): []any{leafCert.Raw, caCert.Raw}}))
-		if err != nil || len(certs) != 2 {
-			t.Fatalf("certs = %d, err = %v, want 2", len(certs), err)
-		}
-	})
-
-	t.Run("no issuer authentication", func(t *testing.T) {
-		certs, err := extractMDOCX5Chain(&mdoc.Document{})
-		if err != nil || certs != nil {
-			t.Errorf("certs = %v, err = %v, want both empty", certs, err)
-		}
-	})
-
-	t.Run("no x5chain", func(t *testing.T) {
-		certs, err := extractMDOCX5Chain(withHeader(map[any]any{int64(1): int64(-7)}))
-		if err != nil || certs != nil {
-			t.Errorf("certs = %v, err = %v, want both empty", certs, err)
-		}
-	})
-
-	t.Run("an x5chain of an unexpected shape", func(t *testing.T) {
-		certs, err := extractMDOCX5Chain(withHeader(map[any]any{int64(33): "a string"}))
-		if err != nil || certs != nil {
-			t.Errorf("certs = %v, err = %v, want both empty", certs, err)
-		}
-	})
-
-	t.Run("an entry that is not bytes", func(t *testing.T) {
-		certs, err := extractMDOCX5Chain(withHeader(map[any]any{int64(33): []any{"a string"}}))
-		if err != nil || certs != nil {
-			t.Errorf("certs = %v, err = %v, want both empty", certs, err)
-		}
-	})
-
-	t.Run("bytes that are not a certificate", func(t *testing.T) {
-		if _, err := extractMDOCX5Chain(withHeader(map[any]any{int64(33): []byte("nope")})); err == nil {
-			t.Error("unparseable DER was accepted")
-		}
-	})
 }
 
 func TestExtractCredentialCertificatesIgnoresOtherFormats(t *testing.T) {

@@ -59,7 +59,7 @@ func mdocIssuerCertIdentity(raw string) map[string]any {
 	if err != nil {
 		return nil
 	}
-	certs, err := extractMDOCX5Chain(doc)
+	certs, err := validate.ExtractMDOCX5ChainCertificates(doc)
 	if err != nil || len(certs) == 0 {
 		return nil
 	}
@@ -107,7 +107,7 @@ func mdocSignatureState(raw string) map[string]any {
 	if err != nil {
 		return nil
 	}
-	certs, err := extractMDOCX5Chain(doc)
+	certs, err := validate.ExtractMDOCX5ChainCertificates(doc)
 	if err == nil && len(certs) > 0 {
 		res := mdoc.Verify(doc, certs[0].PublicKey)
 		if res.Algorithm == "" {

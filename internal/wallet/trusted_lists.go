@@ -374,8 +374,7 @@ func (w *Wallet) readTrustedList(rawURL string) (*trustlist.TrustList, error) {
 }
 
 // readListSignedBy returns the list if its signer chains to one of the
-// certificates. A list past its next update is expired (ETSI TS 119 602
-// V1.1.1 §6.3.15).
+// certificates and the list is current.
 func (w *Wallet) readListSignedBy(rawURL string, signers []*x509.Certificate) (*trustlist.TrustList, error) {
 	raw, err := w.rawTrustedList(rawURL)
 	if err != nil {
@@ -388,13 +387,8 @@ func (w *Wallet) readListSignedBy(rawURL string, signers []*x509.Certificate) (*
 	if err != nil {
 		return nil, fmt.Errorf("parsing the trusted list: %w", err)
 	}
-	// A closed list has a null NextUpdate, and its services are expired.
-	next, err := time.Parse(time.RFC3339, list.SchemeInfo.NextUpdate)
-	switch {
-	case err != nil:
-		return nil, fmt.Errorf("the trusted list has no NextUpdate date, so it is closed or malformed (ETSI TS 119 602 V1.1.1 §6.3.15)")
-	case next.Before(time.Now()):
-		return nil, fmt.Errorf("the trusted list expired at %s (ETSI TS 119 602 V1.1.1 §6.3.15)", list.SchemeInfo.NextUpdate)
+	if err := list.Current(time.Now()); err != nil {
+		return nil, err
 	}
 	return list, nil
 }
@@ -453,13 +447,29 @@ func (w *Wallet) trustedLists() []trustedList {
 		}
 	}
 	readAll(len(pointed), func(i int) {
-		list, err := w.readListSignedBy(pointed[i].URL, parsedAnchors(pointers[i].Certificates))
+		signers, err := trustlist.Certificates(pointers[i].Certificates)
+		if err != nil {
+			pointed[i].Err = err
+			return
+		}
+		list, err := w.readListSignedBy(pointed[i].URL, signers)
 		if err == nil && pointers[i].LoTEType != "" && list.SchemeInfo.LoTEType != pointers[i].LoTEType {
 			list, err = nil, fmt.Errorf("the list has the type %s, and its pointer names %s", list.SchemeInfo.LoTEType, pointers[i].LoTEType)
 		}
 		pointed[i].List, pointed[i].Err = list, err
 	})
 	return append(out, pointed...)
+}
+
+// anchors returns the certificates of the services of one kind on a readable
+// list. trustedLists read the list as current, and a list that expired since
+// then gives none (ETSI TS 119 602 V1.1.1 §6.3.15).
+func (tl trustedList) anchors(kind string) []*x509.Certificate {
+	certs, err := trustlist.Anchors(tl.List, kind, time.Now())
+	if err != nil {
+		return nil
+	}
+	return certs
 }
 
 // readAll runs read for every index in parallel and waits for all of them.
@@ -481,7 +491,7 @@ func (w *Wallet) listAnchors(listType, kind string) []*x509.Certificate {
 	var anchors []*x509.Certificate
 	for _, tl := range w.trustedLists() {
 		if tl.Err == nil && tl.List.SchemeInfo.LoTEType == listType {
-			anchors = append(anchors, parsedAnchors(trustlist.ServiceCertificates(tl.List, kind))...)
+			anchors = append(anchors, tl.anchors(kind)...)
 		}
 	}
 	return anchors
@@ -573,7 +583,7 @@ func (w *Wallet) CredentialProviderAnchors(kind string) []*x509.Certificate {
 		case walletProviderTrustListType, accessCAListType, registrarListType, listOfTrustedListsType:
 			continue
 		}
-		anchors = append(anchors, parsedAnchors(trustlist.ServiceCertificates(tl.List, kind))...)
+		anchors = append(anchors, tl.anchors(kind)...)
 	}
 	return anchors
 }
@@ -589,14 +599,4 @@ const (
 // Annex E).
 func (w *Wallet) WalletProviderAnchors() []*x509.Certificate {
 	return w.listAnchors(walletProviderTrustListType, trustlist.IssuanceServices)
-}
-
-func parsedAnchors(infos []trustlist.CertInfo) []*x509.Certificate {
-	var out []*x509.Certificate
-	for _, info := range infos {
-		if cert, err := x509.ParseCertificate(info.Raw); err == nil {
-			out = append(out, cert)
-		}
-	}
-	return out
 }

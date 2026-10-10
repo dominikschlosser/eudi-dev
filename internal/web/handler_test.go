@@ -28,7 +28,7 @@ import (
 
 func apiPost(t *testing.T, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	return apiPostTo(t, "/api/decode", body)
+	return apiPostTo(t, "/api/validate", body)
 }
 
 func apiPostTo(t *testing.T, path, body string) *httptest.ResponseRecorder {
@@ -84,7 +84,7 @@ func makeSDJWT(payload map[string]any, disclosures [][]any) string {
 	return result
 }
 
-func TestHandleDecode_JWT(t *testing.T) {
+func TestValidateEndpointDecodes_JWT(t *testing.T) {
 	jwt := makeJWT(
 		map[string]any{"alg": "none", "typ": "JWT"},
 		map[string]any{"sub": "1234567890", "name": "John Doe"},
@@ -106,7 +106,7 @@ func TestHandleDecode_JWT(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_JWTResponseStructure(t *testing.T) {
+func TestValidateEndpointDecodes_JWTResponseStructure(t *testing.T) {
 	jwt := makeJWT(
 		map[string]any{"alg": "RS256", "kid": "key-1"},
 		map[string]any{"iss": "https://auth.example", "sub": "user"},
@@ -147,7 +147,7 @@ func TestHandleJWTRegardlessOfClaims(t *testing.T) {
 		{"authorization request", map[string]any{"alg": "none"}, map[string]any{"client_id": "https://verifier.example", "response_type": "vp_token"}},
 		{"trusted list", map[string]any{"alg": "none"}, map[string]any{"LoTE": map[string]any{"TrustedEntitiesList": []any{}}}},
 	} {
-		for _, endpoint := range []string{"/api/decode", "/api/validate"} {
+		for _, endpoint := range []string{"/api/validate"} {
 			t.Run(tc.name+endpoint, func(t *testing.T) {
 				body, err := json.Marshal(map[string]string{"input": " \n" + makeJWT(tc.header, tc.payload) + "\n "})
 				if err != nil {
@@ -183,7 +183,7 @@ func TestHandleTrustListJWT(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, endpoint := range []string{"/api/decode", "/api/validate"} {
+	for _, endpoint := range []string{"/api/validate"} {
 		t.Run(endpoint, func(t *testing.T) {
 			w := apiPostTo(t, endpoint, `{"input":"`+jwt+`"}`)
 			if w.Code != http.StatusOK {
@@ -206,7 +206,7 @@ func TestHandleTrustListJWT(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_SDJWT(t *testing.T) {
+func TestValidateEndpointDecodes_SDJWT(t *testing.T) {
 	sdjwt := makeSDJWT(
 		map[string]any{
 			"iss":     "https://issuer.example",
@@ -243,7 +243,7 @@ func TestHandleDecode_SDJWT(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_SDJWTDisclosureFields(t *testing.T) {
+func TestValidateEndpointDecodes_SDJWTDisclosureFields(t *testing.T) {
 	sdjwt := makeSDJWT(
 		map[string]any{
 			"iss":     "https://issuer.example",
@@ -282,7 +282,7 @@ func TestHandleDecode_SDJWTDisclosureFields(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_EmptyInput(t *testing.T) {
+func TestValidateEndpointDecodes_EmptyInput(t *testing.T) {
 	w := apiPost(t, `{"input":""}`)
 
 	if w.Code != http.StatusBadRequest {
@@ -295,7 +295,7 @@ func TestHandleDecode_EmptyInput(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_MissingInputField(t *testing.T) {
+func TestValidateEndpointDecodes_MissingInputField(t *testing.T) {
 	w := apiPost(t, `{}`)
 
 	if w.Code != http.StatusBadRequest {
@@ -308,7 +308,7 @@ func TestHandleDecode_MissingInputField(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_InvalidCredential(t *testing.T) {
+func TestValidateEndpointDecodes_InvalidCredential(t *testing.T) {
 	w := apiPost(t, `{"input":"not-a-credential"}`)
 
 	if w.Code != http.StatusUnprocessableEntity {
@@ -321,7 +321,7 @@ func TestHandleDecode_InvalidCredential(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_InvalidJSON(t *testing.T) {
+func TestValidateEndpointDecodes_InvalidJSON(t *testing.T) {
 	w := apiPost(t, "not json")
 
 	if w.Code != http.StatusBadRequest {
@@ -329,8 +329,8 @@ func TestHandleDecode_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_WrongMethod(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/decode", nil)
+func TestValidateEndpointDecodes_WrongMethod(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/validate", nil)
 	w := httptest.NewRecorder()
 
 	NewMux("").ServeHTTP(w, req)
@@ -340,19 +340,19 @@ func TestHandleDecode_WrongMethod(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_PutMethod(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPut, "/api/decode", strings.NewReader(`{"input":"x"}`))
+func TestValidateEndpointDecodes_PutMethod(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPut, "/api/validate", strings.NewReader(`{"input":"x"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
 	NewMux("").ServeHTTP(w, req)
 
 	if w.Code == http.StatusOK {
-		t.Fatal("expected non-200 for PUT /api/decode")
+		t.Fatal("expected non-200 for PUT /api/validate")
 	}
 }
 
-func TestHandleDecode_ResponseContentType(t *testing.T) {
+func TestValidateEndpointDecodes_ResponseContentType(t *testing.T) {
 	jwt := makeJWT(
 		map[string]any{"alg": "none"},
 		map[string]any{"sub": "test"},
@@ -366,7 +366,7 @@ func TestHandleDecode_ResponseContentType(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_ErrorResponseContentType(t *testing.T) {
+func TestValidateEndpointDecodes_ErrorResponseContentType(t *testing.T) {
 	w := apiPost(t, `{"input":""}`)
 
 	ct := w.Header().Get("Content-Type")
@@ -375,7 +375,7 @@ func TestHandleDecode_ErrorResponseContentType(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_MalformedJWT(t *testing.T) {
+func TestValidateEndpointDecodes_MalformedJWT(t *testing.T) {
 	w := apiPost(t, `{"input":"aaa.bbb.ccc"}`)
 
 	if w.Code != http.StatusUnprocessableEntity {
@@ -587,7 +587,7 @@ func TestStaticFiles_JSContainsNewFeatures(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_JWTWithTimestamps(t *testing.T) {
+func TestValidateEndpointDecodes_JWTWithTimestamps(t *testing.T) {
 	jwt := makeJWT(
 		map[string]any{"alg": "none"},
 		map[string]any{
@@ -620,7 +620,7 @@ func TestHandleDecode_JWTWithTimestamps(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_SDJWTResolvedClaims(t *testing.T) {
+func TestValidateEndpointDecodes_SDJWTResolvedClaims(t *testing.T) {
 	sdjwt := makeSDJWT(
 		map[string]any{
 			"iss":     "https://issuer.example",
@@ -665,7 +665,7 @@ func TestHandleDecode_SDJWTResolvedClaims(t *testing.T) {
 	}
 }
 
-func TestHandleDecode_JWTIssuerSubjectInPayload(t *testing.T) {
+func TestValidateEndpointDecodes_JWTIssuerSubjectInPayload(t *testing.T) {
 	// The summary reads payload.iss and payload.sub.
 	jwt := makeJWT(
 		map[string]any{"alg": "RS256"},

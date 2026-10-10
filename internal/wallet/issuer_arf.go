@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/certchain"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
@@ -137,7 +138,7 @@ func issuerARFFindings(a issuerAuthentication) []string {
 	var findings []string
 	if len(a.signerChain) == 0 {
 		findings = append(findings, accessRule+": the Credential Issuer Metadata is not signed, so the wallet cannot check the issuer's access certificate. The issuer must sign it as OpenID4VCI 1.0 §12.2.3 describes ("+signingRule+")")
-	} else if err := verifyToAnchor(a.signerChain, a.accessCAs); err != nil {
+	} else if _, err := certchain.Verify(a.signerChain, a.accessCAs); err != nil {
 		findings = append(findings, fmt.Sprintf("%s: the access certificate %q of the signed issuer metadata does not chain to a trusted access certificate authority: %v", accessRule, a.signerChain[0].Subject.String(), err))
 	}
 
@@ -163,7 +164,7 @@ func issuerARFFindings(a issuerAuthentication) []string {
 		if len(a.signerChain) > 0 {
 			findings = append(findings, registrationBindingFindings(cert, a.signerChain[0], "ARF RPRC_22b")...)
 		}
-		if err := verifyToAnchor(r.chain, a.registrarCAs); err != nil {
+		if _, err := certchain.Verify(r.chain, a.registrarCAs); err != nil {
 			findings = append(findings, fmt.Sprintf("%s: the registration certificate of %s does not chain to a trusted registrar: %v", registrarRule, name, err))
 		}
 		findings = append(findings, registrationStatusFindings(cert, a.statusClient, a.statusCAs, "ARF RPRC_22a")...)

@@ -389,7 +389,8 @@ func TestExtractAndValidateX5C_ValidBase64ButInvalidDER(t *testing.T) {
 	}
 }
 
-func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
+// A revoked credential fails validate with the name of its status type.
+func TestValidateFailsForRevokedCredential(t *testing.T) {
 	key, err := mock.GenerateKey()
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
@@ -406,27 +407,46 @@ func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
 			URI: statusSrv.URL,
 		})
 		if err != nil {
-			t.Fatalf("GenerateStatusListJWT: %v", err)
+			t.Errorf("GenerateStatusListJWT: %v", err)
+			return
 		}
 		w.Header().Set("Content-Type", "application/statuslist+jwt")
 		_, _ = w.Write([]byte(jwt))
 	}))
 	defer statusSrv.Close()
 
-	err = checkStatus(map[string]any{
-		"status": map[string]any{
-			"status_list": map[string]any{
-				"uri": statusSrv.URL,
-				"idx": 0,
-			},
-		},
-	}, statuslist.FormatJWT, nil, nil, nil)
-	if err == nil {
-		t.Fatal("expected revoked status list to fail validation")
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:        "https://localhost:1",
+		VCT:           "urn:test:revoked",
+		ExpiresIn:     time.Hour,
+		Claims:        map[string]any{"given_name": "Erika"},
+		Key:           key,
+		StatusListURI: statusSrv.URL,
+		StatusListIdx: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "INVALID") {
-		t.Fatalf("expected the error to name the status type, got %v", err)
+
+	err = runValidateArgs(t, raw)
+	if err == nil || !strings.Contains(err.Error(), "INVALID") {
+		t.Fatalf("validate = %v, want the INVALID status", err)
 	}
+}
+
+// runValidateArgs runs validate on a credential file and resets the flags.
+func runValidateArgs(t *testing.T, raw string, flags ...string) error {
+	t.Helper()
+	resetRemoteTestState(t)
+	credFile := filepath.Join(t.TempDir(), "cred.txt")
+	if err := os.WriteFile(credFile, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		keyFile, trustListFile, statusListFlag, allowExpired, validateHAIP, jsonOutput = "", "", true, false, false, false
+	})
+	rootCmd.SetArgs(append(append([]string{"validate"}, flags...), credFile))
+	return rootCmd.Execute()
 }
 
 func encodeBase64Std(data []byte) string {
@@ -520,7 +540,7 @@ func TestValidateHAIPFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findings := haipCredentialFindings(credential(t, leaf)); len(findings) != 0 {
+	if findings := validate.HAIPCredentialFindings(credential(t, leaf).Header, credential(t, leaf).Payload); len(findings) != 0 {
 		t.Errorf("a credential carrying its issuer chain produced %v", findings)
 	}
 
@@ -540,7 +560,7 @@ func TestValidateHAIPFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findings := haipCredentialFindings(token); len(findings) != 1 {
+	if findings := validate.HAIPCredentialFindings(token.Header, token.Payload); len(findings) != 1 {
 		t.Errorf("a credential with no x5c produced %v, want the missing-chain finding", findings)
 	}
 
@@ -561,7 +581,7 @@ func TestValidateHAIPFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findings := haipCredentialFindings(anchorToken); len(findings) != 1 {
+	if findings := validate.HAIPCredentialFindings(anchorToken.Header, anchorToken.Payload); len(findings) != 1 {
 		t.Errorf("a chain carrying the trust anchor produced %v, want the anchor finding", findings)
 	}
 }
@@ -643,7 +663,7 @@ func TestValidateHAIPFindingsInJSON(t *testing.T) {
 func TestValidateCreatesNoWallet(t *testing.T) {
 	resetRemoteTestState(t)
 	useLocalTestWallet(t)
-	if _, _, err := catalogueAnchoring("eyJhbGciOiJFUzI1NiJ9.e30.sig~"); err != nil {
+	if _, err := validateTrust(); err != nil {
 		t.Fatal(err)
 	}
 	store, err := openStore()
