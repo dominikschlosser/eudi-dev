@@ -10,7 +10,7 @@ Two wallet servers share Postgres behind nginx. Both use the same keys, CA, cred
 | `wallet-1`, `wallet-2` | `eudi wallet serve --auto-accept --pid` on the `postgres` storage backend | none |
 | `db` | Postgres 16 | none |
 
-The wallets advertise `http://localhost:8080` as their base URL and `https://localhost:8086` as their issuer URL, so the status list, issuer metadata and trust list URLs embedded in credentials point at the ingress.
+The wallets advertise `http://localhost:8080` as their base URL and `https://localhost:8086` as their issuer URL, so the status list, issuer metadata and trusted list URLs embedded in credentials point at the ingress.
 
 ## Run
 

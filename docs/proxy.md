@@ -23,8 +23,6 @@ eudi proxy --target http://localhost:3000 -- npm start
 
 ## Traffic classification
 
-Traffic is classified into protocol steps:
-
 | Badge               | Detected when                                                     |
 |---------------------|-------------------------------------------------------------------|
 | VP Auth Request     | `client_id` + `response_type` containing `vp_token` or `id_token` in query |
@@ -35,18 +33,17 @@ Traffic is classified into protocol steps:
 | VCI Token Request   | POST to path ending `/token`                                      |
 | VCI Credential Request | POST to path ending `/credential` or `/credentials`            |
 
-By default only OID4VP/VCI traffic is shown. Other requests (favicon, health checks) are proxied but hidden. Pass `--all-traffic` or tick the "All traffic" checkbox in the dashboard to see everything.
+By default only OID4VP/VCI traffic is shown. Other requests (favicon, health checks) are proxied but hidden. `--all-traffic` shows everything.
 
 ## Features
 
 - **Decoding**: payloads are decoded inline (SD-JWT, JWT, mdoc, DCQL queries, JWE headers)
 - **Credential decode hints**: detected credentials are printed as `eudi decode` commands
-- **JARM/JWE decryption**: a `direct_post.jwt` response from the built-in wallet is decrypted (see [JWE Decryption](#jwe-decryption))
+- **JARM/JWE decryption**: a `direct_post.jwt` response from the built-in wallet is decrypted
 - **Flow correlation**: related protocol steps are grouped by shared `state`/`nonce` values
-- **Web dashboard** at `http://localhost:9091` with live SSE updates, expandable cards, "View in Decoder" links, HAR export, and cURL copy
+- **Web dashboard** at `http://localhost:9091` with live SSE updates and HAR export
 - **JARM/JWE detection**: shows encrypted response headers and the verifier's ephemeral public key
-- **NDJSON output**: `--json` for machine-readable output, pipe to `jq` or log to a file
-- **Attach to a running proxy**: `eudi proxy logs` prints the traffic of a running proxy from another terminal (see [reading a running proxy](#reading-a-running-proxy))
+- **NDJSON output**: `--json` prints one JSON object per line
 
 ## Flags
 
@@ -86,7 +83,7 @@ eudi proxy logs https://proxy.internal.example --follow
 
 The output matches the proxy's terminal output, with decode links to its dashboard. `--follow` streams new traffic and reconnects after a disconnect or restart. On reconnect, it reads any missed entries still in the proxy's history. `--json` prints the recorded traffic once and cannot be combined with `--follow`.
 
-The argument is the dashboard URL (port 9091 by default). A proxy started without `--all-traffic` records only OID4VP/VCI requests, so `logs` shows only those.
+A proxy started without `--all-traffic` records only OID4VP/VCI requests, so `logs` shows only those.
 
 ## Example output
 
@@ -149,5 +146,4 @@ The proxy also scans the subprocess's stdout for JWT and SD-JWT credentials and 
   - `[VP] JWE content encryption key for proxy debugging: <base64url CEK>`
   - `[VP] SD-JWT presentation created: ...`
 - Output of a service launched with `--` appears with a `[service]` prefix.
-- `--all-traffic` shows the hidden requests too (health checks, favicon)
 - Pipe `--json` output to `jq`: `eudi proxy --target ... --json | jq '.credentials'`

@@ -22,7 +22,7 @@ eudi decode 'eudi-openid4vp://authorize?...'
 eudi decode request.jwt
 cat offer.json | eudi decode
 
-# ETSI trust lists
+# ETSI trusted lists
 eudi decode trust-list.jwt
 eudi decode -f trustlist https://example.com/trust-list.jwt
 ```
@@ -48,26 +48,24 @@ eudi decode -f vci 'openid-credential-offer://...'
 eudi decode -f vp request.jwt
 ```
 
-Accepted values: `sdjwt` (or `sd-jwt`), `jwt`, `mdoc` (or `mso_mdoc`), `vci` (or `oid4vci`), `vp` (or `oid4vp`), `trustlist` (or `trust`).
+Accepted values: `sdjwt` (or `sd-jwt`), `jwt`, `mdoc` (or `mso_mdoc`), `vci` (or `oid4vci`), `vp` (or `oid4vp`), `trusted-list` (or `trust`).
 
 ## QR Code Scanning
-
-Scan a QR code directly from an image file or a screen capture:
 
 ```bash
 eudi decode --qr screenshot.png
 eudi decode --screen
 ```
 
-`--screen` runs the macOS `screencapture` tool in interactive selection mode. Select the region with the QR code. On other platforms, take a screenshot and pass it with `--qr`.
+`--screen` runs the macOS `screencapture` tool in interactive selection mode. On other platforms, take a screenshot and pass it with `--qr`.
 
-> **Note:** macOS grants screen capture permission to the terminal app (Terminal.app, iTerm2). If the permission is missing, System Settings opens at the Screen Recording pane. Enable access for your terminal app there and run the command again.
+> **Note:** macOS grants screen capture permission to the terminal app (Terminal.app, iTerm2). If the permission is missing, System Settings opens at the Screen Recording pane. Grant it and run the command again.
 
 ## Flags
 
 | Flag             | Description                                                  |
 |------------------|--------------------------------------------------------------|
-| `-f`, `--format` | Set the format: `sdjwt`, `jwt`, `mdoc`, `vci`, `vp`, `trustlist` |
+| `-f`, `--format` | Set the format: `sdjwt`, `jwt`, `mdoc`, `vci`, `vp`, `trusted-list` |
 | `--qr`           | Decode QR from a PNG or JPEG image file                      |
 | `--screen`       | Open interactive screen region selector and decode a QR code from the selection (macOS only) |
 

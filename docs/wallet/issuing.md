@@ -31,7 +31,7 @@ eudi wallet refresh <credential-id>
 curl -X POST http://localhost:8085/api/credentials/<id>/refresh
 ```
 
-The credential keeps its id. Verifier queries and UI selections that use the id keep working. A rotated refresh token replaces the stored one. Credentials that can be renewed report `can_renew` in listings, alongside `expires_at` (read from `exp` for SD-JWT and from the MSO validity for mdoc).
+The credential keeps its id. A rotated refresh token replaces the stored one. Credentials that can be renewed report `can_renew` in listings, alongside `expires_at` (read from `exp` for SD-JWT and from the MSO validity for mdoc).
 
 Renewal uses `grant_type=refresh_token` at the original token endpoint, with the original client authentication method. The wallet stores the method, audience and challenge endpoint with the refresh token. It rebuilds authentication proofs and fetches a fresh attestation challenge for each request.
 
@@ -43,7 +43,7 @@ An issuer that cannot issue the credential immediately responds to the credentia
 
 While the credential is not ready, the issuer responds with the `issuance_pending` error and an `interval` to wait ([OID4VCI 1.0 §9.3](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)). The wallet waits that interval. Some issuers instead return the `transaction_id` in a success response. The wallet accepts this too.
 
-The wallet records the transaction and returns immediately. `wallet serve` collects the credential in the background at the issuer's interval. The consent dialog and the CLI command do not wait for it.
+The wallet records the transaction and returns immediately. `wallet serve` collects the credential in the background at the issuer's interval.
 
 Accepting such an offer returns `HTTP 202` with the outcome:
 
@@ -56,17 +56,15 @@ Accepting such an offer returns `HTTP 202` with the outcome:
 }
 ```
 
-The wallet UI lists it under **Awaiting issuance** and the credential appears once collected. From the CLI:
-
 ```bash
 eudi wallet deferred                 # what is outstanding, and when the next attempt is
 eudi wallet deferred check [id]      # ask the issuer now instead of at the next attempt
 eudi wallet deferred abandon <id>    # stop collecting it
 ```
 
-**Check now** polls immediately and reports the result: a credential, `issuance_pending` or a refusal. It schedules the next attempt one interval later. The UI offers the same action.
+`deferred check` polls immediately and reports the result: a credential, `issuance_pending` or a refusal. It schedules the next attempt one interval later.
 
-**Abandon** removes the entry from the schedule. The transaction stays valid at the issuer.
+`deferred abandon` removes the entry from the schedule. The transaction stays valid at the issuer.
 
 Deferred issuances are saved in the selected storage backend. With file or Postgres storage, collection resumes after a restart. A record is removed when collection succeeds, the issuer returns a final error, the user abandons it, or 24 hours pass. A local `wallet accept` command reports the deferral. Run `wallet serve` to collect the credential.
 
@@ -74,7 +72,7 @@ Deferred issuances are saved in the selected storage backend. With file or Postg
 
 *(new in 3.0.0)*
 
-The offer flow applies `--mode`, `--haip` and `--arf` like a presentation, whether the offer comes from `wallet accept`, `wallet scan` or an offer URL.
+The offer flow applies `--mode`, `--haip` and `--arf` like a presentation, whether the offer comes from `wallet accept`, `wallet scan` or an offer URL. For a pre-authorized code offer, `--haip` checks the HTTPS transport. PAR, PKCE, DPoP and client authentication apply to offers that use the authorization endpoint.
 
 With `--arf` the wallet also checks the issuer before it requests a credential, for an offer and for a renewal, as ARF v3.0.0 §6.6.2.2 and §6.6.2.3 describe. It asks for signed metadata first (`Accept: application/jwt, application/json;q=0.5`) and checks that:
 
@@ -86,13 +84,13 @@ With `--arf` the wallet also checks the issuer before it requests a credential, 
 
 Signed metadata must carry `iat`, and an `exp` must not be in the past (OpenID4VCI 1.0 §12.2.3). In `--mode debug` the wallet reads such metadata and logs a warning in the activity log. In `--mode strict` it refuses the metadata.
 
-In `--mode debug` the findings are warnings and issuance goes on. The consent dialog for the offer lists them under a collapsed line, and the issuance result returns them in `findings`. In `--mode strict` the wallet refuses the offer before the consent dialog and doesn't request the credential. The trust anchors are the same as for verifiers: an access certificate chains to a CA on an `access-ca` list and a registration certificate to a CA on a `registrar` list (see [ARF checks](presenting.md#arf-checks)). The [registrar API walkthrough](registrar-api.md#an-issuer) registers an issuer and runs these checks.
+In `--mode debug` the findings are warnings and issuance goes on. The issuance result returns them in `findings`. In `--mode strict` the wallet refuses the offer before the consent dialog and doesn't request the credential. The trust anchors are the same as for verifiers: an access certificate chains to a CA on an `access-ca` list and a registration certificate to a CA on a `registrar` list (see [ARF checks](presenting.md#arf-checks)). The [registrar API walkthrough](registrar-api.md#an-issuer) registers an issuer and runs these checks.
 
 When the credential arrives, the wallet looks up its type in the [attestation catalogue](registrar.md#attestation-catalogue). The entry's category determines the rule: ARF ISSU_07 for a PID, ISSU_08 for a QEAA, ISSU_09 for a PuB-EAA and ISSU_10 for another EAA. The credential's certificate chain (`x5c` or `x5chain`) must end in an issuance service certificate on a trusted list, and the signature must verify. The wallet tries the list linked by the entry. By default an entry links the wallet's own list for its category. For a PID or a PuB-EAA, it also tries every list of that type on the [list of trusted lists](serve.md#trusted-lists). A PID from another issuer passes once its CA is on the wallet's `pid` list (`wallet trust add-ca --list pid`) or on an external PID provider list.
 
 A PID, QEAA or PuB-EAA entry must link a readable trusted list. Otherwise that is a finding too. ISSU_10 applies only when the wallet has the issuer's trust anchors, so for an EAA an unreadable list only gives a warning in the activity log.
 
-The wallet verifies the JAdES signature of each fetched trusted list. The signer must chain to a trusted list operator: the wallet CA or a CA from `--trust-list-ca` (ARF PPNot_05, TLPub_05, TLPub_07). The flag takes a PEM file and is repeatable on `wallet serve`, `wallet accept` and `wallet scan`. A list found through an external list of trusted lists must instead be signed by the certificate in its pointer (ETSI TS 119 602 V1.1.1 §6.3.13).
+The wallet verifies the JAdES signature of each fetched trusted list. The signer must chain to a trusted list operator: the wallet CA or a CA from `--trusted-list-ca` (ARF PPNot_05, TLPub_05, TLPub_07). The flag takes a PEM file and is repeatable on `wallet serve`, `wallet accept` and `wallet scan`. A list found through an external list of trusted lists must instead be signed by the certificate in its pointer (ETSI TS 119 602 V1.1.1 §6.3.13).
 
 In `--mode debug` a failure is a warning. In `--mode strict` the wallet doesn't store the credential (ISSU_11b). Every copy of a batch, renewals and deferred credentials get the same check.
 
@@ -137,7 +135,7 @@ Advertising the method is a SHOULD, so an issuer may require an attestation with
 eudi wallet serve --client-attestation --auto-accept
 ```
 
-Reusing the attestation lets those issuers correlate the wallet. `GET /api/config` reports the setting as `force_client_attestation`. An authorization server that advertises `private_key_jwt` still receives the client assertion.
+`GET /api/config` reports the setting as `force_client_attestation`. An authorization server that advertises `private_key_jwt` still receives the client assertion.
 
 ## OpenID4VCI feature level
 

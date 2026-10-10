@@ -2,7 +2,7 @@
 
 The harness runs OpenID Foundation wallet plans for OID4VP 1.0, OID4VCI 1.0 and HAIP 1.0 against `eudi-dev`. Separate issuer and verifier plans test the bundled demo services.
 
-The versioned specifications define the requirements. The runs test only the selected plans, variants and test conditions. Certificate profiles, trusted lists, registration information, PID rulebooks and other ETSI and ISO requirements need separate checks against their own sources. See [spec compliance](spec-compliance.md) and [test certificates](test-certificates.md) for that coverage and its limits. The suites send no registration certificates, so the runs do not cover the [ARF checks](wallet/presenting.md#arf-checks).
+The runs test only the selected plans, variants and test conditions. Certificate profiles, trusted lists, registration information, PID rulebooks and other ETSI and ISO requirements need separate checks. See [spec compliance](spec-compliance.md) and [test certificates](test-certificates.md). The suites send no registration certificates, so the runs do not cover the [ARF checks](wallet/presenting.md#arf-checks).
 
 Related docs:
 
@@ -16,14 +16,10 @@ The harness targets a local OpenID Foundation conformance suite server by defaul
 
 Current local status:
 
-- The latest full wallet run has 530 `PASSED`, 178 `REVIEW`, 26 `WARNING` and 2 `FAILED` modules. The two failures are suite exceptions in multisigned presentations. The warnings are the IACA path length advisory.
+- The latest full wallet run has 530 `PASSED`, 178 `REVIEW`, 26 `WARNING` and 2 `FAILED` modules. The two failures are open suite bugs in multisigned presentations. The warnings are the IACA path length advisory.
 - The latest demo issuer and verifier run has 61 `PASSED`, 36 `REVIEW` and 4 `WARNING` modules. The warnings concern metadata unknown to the suite's schemas. All 36 verifier decisions match expectations.
 - Negative modules can end in `REVIEW` after the expected refusal. The local harness accepts that result only when there are no failing conditions.
 - Alpha Final plans use explicit VP module lists. Certifiable HAIP plans run complete and unfiltered.
-
-The two multisigned failures are suite bugs and remain open.
-
-See [Current conformance results](./conformance-results.md) for the detailed plan matrix, artifact locations, result-page screenshots, and suite exclusions.
 
 ## Covered Plans
 

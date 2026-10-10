@@ -2,7 +2,7 @@
 
 Runnable integration scenarios live under [`examples/`](../examples/README.md).
 
-Each scenario includes pinned versions, compose files, setup scripts and flow diagrams. Its README covers prerequisites, running the example and cleanup.
+Each scenario includes pinned versions, compose files, setup scripts and flow diagrams.
 
 ## Scenarios
 
@@ -59,7 +59,7 @@ Use this example for container setups, automated tests or platforms without cust
 It includes:
 
 - one compose project where all services share one network namespace, so every URL is plain `localhost` for both the host browser and the containers
-- a demo UI (port 9090) with clickable localhost wallet links for issuance and a normal OIDC "Login with wallet" flow for verification
+- a demo UI (port 9090) with localhost wallet links for issuance and an OIDC login for verification
 - static issuer and verifier realms reused from the two smaller examples, plus an admin-API step that points the verifier's `walletScheme` / `trustListUrl` at the wallet
 - headless demos that call `GET /credential-offer` and `GET /authorize`
 - automatic export of the wallet CA into Keycloak's truststore for the status list revocation check
@@ -86,5 +86,4 @@ It includes:
 
 - a compose file with Postgres, two wallet servers and nginx
 - an nginx config with round robin for API clients and a sticky session for browsers
-- the endpoints to drive and how to add servers
 - `loadtest`, a Go load generator that drives issuance, presentation and listing concurrently and checks that nothing was lost

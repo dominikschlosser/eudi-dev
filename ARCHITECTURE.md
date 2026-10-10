@@ -1,8 +1,6 @@
 # Architecture
 
-This guide describes the packages and request flows. The [decision records](#decisions) explain the design choices.
-
-The terms used here are defined in [CONTEXT.md](CONTEXT.md).
+Terms are defined in [CONTEXT.md](CONTEXT.md).
 
 ## Layout
 

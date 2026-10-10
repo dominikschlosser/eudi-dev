@@ -32,7 +32,7 @@ Verifier modules end in `REVIEW` because the suite cannot observe the verifier's
 
 ## Prerequisites
 
-Use the prerequisites in [Running OIDF Wallet Conformance](./conformance-run.md): a local conformance suite checkout at the documented baseline and the suite server running behind nginx on the host.
+The same as for the [wallet runbook](./conformance-run.md#prerequisites): a suite checkout at the documented baseline, with the suite server running on the host.
 
 ## Run
 
@@ -62,7 +62,7 @@ The generated configs also pass trust anchors to the suite. The issuer configs s
 
 ## Environment Overrides
 
-The [wallet runbook's suite and server overrides](conformance-run.md#environment-overrides) also apply here. On a loaded machine, set `OIDF_REQUEST_TIMEOUT=60`. For repeated runs, leave `OIDF_KEEP_SUITE_DB` unset. Old results slow the suite and can stall modules.
+The [wallet runbook's suite and server overrides](conformance-run.md#environment-overrides) also apply here. On a loaded machine, set `OIDF_REQUEST_TIMEOUT=60`. Leave `OIDF_KEEP_SUITE_DB` unset for repeated runs, because old results slow the suite and can stall modules.
 
 This wrapper also accepts:
 

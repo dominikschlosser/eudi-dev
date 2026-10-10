@@ -2,7 +2,7 @@
 
 This public reference set contains the wallet root CA, the provider intermediates, the relying party access CA, the registrar CA and the signing certificates described in [test certificates](test-certificates.md#certificate-contents). Each entry has the complete PEM certificate and its decoded X.509 contents (serial number, validity, public key, extensions and signature).
 
-The certificates are generated with the wallet signing APIs at source revision [`54d089706e31`](https://github.com/dominikschlosser/eudi-dev/tree/54d089706e314c897150c30f7464213b235dbf7e). The reference issuer is `https://eudi-test.dev`, the country is `NL`, and the trust list operator is `EUDI Dev Wallet`. The names and registration identifiers are fictional. The public certificates carry no official trust.
+The certificates are generated with the wallet signing APIs at source revision [`54d089706e31`](https://github.com/dominikschlosser/eudi-dev/tree/54d089706e314c897150c30f7464213b235dbf7e). The reference issuer is `https://eudi-test.dev`, the country is `NL`, and the trusted list operator is `EUDI Dev Wallet`. The names and registration identifiers are fictional. The public certificates carry no official trust.
 
 The decoded values below are from these reference PEM files. A running wallet, including the public demo, has its own keys, serial numbers, timestamps and signatures. The [profile tables](test-certificates.md#certificate-contents) describe the certificate profiles and configurable values. The [localhost special case](test-certificates.md#localhost-special-case) lists the local issuer URL and its certificate URLs.
 
@@ -748,7 +748,7 @@ Certificate:
 
 </details>
 
-## Trust list signer
+## Trusted list signer
 
 [Complete PEM certificate](assets/test-certificates/trust-list-signer.pem)
 

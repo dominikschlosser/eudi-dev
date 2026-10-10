@@ -2,7 +2,7 @@
 
 # Presenting from the wallet
 
-The wallet answers an OID4VP presentation request from the CLI (`wallet accept`), from a scanned QR (`wallet scan`), or at its own `/authorize` URL. `--haip` checks the request against HAIP 1.0. `wallet accept` also handles credential offers (see [issuing into the wallet](issuing.md)).
+The wallet answers an OID4VP presentation request from the CLI (`wallet accept`), from a scanned QR (`wallet scan`), or at its own `/authorize` URL. `wallet accept` also handles credential offers (see [issuing into the wallet](issuing.md)).
 
 ## `wallet accept <uri>`
 
@@ -17,7 +17,7 @@ EUDI issuance uses `eu-eaa-offer://` under [ETSI TS 119 472-3 V1.1.1](https://ww
 
 In interactive mode (the default), OID4VP requests start a temporary consent UI server and open it in the browser. With `--auto-accept`, the wallet submits one credential per credential query (the most recently issued match), or all matching ones when the query sets `multiple: true`.
 
-When a verifier responds to a presentation with a `redirect_uri`, the wallet prints the URL and opens it in a browser (a same-device flow returns to the verifier's site). A scripted run, or a host without a desktop, only prints it. `--no-open` disables opening.
+When a verifier responds to a presentation with a `redirect_uri`, the wallet prints the URL and opens it in a browser. A scripted run, or a host without a desktop, only prints it. `--no-open` disables opening.
 
 `debug` mode matches DCQL queries loosely to help troubleshoot verifier queries. A credential that matches the requested format and metadata and at least one requested claim counts as a match with a warning, even when other required claim paths are missing. `strict` mode requires every claim path.
 
@@ -45,14 +45,12 @@ eudi wallet accept 'openid-credential-offer://...' --tx-code 123456
 | `--haip`                | `false`  | Check incoming presentations and credential offers against HAIP 1.0. `--mode` sets how violations are handled: strict refuses the flow, debug reports them and continues |
 | `--arf`                 | `false`  | Check the access and registration certificates of verifiers and issuers against the ARF (see [ARF checks](#arf-checks) and [issuers](issuing.md#arf-checks)). With `--mode strict` the wallet refuses the request or the offer on any finding |
 | `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. The wallet puts them on its `access-ca` and `registrar` lists (repeatable) |
-| `--trust-list-ca`       | None     | PEM file with CA certificates of trusted list operators. With `--arf` the wallet also accepts trusted lists signed under these CAs (repeatable) |
+| `--trusted-list-ca`       | None     | PEM file with CA certificates of trusted list operators. With `--arf` the wallet also accepts trusted lists signed under these CAs (repeatable) |
 | `--trusted-list`        | None     | URL of an external list of trusted entities (ETSI TS 119 602) for the wallet's list of trusted lists (repeatable). See [trusted lists](serve.md#trusted-lists) |
 
 Pre-authorized code offers work directly with `wallet accept`. Authorization code offers require a running `wallet serve` instance. The client ID defaults to the wallet origin and the redirect URI to its `/callback` endpoint. Override them with `--vci-client-id` and `--vci-redirect-uri`. The wallet uses PAR and DPoP when advertised by the issuer.
 
 For sign-in, `wallet accept` prints the authorization URL. It opens the URL only when no wallet page is already handling the flow, because the request can be used once (RFC 9126 §4). After the issuer redirects back, the wallet exchanges the code. The CLI waits for the credential or an error. A remote wallet follows the same process. See [sign-in during issuance](issuing.md#sign-in-during-issuance).
-
-For pre-authorized code offers, HAIP validation checks HTTPS transport. PAR, PKCE, DPoP and client authentication requirements apply to offers that use the authorization endpoint.
 
 Strict mode verifies HTTPS certificates. Debug mode skips verification by default. For local flows, `--tls-verify=true|false` overrides either default and `--tls-ca dev-ca.pem` adds trusted CA certificates. See [HTTPS certificate verification](serve.md#https-certificate-verification).
 
@@ -76,13 +74,11 @@ eudi wallet scan --screen --auto-accept # auto-approve if it's a presentation
 
 The wallet handling the flow fetches the offer and prompts for a transaction code when one is required. For a local flow, the CLI prompts when stdin is a terminal and `--tx-code` was not given. See [ADR-0012](../adr/0012-every-entry-point-runs-the-same-flow.md).
 
-`wallet scan` uses the persistent `wallet --mode` setting and accepts the same `--auto-accept`, `--tx-code`, `--haip`, `--arf`, `--relying-party-ca`, `--trust-list-ca` and `--trusted-list` flags as `accept`.
+`wallet scan` uses the persistent `wallet --mode` setting and accepts the same `--auto-accept`, `--tx-code`, `--haip`, `--arf`, `--relying-party-ca`, `--trusted-list-ca` and `--trusted-list` flags as `accept`.
 
 ## Invoking the wallet by URL
 
-Both wallet flows can also be invoked at the wallet's own URL, wherever a verifier or issuer would use a custom-scheme link. This works in hosted environments, automated tests, containers, and on platforms without scheme registration (custom schemes are registered on macOS only).
-
-The URLs take the same query parameters as their custom-scheme counterparts:
+Both wallet flows also run at the wallet's own URL, wherever a verifier or issuer would use a custom-scheme link. Custom schemes are registered on macOS only.
 
 | Custom scheme | Wallet URL |
 |---------------|------------|
@@ -91,7 +87,7 @@ The URLs take the same query parameters as their custom-scheme counterparts:
 
 To convert a link, replace everything before the `?` with the wallet endpoint URL and keep the query string unchanged.
 
-In a custom-scheme URI the part between `://` and `?` has no meaning, so `openid4vp://?...` and `openid4vp://authorize?...` are the same request. A web URL needs a path to identify the flow. `/authorize` follows the OAuth convention (in OID4VP the wallet is the authorization server), and `/credential-offer` is named after the OID4VCI credential offer endpoint.
+In a custom-scheme URI the part between `://` and `?` has no meaning, so `openid4vp://?...` and `openid4vp://authorize?...` are the same request.
 
 ```bash
 # Presentation request: standard OID4VP authorization request parameters
@@ -108,9 +104,9 @@ curl 'http://localhost:8085/credential-offer?credential_offer=%7B...%7D&tx_code=
 
 Browser navigations are GET requests that accept HTML, such as clicked links. After a presentation, the browser goes to the verifier's `redirect_uri`, or to the wallet UI if none was returned. The same applies after a refusal (a denied request or no matching credential), because the verifier can return a `redirect_uri` for an error response too (OpenID4VP 1.0 §8.2). After an offer import, the browser goes to the wallet UI.
 
-Other callers, including curl and test harnesses, receive the same JSON responses as `POST /api/presentations` and `POST /api/offers`. Verifiers and issuers can use these wallet URLs to complete a browser flow without custom schemes. For example, `keycloak-extension-oid4vp` can set `walletScheme` to the wallet's `/authorize` URL.
+Other callers, including curl and test harnesses, receive the same JSON responses as `POST /api/presentations` and `POST /api/offers`. `keycloak-extension-oid4vp` can set `walletScheme` to the wallet's `/authorize` URL.
 
-In interactive mode (no `--auto-accept`) the two caller types also behave differently before consent. A browser navigation redirects to the wallet UI, which shows the pending consent request and continues the flow once you approve or deny. Both then redirect to the verifier's `redirect_uri`. An API call blocks until the request is approved or denied, in the UI or via `POST /api/requests/{id}/approve` or `/deny`. Both responses carry the verifier's `redirect_uri` when it returned one.
+In interactive mode (no `--auto-accept`) the two caller types also behave differently before consent. A browser navigation redirects to the wallet UI for consent and then to the verifier's `redirect_uri`. An API call blocks until the request is approved or denied, in the UI or via `POST /api/requests/{id}/approve` or `/deny`. Both responses carry the verifier's `redirect_uri` when it returned one.
 
 ## HAIP 1.0 Enforcement
 
@@ -124,7 +120,7 @@ For **presentations** (OID4VP `direct_post.jwt` and Browser API `dc_api.jwt`) th
 - `response_mode` must be `direct_post.jwt` (§5.1) or `dc_api.jwt` (§5.2)
 - A signed request must use the `x509_hash:` Client Identifier Prefix (§5), and its Request Object signature must verify against a certificate whose SHA-256 is the prefix value
 - The certificate signing the request must not be self-signed, and the trust anchor must not be included in the `x5c` header (§5)
-- A request sent by redirect must carry a signed request object (JAR) delivered through `request_uri` (§5.1). An unsigned request is accepted only over the Digital Credentials API, where §5.2 requires wallet support for it. Such a request has no `client_id`
+- A request sent by redirect must carry a signed request object (JAR) delivered through `request_uri` (§5.1). An unsigned request is accepted only over the Digital Credentials API, where §5.2 requires wallet support for it
 - The query must use DCQL (§5), and every credential it asks for must be `mso_mdoc` (§5.3.1) or `dc+sd-jwt` (§5.3.2)
 - The Verifier's client metadata must list both `A128GCM` and `A256GCM` in `encrypted_response_enc_values_supported` (§5)
 - A signed Digital Credentials API request must list the caller origin in `expected_origins` (OpenID4VP Appendix A.2, which §5.2 incorporates)
@@ -170,13 +166,13 @@ The wallet checks that:
 - the registrar has not revoked the registration certificate (RPRC_17). Its status list must be readable and chain to a trusted registrar (RPACANot_03b)
 - the request asks only for credentials and claims registered in that certificate (RPRC_21)
 
-The ARF lets the Wallet Provider decide whether to refuse (RPA_06a). In `--mode debug` the wallet logs the findings as warnings and goes on. The consent dialog lists them under a collapsed line, and `POST /api/presentations` returns them in `findings`. This works for requests by URL, over the Digital Credentials API and during [interactive authorization](issuing.md#interactive-authorization). Strict mode refuses.
+The ARF lets the Wallet Provider decide whether to refuse (RPA_06a). In `--mode debug` the wallet logs the findings as warnings and goes on. `POST /api/presentations` returns them in `findings`. This works for requests by URL, over the Digital Credentials API and during [interactive authorization](issuing.md#interactive-authorization). Strict mode refuses.
 
 How strict mode refuses depends on the verifier. When only ARF findings remain and the request is signed with a trusted access certificate, the wallet sends the verifier an `access_denied` error response (OpenID4VP 1.0 §8.5, RFC 6749 §4.1.2.1). Its `error_description` is "The request does not meet the ARF registration rules: " followed by the findings, for example `ARF RPRC_19: ...`. `POST /api/presentations` answers with status `refused` and the same description. `wallet accept` and `wallet scan` send the same response. Over the Digital Credentials API, the error is in the API result (OpenID4VP 1.0 Appendix A). Any other strict refusal stays in the wallet. The caller gets HTTP 400 as described under [HAIP 1.0 Enforcement](#haip-10-enforcement).
 
 The [registrar API walkthrough](registrar-api.md) shows both outcomes with real requests.
 
-The consent dialog shows the purposes and privacy policies of the registration certificates. Only certificates that belong to the access certificate of the signed request count. An unsigned request shows none.
+Consent shows purposes and privacy policies only from registration certificates that belong to the access certificate of the signed request. An unsigned request shows none.
 
 The wallet takes its trust anchors from [trusted lists](serve.md#trusted-lists) only. An access certificate must chain to a CA on an access certificate provider list (`access-ca`, ETSI TS 119 602 V1.1.1 Annex F). The wallet's own list names the relying party access CA of its [registrar](registrar.md). The demo issuer and the demo verifier get their access certificates from that CA too. A registration certificate and its status list must chain to a CA on a registration certificate provider list (`registrar`, Annex G). The wallet's own list names the registrar CA. The relying party access CA signs any visitor's CSR, so it is not on the `registrar` list.
 

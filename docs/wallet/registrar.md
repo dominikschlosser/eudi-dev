@@ -7,9 +7,7 @@ The wallet includes a relying party registrar. Each member state runs a registra
 - An **access certificate** (ETSI TS 119 411-8 V1.1.1). You send a certificate signing request and keep the private key. A verifier signs its request objects with that key and puts the certificate in `x5c`. An issuer signs its Credential Issuer Metadata with it (ARF ISSU_22 and ISSU_32).
 - A **registration certificate** (ETSI TS 119 475 V1.2.1, typ `rc-wrp+jwt`). A verifier gets one for each intended use. It lists which credentials and claims the verifier may request, and the purpose shown in the consent dialog. The verifier sends it in `verifier_info` (OpenID4VP 1.0 §5.1). An issuer gets one for its service (ARF RPRC_13). It lists which attestation types the issuer may issue, and the issuer publishes it in `issuer_info` (ETSI TS 119 472-3 V1.1.1 §4.2.3).
 
-Both certificates contain the same identifier (ARF Reg_32 and RPRC_07). The registrar API follows the TS05 v1.5 data model and registry API. The [demo issuer and the demo verifier](#the-demo-issuer-and-verifier) are in the register too. The [registrar API walkthrough](registrar-api.md) registers a verifier and an issuer with curl and then uses their certificates with the wallet.
-
-The registrar also keeps a [catalogue of attestations](#attestation-catalogue).
+Both certificates contain the same identifier (ARF Reg_32 and RPRC_07). The registrar API follows the TS05 v1.5 data model and registry API. The [registrar API walkthrough](registrar-api.md) registers a verifier and an issuer with curl and then uses their certificates with the wallet.
 
 ## Registrations
 
@@ -19,7 +17,7 @@ A registration names its supervisory authority with `name`, `country` and at lea
 
 If a registration has no identifier, the registrar assigns one. It is an `organizationIdentifier` such as `NTRNL-1A2B3C4D5E6F7A8B`: the identifier type (`LEI`, `NTR`, `VAT`, `EOR` or `EXC`), a country code, a dash and the value (ETSI TS 119 475 §5.1.3).
 
-Anyone with access to the wallet can register, change and delete relying parties and revoke their certificates. This works the same as for credentials. On a shared instance every visitor sees every registration and can delete it.
+Anyone with access to the wallet can register, change and delete relying parties and revoke their certificates. On a shared instance every visitor sees every registration and can delete it.
 
 An update can add identifiers. The first identifier never changes, because the issued certificates contain it.
 
@@ -31,7 +29,7 @@ An issuer registers as an attestation provider. Its service has an entitlement f
 
 With `--arf` a PID needs `PID_Provider` (ISSU_24a). Any other attestation needs `QEAA_Provider`, `PUB_EAA_Provider` or `Non_Q_EAA_Provider` (ISSU_34a). The wallet treats these three alike. The choice only changes the content of the registration certificate. The wallet does not validate qualified signatures.
 
-An issuer's registration certificate covers its service. It has `entitlements` and `provides_attestations`, where each type has its `vct` or doctype in `meta` (ETSI TS 119 475 V1.2.1 Table 8). It has no intended use (ARF RPRC_05). So it has no purpose, privacy policy or credentials. The registrar returns it inside an `issuer_info` array with two entries: the `registrar_dataset` with `identifier`, `srvDescription`, `registryURI` and `providesAttestations`, and the `registration_cert` (ETSI TS 119 472-3 V1.1.1 §4.2.3).
+An issuer's registration certificate covers its service. It has `entitlements` and `provides_attestations`, where each type has its `vct` or doctype in `meta` (ETSI TS 119 475 V1.2.1 Table 8). It has no intended use (ARF RPRC_05). The registrar returns it inside an `issuer_info` array with two entries: the `registrar_dataset` with `identifier`, `srvDescription`, `registryURI` and `providesAttestations`, and the `registration_cert` (ETSI TS 119 472-3 V1.1.1 §4.2.3).
 
 To use the certificates, an issuer:
 
@@ -47,7 +45,7 @@ A provider that also requests attributes, for example to authenticate the user d
 
 Every registration certificate has a `status` claim that points to an entry in the registrar's status list (ETSI TS 119 475 V1.2.1 Table 7). The registrar publishes the list at `/api/registrar/status-list` as a Token Status List, signed with the registrar key.
 
-You revoke a certificate with **Revoke** in the UI, `wallet registrar revoke` or the status endpoint. **Activate**, `wallet registrar activate` or the same endpoint makes it valid again.
+`wallet registrar revoke` or the status endpoint revokes a certificate. `wallet registrar activate` or the same endpoint makes it valid again.
 
 An intended use or an issuer service has one valid certificate at a time. The registrar also revokes certificates itself, and you can't activate these again:
 
@@ -62,32 +60,25 @@ Each certificate gets a random entry. With memory storage the revocations are lo
 
 ## In the web UI
 
-**Registrar** in the header opens a submenu. On a phone it is under **Menu**.
-
 ![Relying parties](../assets/registrar-parties.png)
 
-**Relying parties** lists all registrations, newest first. You can filter by verifiers or issuers and search as you type. The search looks at names, identifiers, purposes and credential types, and suggests names and identifiers. The list shows 10 relying parties per page.
+The search looks at names, identifiers, purposes and credential types.
 
-Each card lists the registration certificates of the party, one line each, with the type, the name and the status (**No certificate**, **Active** or **Revoked**). An **issuer registration certificate** (for `issuer_info`) is named after its entitlement. A **verifier registration certificate** (for `verifier_info`) belongs to one intended use and is named after its purpose. **Details** opens the certificate. It shows the attestation types, or the credentials and claims. If there is a current certificate, it also shows its `verifier_info` or `issuer_info` value, ready to copy. The registrar keeps the certificate, so the value is there later too. The dialog has these actions:
+A verifier registration certificate belongs to one intended use. An issuer registration certificate belongs to the service. The registrar keeps the current certificate, so its `verifier_info` or `issuer_info` value stays available. Issuing a new certificate revokes the old one. A certificate the registrar revoked itself can't be activated again.
 
-- **Issue certificate** issues a registration certificate for the intended use or the service and shows its `verifier_info` or `issuer_info` value. Once there is one, the button reads **Issue new certificate**. It issues a new certificate and revokes the old one.
-- **Revoke** revokes the certificate. **Activate** makes it valid again. If the registrar revoked a certificate itself, it shows **Revoked** and has no **Activate** button.
+**+ Add verifier registration certificate** adds an intended use (ETSI TS 119 475) and issues a verifier registration certificate for it. The existing certificates stay valid. For an issuer, the dialog starts with a PID identity check. The party stays one relying party with both roles, because CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration. The registrar adds the `Service_Provider` entitlement. The issuer signs its request with its access certificate and sends the new certificate in `verifier_info`.
 
-The card itself has these buttons:
-
-- **+ Add verifier registration certificate** registers another purpose with the credentials and claims it may request. The registrar adds it as an intended use (ETSI TS 119 475) and issues a verifier registration certificate for it. The existing certificates stay valid. An issuer uses it to ask for a PID before it issues, like the demo issuer. For an issuer, the dialog starts with a PID identity check. It stays one relying party with both roles. CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration. The registrar adds the `Service_Provider` entitlement. The issuer signs its request with its access certificate and sends the new certificate in `verifier_info`.
-- **+ Add issuer registration certificate** appears on a party without one. It registers the attestation types the party may issue on its registration, issues the issuer registration certificate and shows its `issuer_info` value. A verifier that also issues stays one relying party.
-- **Delete** removes the relying party and revokes all its certificates.
+**+ Add issuer registration certificate** adds attestation types to an existing registration and issues the issuer registration certificate. **Delete** removes the relying party and revokes all its certificates.
 
 ![Register a verifier](../assets/registrar-register.png)
 
-The buttons below the list open the register dialogs. **Register a verifier** registers a relying party with one intended use and issues both certificates in one step. **Register an issuer** registers an issuer with its entitlement and its attestation types, and issues both certificates too. The fields are filled with defaults or may stay empty, so you can register right away. If you leave the CSR empty, the browser creates the key and the CSR, and the key never leaves the browser. **Create the key and CSR yourself** shows the `openssl` commands for doing it on your machine. After registering, the button shows **Registered**. Once you edit a field, you can register again.
+**Register a verifier** and **Register an issuer** issue both certificates in one step. If you leave the CSR empty, the browser creates the key and the CSR, and the key never leaves the browser.
 
-Each credential row has a format, a type and the claims. For SD-JWT, separate path segments with dots (`address.locality`). For mdoc, write the element name if it is in the doctype's namespace, or put another namespace in front with a colon (`eu.europa.ec.eudi.pid.de.1:birth_name`). An issuer's attestation rows have a format and a type. The type fields suggest types from the catalogue.
+For SD-JWT claims, separate path segments with dots (`address.locality`). For mdoc, write the element name if it is in the doctype's namespace, or put another namespace in front with a colon (`eu.europa.ec.eudi.pid.de.1:birth_name`).
 
 ![Registration result](../assets/registrar-result.png)
 
-The result shows the identifier, the PEM box and the `verifier_info` or `issuer_info` value. A verifier also gets its client identifiers. If the browser created the key, the PEM contains the key and the access certificate chain. With your own CSR it contains only the chain. The registration certificate is in the `data` field of the `registration_cert` entry. After **+ Add verifier registration certificate** the result shows only the identifier and the `verifier_info` value.
+If the browser created the key, the result PEM contains the key and the access certificate chain. With your own CSR it contains only the chain. The registration certificate is in the `data` field of the `registration_cert` entry.
 
 Every element has an ID for automated tests:
 
@@ -135,7 +126,7 @@ With `--arf` the wallet checks the access and registration certificates of every
 - **Access certificates** must chain to a CA on an `access-ca` list. The wallet's own list names the relying party access CA.
 - **Registration certificates** must chain to a CA on a `registrar` list. The wallet's own list names the registrar CA. The relying party access CA is not on the registrar list, because that CA signs every visitor's CSR. Otherwise anyone with an access certificate could sign their own registration certificate.
 
-Certificates from this registrar pass both checks. For the certificates of another registrar, see [Use an external registrar](#use-an-external-registrar). A registered credential without a claim list declares no attributes (ETSI TS 119 475 V1.2.1 Annex B.2.9), so requesting any claim counts as over-asking. TS05 registrars always list the claims.
+Certificates from this registrar pass both checks. A registered credential without a claim list declares no attributes (ETSI TS 119 475 V1.2.1 Annex B.2.9), so requesting any claim counts as over-asking. TS05 registrars always list the claims.
 
 The status list of the registration certificates must chain to a revocation service on a `registrar` list (ARF RPACANot_03b). If the wallet can't read the status, that is a finding. The wallet reads its own registrar's status list directly. It fetches other registrars' lists with its proxy and TLS settings.
 
@@ -143,7 +134,7 @@ The wallet does not check these:
 
 - **The service identifier.** ARF RPRC_17a also compares the service identifier, but ETSI TS 119 475 V1.2.1 has no claim for it. The access certificate has it as organizational unit.
 - **Access certificate revocation.** The registrar does not revoke access certificates. A deleted relying party keeps a valid access certificate until it expires.
-- **The register.** The wallet does not look up `registry_uri`. A verifier sends exactly one registration certificate with its request (ARF RPRC_19), and an issuer publishes its certificate in its metadata (RPRC_22). The ARF notes that this way no external requests are necessary to validate the relying party. A request with no registration certificate or with several gets an RPRC_19 finding.
+- **The register.** The wallet does not look up `registry_uri`. A verifier sends exactly one registration certificate with its request (ARF RPRC_19), and an issuer publishes its certificate in its metadata (RPRC_22). A request with no registration certificate or with several gets an RPRC_19 finding.
 
 ## Use an external registrar
 
@@ -152,24 +143,30 @@ The wallet can check verifiers and issuers that another registrar registered. It
 Give the wallet those lists when you start it:
 
 ```bash
-eudi wallet serve --arf --trust-list-ca lists-ca.pem --trusted-list https://lists.example/lotl
+eudi wallet serve --arf --trusted-list-ca lists-ca.pem --trusted-list https://lists.example/lotl
 ```
 
-- `--trust-list-ca` is the CA of the list operator, which signs the lists. The wallet uses a list only if its signer chains to this CA or to the wallet CA (ARF PPNot_05, TLPub_05 and TLPub_07).
+- `--trusted-list-ca` is the CA of the list operator, which signs the lists. The wallet uses a list only if its signer chains to this CA or to the wallet CA (ARF PPNot_05, TLPub_05 and TLPub_07).
 - `--trusted-list` adds a list or a list of trusted lists. The wallet follows the pointers of a list of trusted lists and takes the anchors from each list according to its type.
 
-A running wallet adds lists with `eudi wallet trust add-list <url>` or `POST /api/trust/lists`. `--trust-list-ca` can only be set on `wallet serve`. `eudi wallet trust` and **Trust & certificates** in the UI show each list and whether the wallet could read it. The built-in registrar keeps working next to the external one.
+A running wallet adds lists with `eudi wallet trust add-list <url>` or `POST /api/trust/lists`. `--trusted-list-ca` can only be set on `wallet serve`. `eudi wallet trust` and **Trust & certificates** in the UI show each list and whether the wallet could read it. The built-in registrar keeps working next to the external one.
 
-Another eudi-dev wallet can be the external registrar. Its list operator is its wallet CA, and its list of trusted lists points to its `access-ca` and `registrar` lists:
+Another eudi-dev wallet can be the external registrar, for example one at `https://other-wallet.example`. Its wallet CA signs its lists, and its list of trusted lists points to its `access-ca` and `registrar` lists:
 
 ```bash
-curl -s https://registrar.example/api/certificates/ca > registrar-wallet-ca.pem
-eudi wallet serve --arf --trust-list-ca registrar-wallet-ca.pem --trusted-list https://registrar.example/api/trustlists/lists
+curl -s https://other-wallet.example/api/certificates/ca > other-wallet-ca.pem
+eudi wallet serve --arf --trusted-list-ca other-wallet-ca.pem --trusted-list https://other-wallet.example/api/trustlists/lists
 ```
 
 A verifier registered there now passes the ARF checks of this wallet. Without the lists the same request gets ARF RPA_04, RPRC_02a and RPRC_17 findings, because neither certificate nor the status list chains to a trusted CA.
 
-If you only have the CAs as files, put them on the lists directly with `eudi wallet trust add-ca --list access-ca` and `--list registrar`, or start the wallet with `--relying-party-ca` (both lists).
+If you only have the CAs as files, put them on the lists directly. `--relying-party-ca` puts every CA in the file on both the `access-ca` and the `registrar` list. It is repeatable, and one file can hold several certificates:
+
+```bash
+eudi wallet serve --arf --relying-party-ca other-access-ca.pem --relying-party-ca other-registrar-ca.pem
+eudi wallet trust add-ca --list access-ca --ca other-access-ca.pem        # on a running wallet
+eudi wallet trust add-ca --list registrar --ca other-registrar-ca.pem
+```
 
 ## The demo issuer and verifier
 
@@ -182,7 +179,7 @@ The demo issuer and the demo verifier are registered like any other relying part
 
 The wallet registers both when it starts, after a demo reset, when you save or delete a template and once an hour, and stores the result. Both registrations are derived from the templates. The next update overwrites any change you make to them.
 
-The demo issuer and the demo verifier each use their current registration certificate. If there is none, or the current one expires within a day, the registrar issues a new one. **Issue new certificate** in the UI issues a new one for them, like for any relying party. **Revoke** revokes the current certificate. A revoked certificate stays the current one, so the demo keeps sending it until **Issue new certificate** replaces it. On the public demo this applies to every visitor until the next reset.
+The demo issuer and the demo verifier each use their current registration certificate. If there is none, or the current one expires within a day, the registrar issues a new one. A revoked certificate stays the current one, so the demo keeps sending it until a new certificate replaces it. On the public demo this applies to every visitor until the next reset.
 
 The demo issuer signs its metadata with its access certificate and publishes its registration certificate in `issuer_info`. On the demo verifier page you choose how the verifier identifies itself:
 
@@ -227,7 +224,7 @@ What each field changes:
 | Holder binding | Published in the `SchemaMeta` only. The wallet binds every credential to a key, whatever the entry says |
 | Version | Published in the `SchemaMeta` only |
 
-**Attestation catalogue** in the registrar menu lists the entries. The filter bar narrows them by category, security level, holder binding and source. Within a row, any selected value matches, and the rows narrow each other down. **Add attestation** opens a dialog for a new type. When you register a verifier or an issuer, the type fields suggest the catalogue's types.
+In the catalogue filter, any selected value within a row matches, and the rows narrow each other down.
 
 TS11 leaves adding entries to the Commission's registration process (§4.5), so `POST /api/catalog/attestations` is this catalogue's own method. The TS11 methods work on the `SchemaMeta` of an entry.
 
@@ -286,11 +283,11 @@ eudi wallet catalog rm 3f1c3b0d-71ad-496b-9f94-68198503e761
 
 `verifiers` and `issuers` list the registered verifiers and issuers, and so do `verifiers list` and `issuers list`. `add` registers one and prints the assigned identifier, and `rm` deletes a registration and revokes its certificates. `verifiers add` takes the credentials and claims of a DCQL query, so requests with that query pass the over-asking check (ARF RPRC_21). `issuers add` takes the attestation types and optionally the categories of its entitlements.
 
-With `--to`, both add the other role to a registered relying party instead. `verifiers add --to` adds an intended use, so an issuer can ask for a PID before it issues. `issuers add --to` adds attestation types, so a verifier issues as well. Either way it stays one registration with both roles. The command issues the new registration certificate and prints its `verifier_info` or `issuer_info` value.
+With `--to`, both add the other role to a registered relying party instead. `verifiers add --to` adds an intended use, and `issuers add --to` adds attestation types. It stays one registration with both roles. The command issues the new registration certificate and prints its `verifier_info` or `issuer_info` value.
 
-`access-cert` prints the PEM certificate and writes the client identifiers to stderr: `x509_hash` for the certificate and `x509_san_dns` for each `--dns` name (OpenID4VP 1.0 §5.9.3). In the certificate, the name is the common name (ETSI TS 119 411-8 GEN-6.1.1-04, ARF RPRC_06), the legal name is the organization and the service identifier is the organizational unit. It also contains the identifier as `organizationIdentifier`, the country, the support URL in the subject alternative name and the certificate policy `0.4.0.194118.1.2` (ETSI TS 119 411-8 §5.3). The key must be P-256, because HAIP 1.0 requires ES256 for request objects.
+`access-cert` prints the PEM certificate and writes the client identifiers to stderr: `x509_hash` for the certificate and `x509_san_dns` for each `--dns` name (OpenID4VP 1.0 §5.9.3). The name becomes the common name (ETSI TS 119 411-8 GEN-6.1.1-04, ARF RPRC_06). The key must be P-256, because HAIP 1.0 requires ES256 for request objects.
 
-`registration-cert` prints the current certificate in a `verifier_info` value for an intended use, or in an `issuer_info` value for an issuer service. If there is none, or it has expired, the registrar issues one. `--new` issues a new certificate and revokes the current one. Without `--intended-use` it uses the only intended use, or the only issuer service. A relying party with both needs `--intended-use`, or `--service-id` with `--provider`. `--jwt` prints the bare certificate instead, for example to pipe it into `eudi decode`. `--json` prints the value and the bare certificate.
+`registration-cert` prints the current certificate in a `verifier_info` value for an intended use, or in an `issuer_info` value for an issuer service. If there is none, or it has expired, the registrar issues one. `--new` issues a new certificate and revokes the current one. Without `--intended-use` it uses the only intended use, or the only issuer service. A relying party with both needs `--intended-use`, or `--service-id` with `--provider`. `--jwt` prints the bare certificate instead. `--json` prints the value and the bare certificate.
 
 `catalog` and `catalog list` list the catalogue, `catalog add` adds an attestation type and prints its schema URIs, and `catalog rm` deletes one you added.
 

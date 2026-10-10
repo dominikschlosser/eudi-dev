@@ -53,7 +53,7 @@ Services:
 - `demo`. A one-shot container for the headless demo scripts
 - `wallet-init`. Setup-only helper to export the wallet CA before Keycloak starts
 
-After startup, `start.sh` runs `scripts/configure-wallet-links.py`. The script uses the admin API to set the `oid4vp` provider's `walletScheme` to `http://localhost:<wallet-port>/authorize` and the `demo-trust-list` provider's `trustListUrl` to the wallet's trust list. Keycloak's login page then links straight to the wallet.
+After startup, `start.sh` runs `scripts/configure-wallet-links.py`. The script uses the admin API to set the `oid4vp` provider's `walletScheme` to `http://localhost:<wallet-port>/authorize` and the `demo-trust-list` provider's `trustListUrl` to the wallet's trusted list. Keycloak's login page then links straight to the wallet.
 
 Keycloak `26.7.2` notes: the `create-credential-offer` REST endpoint sits behind the `oid4vc-vci-rest-credential-offer` feature flag, and offers can only be created for credentials assigned to the user. The demo assigns `membership-credential` to `alice` via the admin API (`POST /admin/realms/{realm}/users/{id}/vc/credentials`) before creating an offer.
 
@@ -108,7 +108,7 @@ sequenceDiagram
 
 ## Trust Material
 
-- The wallet's PID credentials chain to the shared wallet CA. The verifier validates them against the wallet's trust list at `http://localhost:9085/api/trustlist`.
+- The wallet's PID credentials chain to the shared wallet CA. The verifier validates them against the wallet's trusted list at `http://localhost:9085/api/trustlist`.
 - The credentials embed a status list at the wallet's HTTPS issuer endpoint (`https://localhost:9086/api/statuslist`). `start.sh` exports the wallet CA (`wallet-ca-cert.pem`) into Keycloak's TLS truststore so the extension's revocation check can fetch it. The wallet state lives in a named volume so the CA stays stable across restarts.
 
 ## Files

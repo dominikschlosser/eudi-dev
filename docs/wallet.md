@@ -40,8 +40,6 @@ For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/
 | `register`     | Register OS URL scheme handlers on macOS. No-op elsewhere       |
 | `unregister`   | Remove OS URL scheme handlers on macOS. No-op elsewhere         |
 
-A running `wallet serve` also exposes credential management and protocol operations through the [HTTP API](wallet/http-api.md).
-
 ## Quick start
 
 ```bash
@@ -95,9 +93,9 @@ eudi wallet import credential.txt
 eudi wallet register
 ```
 
-On Linux and Windows, `wallet register` and `wallet unregister` are no-ops. Shared scripts stay portable. Open copied protocol links with `eudi wallet accept '<uri>'`. Credential offers support `openid-credential-offer://`, `haip-vci://` and EUDI `eu-eaa-offer://`.
+On Linux and Windows, `wallet register` and `wallet unregister` are no-ops. Open copied protocol links with `eudi wallet accept '<uri>'`. Credential offers support `openid-credential-offer://`, `haip-vci://` and EUDI `eu-eaa-offer://`.
 
-While `wallet use <url>` sets a remote target, the macOS URL handler sends clicked links to that instance (useful when the wallet runs in a Docker container). It opens the remote consent UI in the browser. `wallet use local` routes links back to the local wallet server.
+While `wallet use <url>` sets a remote target, the macOS URL handler sends clicked links to that instance. It opens the remote consent UI in the browser. `wallet use local` routes links back to the local wallet server.
 
 ## Credential type inheritance
 
@@ -136,12 +134,12 @@ All wallet state is stored in `~/.eudi-dev/wallet/` by default:
     ├── signing-keys/       # Keys for provider, access, registrar, status and list signatures
     ├── certificates/       # Current signing certificates and provider CAs
     ├── certificate-der/    # Published certificates retained by fingerprint
-    ├── trustlists/         # Current signed trust lists and their history
+    ├── trustlists/         # Current signed trusted lists and their history
     ├── assets/             # Display images (card art) referenced from wallet.json
     └── templates/          # User credential templates (see templates.md)
 ```
 
-Display images are stored once in `assets/`, named by a hash of their content. Credentials refer to them as `asset:<hash>.<ext>`. This keeps wallet state small. Embedded `data:` URIs are readable and move into asset storage on the next save.
+Display images are stored once in `assets/`, named by a hash of their content. Credentials refer to them as `asset:<hash>.<ext>`. Embedded `data:` URIs are readable and move into asset storage on the next save.
 
 On the file backend the activity log is the top-level `log` field of `wallet.json`. The other backends store each entry separately (see [Storage backends](#storage-backends)). `wallet logs clean` clears the entries and writes `wallet-log-cleaned-at`. When a running wallet server saves, it drops in-memory entries older than that marker. With `--wallet-dir`, both files are in that directory.
 
@@ -178,7 +176,7 @@ Shows saved OID4VP and OID4VCI activity, including requests, responses, credenti
 
 Each entry is one line with the event, direction, endpoint, status and other available request details. `-v` / `--verbose` expands the payloads, including DCQL queries, credential requests, presented claims and issuer or verifier responses.
 
-`-f` / `--follow` prints new entries as they are saved, like `kubectl logs -f`.
+`-f` / `--follow` prints new entries as they are saved.
 
 ```bash
 eudi wallet logs              # One line per persisted wallet interaction
@@ -196,9 +194,7 @@ eudi wallet logs --json       # JSON array of log entries
 
 ## Serving the wallet
 
-`wallet serve` runs the web UI, protocol endpoints, trusted lists and management API. It loads credentials from the selected storage backend and asks for consent on interactive requests. On macOS it can also register URL scheme handlers.
-
-The activity view shows each protocol request and response, with its endpoint and status. Encrypted exchanges show an **Encrypted** label and the plaintext. The details show the encrypted value. Credential summaries list the selected disclosure paths. The [activity log API](wallet/http-api.md#activity-log) describes the JSON format of this view.
+`wallet serve` runs the web UI, protocol endpoints, trusted lists and management API. It loads credentials from the selected storage backend and asks for consent on interactive requests. On macOS it can also register URL scheme handlers. The [activity log API](wallet/http-api.md#activity-log) describes the JSON format of the activity view.
 
 ```bash
 eudi wallet serve                      # web UI on http://localhost:8085
@@ -216,7 +212,7 @@ eudi wallet accept 'openid4vp://authorize?...'   # evaluate DCQL, consent, submi
 eudi wallet scan --screen                        # scan a QR and dispatch
 ```
 
-See [presenting from the wallet](wallet/presenting.md) for the full `wallet accept` and `wallet scan` reference, invoking the wallet by URL, and HAIP 1.0 enforcement.
+See [presenting from the wallet](wallet/presenting.md) for the `wallet accept` and `wallet scan` flags, invoking the wallet by URL, HAIP 1.0 and ARF checks.
 
 ## Issuing into the wallet
 

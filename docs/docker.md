@@ -1,6 +1,6 @@
 # Docker Verifier Testing Guide
 
-The Docker image is built for automated integration tests of OID4VP verifiers. The container runs an EUDI wallet that accepts presentation requests from your verifier.
+The Docker image runs an EUDI wallet for automated integration tests of OID4VP verifiers.
 
 ## Quick start
 
@@ -15,7 +15,7 @@ Override the command to use any CLI feature:
 
 ```bash
 echo "eyJhbGci..." | docker run -i ghcr.io/dominikschlosser/eudi-dev decode
-docker run -i ghcr.io/dominikschlosser/eudi-dev validate --trust-list https://example.com/trustlist.jwt < credential.txt
+docker run -i ghcr.io/dominikschlosser/eudi-dev validate --trusted-list https://example.com/trustlist.jwt < credential.txt
 ```
 
 ## Demo profile
@@ -41,8 +41,6 @@ For a full deployment (TLS termination, rate limiting, usage statistics, persist
 
 The image defaults to `EUDI_DEV_STORAGE=memory` and `EUDI_DEV_SEED=eudi-dev`. It needs no volume, database or writable filesystem. With `--read-only`, the server runs and logs a warning because it cannot register the wallet instance.
 
-To store state on a volume at `/home/app/.eudi-dev`, set `EUDI_DEV_STORAGE=file`.
-
 Pass `-e EUDI_DEV_STORAGE=...` (or `--storage` on the command) to select another backend:
 
 | Value | State lives in |
@@ -56,7 +54,7 @@ Pass `-e EUDI_DEV_STORAGE=...` (or `--storage` on the command) to select another
 
 ### Stateless container
 
-Containers with the same `EUDI_DEV_SEED` derive the same holder, issuer, CA, TLS and role-specific signing keys. Verifiers can keep trusting the CA across restarts without persistent storage. A fresh memory store creates new certificates with unique serial numbers. Their keys and subjects stay the same. File and Postgres storage retain the certificates across restarts.
+Containers with the same `EUDI_DEV_SEED` derive the same holder, issuer, CA, TLS and role-specific signing keys, so verifiers keep trusting the CA across restarts. A fresh memory store creates new certificates with unique serial numbers. Their keys and subjects stay the same. File and Postgres storage retain the certificates across restarts.
 
 The image's seed `eudi-dev` is public, so anyone can derive those keys (see [SECURITY.md](../SECURITY.md)). The startup summary shows `Keys: derived from the built-in seed`, and `wallet serve` warns when that seed is used with `--demo` or a persistent backend (`file` or Postgres). Set your own value with `-e EUDI_DEV_SEED=<seed>` (or `--seed`) for a test bench, or an empty value for random keys. `auto` seeds the memory backend only and leaves every other backend with random keys.
 
@@ -131,7 +129,7 @@ services:
     build: .
     environment:
       WALLET_URL: http://wallet:8085
-      # Use the wallet's trust list to validate received VP tokens
+      # Use the wallet's trusted list to validate received VP tokens
       TRUST_LIST_URL: http://wallet:8085/api/trustlist
       # Use signed issuer metadata + registrar data for EUDI issuer authorization checks
       OPENID_CREDENTIAL_ISSUER_URL: https://wallet:8086/.well-known/openid-credential-issuer
@@ -163,7 +161,7 @@ String authorizeUrl = walletUrl + "/authorize"
 httpClient.send(HttpRequest.newBuilder(URI.create(authorizeUrl)).GET().build(),
     HttpResponse.BodyHandlers.ofString());
 
-// Validate received credentials using the wallet's trust list
+// Validate received credentials using the wallet's trusted list
 String trustListUrl = walletUrl + "/api/trustlist";
 ```
 
@@ -183,12 +181,12 @@ wallet, _ := testcontainers.GenericContainer(ctx, testcontainers.GenericContaine
 walletURL, _ := wallet.Endpoint(ctx, "http")
 // Send OID4VP request to walletURL + "/authorize?..."
 // Wallet POSTs VP token back to your response_uri
-// Validate with trust list from walletURL + "/api/trustlist"
+// Validate with trusted list from walletURL + "/api/trustlist"
 ```
 
 ## Custom PID claims
 
-The default CMD loads two EUDI PID credentials (SD-JWT + mdoc) with the EUDI PID Rulebook attributes (`given_name`, `family_name`, `birth_date`, `place_of_birth`, `nationality`, etc.). To customize them, mount a folder of [credential templates](templates.md) that overrides the predefined PID templates (or adds your own):
+To customize the PID claims, mount a folder of [credential templates](templates.md) that overrides the predefined PID templates or adds your own:
 
 ```bash
 # my-templates/pid-sdjwt.json overrides the pre-defined PID template
@@ -196,7 +194,7 @@ docker run -p 8085:8085 -v ./my-templates:/templates ghcr.io/dominikschlosser/eu
   wallet serve --auto-accept --pid --port 8085 --templates-dir /templates
 ```
 
-You can also generate customized PIDs into a mounted data directory first. Mount the parent of `wallet/` to persist the shared CA with the credentials. Select the file backend and an empty seed for a private persisted CA:
+Or generate customized PIDs into a mounted data directory first. Mount the parent of `wallet/` to persist the shared CA with the credentials. Select the file backend and an empty seed for a private persisted CA:
 
 ```bash
 docker run --rm -v wallet-data:/home/app/.eudi-dev -e EUDI_DEV_STORAGE=file -e EUDI_DEV_SEED= ghcr.io/dominikschlosser/eudi-dev \
@@ -207,8 +205,6 @@ docker run -p 8085:8085 -v wallet-data:/home/app/.eudi-dev -e EUDI_DEV_STORAGE=f
 ```
 
 ## Testing API
-
-The wallet exposes API endpoints that control its behavior in automated tests.
 
 ### Error simulation
 
@@ -293,7 +289,7 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
   -H 'Content-Type: application/json' -d '{"status": 0}'
 ```
 
-> See [wallet HTTP API](wallet/http-api.md) for the full API and an end-to-end example. The API has no authentication. Keep it inside isolated test networks, or use the `--demo` profile for internet-facing deployments (see [public demo hosting](public-demo.md)).
+> The API has no authentication. Keep it inside isolated test networks, or use the `--demo` profile for internet-facing deployments (see [public demo hosting](public-demo.md)).
 
 ## Supported response modes
 

@@ -1,6 +1,6 @@
 # eudi-dev documentation
 
-Guides for using eudi-dev as a wallet, issuer, verifier and CA, grouped by task.
+Guides for using eudi-dev as a wallet, issuer, verifier and CA.
 
 ## Getting started
 

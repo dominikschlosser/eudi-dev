@@ -15,7 +15,7 @@ eudi issue sdjwt --iss https://my-issuer.example --vct my-type --exp 48h --nbf 2
 eudi issue sdjwt --key signing-key.pem
 eudi issue sdjwt --wallet                # Issue and import into wallet
 eudi issue sdjwt --wallet --vct urn:example:badge:1 --category eaa
-eudi issue sdjwt --wallet --entitlement https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider --trust-list-type http://example.com/LoTEType/Custom --issuance-service-type http://example.com/SvcType/Custom/Issuance --revocation-service-type http://example.com/SvcType/Custom/Revocation
+eudi issue sdjwt --wallet --entitlement https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider --trusted-list-type http://example.com/LoTEType/Custom --issuance-service-type http://example.com/SvcType/Custom/Issuance --revocation-service-type http://example.com/SvcType/Custom/Revocation
 eudi issue jwt                           # Plain JWT VC (no selective disclosure)
 eudi issue jwt --pid
 eudi issue jwt --claims '{"name":"Test","age":30}'
@@ -111,7 +111,7 @@ Without `--claims`, a minimal PID-like claim set is used (given_name, family_nam
 
 `issue jwt --pid` puts the same claim set in a plain JWT VC for verifier testing.
 
-`--vct urn:eudi:pid:de:1` selects the German PID. It has fourteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) or twenty-three mdoc elements across two namespaces. `--vct urn:eudi:pid:it:1` and `--vct urn:eudi:pid:nl:1` select the Italian and Dutch PIDs. The claim sets come from the predefined `pid-*`, `german-pid-*`, `italian-pid-*` and `dutch-pid-*` templates. A user template with one of those names overrides the predefined claims for `--pid`. See [templates](templates.md).
+`--vct urn:eudi:pid:de:1` selects the German PID. It has fourteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) or twenty-three mdoc elements across two namespaces. `--vct urn:eudi:pid:it:1` and `--vct urn:eudi:pid:nl:1` select the Italian and Dutch PIDs. The claim sets come from the predefined `pid-*`, `german-pid-*`, `italian-pid-*` and `dutch-pid-*` templates. A user template with one of those names overrides the predefined claims for `--pid`.
 
 `--template` supplies the claim set and defaults for type, namespace, and expiry. Explicit flags override the template. `--claims` overrides individual top level claims. `--omit` removes claims from the result. See [templates](templates.md) for the file format and the `templates` commands.
 
@@ -139,7 +139,7 @@ Without explicit status list flags, `--wallet` registers the credential in the w
 
 If a wallet server is running for the same wallet directory, `--wallet` issues through its REST API (see [remote control](wallet/http-api.md#automatic-routing-single-writer)). Otherwise the command writes directly into the store. The embedded URLs resolve once `wallet serve` is running.
 
-The wallet publishes one trusted list per credential category: `pid`, `qeaa`, `pub-eaa` and `eaa` (see [trusted lists](wallet/serve.md#trusted-lists)). The category of a credential decides the signer. The signer's certificate is on the list of that category. The category comes from `--category`, else from the template, else from the type's entry in the attestation catalogue. A credential with none of these is an EAA. `--category unlisted` keeps the credential off every list. Use it to test how a verifier handles an issuer without a trust anchor.
+The wallet publishes one trusted list per credential category: `pid`, `qeaa`, `pub-eaa` and `eaa` (see [trusted lists](wallet/serve.md#trusted-lists)). The category of a credential decides the signer. The signer's certificate is on the list of that category. The category comes from `--category`, else from the template, else from the type's entry in the attestation catalogue. A credential with none of these is an EAA. `--category unlisted` keeps the credential off every list.
 
 The category also sets the stored entitlement. PID gets `PID_Provider`, QEAA `QEAA_Provider`, PuB-EAA `PUB_EAA_Provider` and EAA `Non_Q_EAA_Provider`.
 
@@ -149,11 +149,11 @@ These flags set the stored trust and issuer metadata for the credential type:
 |------|---------|-------------|
 | `--category` | The template's or the catalogue entry's category, else `eaa` | Credential category: `pid`, `qeaa`, `pub-eaa`, `eaa` or `unlisted` |
 | `--entitlement` | None | Registrar entitlement URI to store for the credential type. Repeatable |
-| `--trust-list-type` | None | LoTE type URI to store for the credential type |
+| `--trusted-list-type` | None | LoTE type URI to store for the credential type |
 | `--status-determination-approach` | None | Trusted list status determination approach URI to store |
 | `--scheme-community-rule` | None | Trusted list scheme community rule URI to store |
 | `--scheme-territory` | None | Trusted list scheme territory to store |
-| `--trust-entity-name` | None | Trusted list entity name to store |
+| `--trusted-entity-name` | None | Trusted list entity name to store |
 | `--issuance-service-type` | None | Issuance service type identifier to store |
 | `--revocation-service-type` | None | Revocation service type identifier to store |
 | `--issuance-service-name` | None | Issuance service name to store |
@@ -166,7 +166,7 @@ With `--wallet`, these flags set the card appearance of the imported credential 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--display-name` | None | The credential's display name |
-| `--display-description` | None | The credential's display description (shown behind the card's About control) |
+| `--display-description` | None | The credential's display description |
 | `--background-color` | None | The card background color, a CSS color (e.g. `#3d59a1`) |
 | `--text-color` | None | The card text color, a CSS color |
 | `--logo` | None | The card logo, a file path, a data URI, or an http(s) URL |

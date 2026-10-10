@@ -5,7 +5,7 @@ This example runs a local same-device OpenID4VP login against Keycloak using `eu
 ## How It Works
 
 1. `./scripts/download-extension.sh` downloads `keycloak-extension-oid4vp` `0.11.1` into `providers/`.
-2. `./scripts/generate-wallet.sh` prepares the standard `eudi-dev` wallet with PID credentials and a trust list endpoint reachable from Docker as `http://host.docker.internal:8085`.
+2. `./scripts/generate-wallet.sh` prepares the standard `eudi-dev` wallet with PID credentials and a trusted list endpoint reachable from Docker as `http://host.docker.internal:8085`.
 3. `docker compose up --force-recreate` starts Keycloak `26.7.2`, mounts `realm/wallet-demo-realm.json`, imports the realm on startup, and loads the OID4VP provider jar.
 4. `./scripts/bootstrap.sh` waits for the imported realm and prints the endpoints.
 5. `./scripts/login.py` starts the OIDC browser login, extracts the `openid4vp://` request, passes it to `eudi wallet accept --auto-accept --docker --port 8085`, follows the broker flow, and exchanges the returned code for tokens.
@@ -26,7 +26,7 @@ sequenceDiagram
     EXT-->>U: same-device login page with openid4vp:// request
     U->>W: wallet accept --auto-accept --docker --port 8085 openid4vp://... (headless script)
     W->>EXT: direct_post VP token
-    EXT->>W: trust list and issuer metadata verification
+    EXT->>W: trusted list and issuer metadata verification
     EXT-->>KC: brokered identity
     KC-->>U: authorization code
     U->>KC: token request
@@ -128,8 +128,8 @@ A separate provider holds the trust material. `trustMaterialIdps` references it:
 | Wallet store | `~/.eudi-dev/wallet` |
 | Wallet base URL during wallet generation | `http://host.docker.internal:8085` |
 | Wallet port during presentation | `8085` |
-| Trust list endpoint on host | `http://localhost:8085/api/trustlist` |
-| Trust list endpoint from Docker | `http://host.docker.internal:8085/api/trustlist` |
+| Trusted list endpoint on host | `http://localhost:8085/api/trustlist` |
+| Trusted list endpoint from Docker | `http://host.docker.internal:8085/api/trustlist` |
 
 ## Useful Overrides
 

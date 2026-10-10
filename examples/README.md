@@ -10,7 +10,7 @@ Each example should be self-contained in its own subfolder and include:
 - any compose files, scripts, or fixtures needed to run it
 - the exact versions or assumptions used to test the scenario
 
-Examples use fixed ports, demo identities and static Keycloak realms to make setup predictable. Bootstrap scripts add values that are only available at runtime, such as generated keys and trust list URLs.
+Examples use fixed ports, demo identities and static Keycloak realms to make setup predictable. Bootstrap scripts add values that are only available at runtime, such as generated keys and trusted list URLs.
 
 The example scripts are written for Bash. On Windows, run them from Git Bash or WSL. The wallet flows run on every platform. They fall back to `eudi wallet accept '<uri>'` when custom URL handlers are unavailable.
 

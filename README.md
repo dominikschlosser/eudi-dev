@@ -33,11 +33,11 @@ A wallet for testing EUDI issuers and verifiers, in the browser, on the command 
 
 **HAIP and ARF checks.** `--haip` checks verifiers and issuers against HAIP 1.0. `--arf` (new in 3.0.0) checks how they authenticate under the ARF: access and registration certificates, revocation, and whether a verifier asks for more than it registered. → [HAIP](docs/wallet/presenting.md#haip-10-enforcement), [ARF checks for verifiers](docs/wallet/presenting.md#arf-checks) and [for issuers](docs/wallet/issuing.md#arf-checks)
 
-**A registrar and a catalogue of attestations.** (new in 3.0.0) Register a verifier or an issuer and get its access certificate and registration certificate (ETSI TS 119 411-8, TS 119 475), ready for `verifier_info` or `issuer_info`. The [walkthrough](docs/wallet/registrar-api.md) shows it with curl. The catalogue lists attestation types (EC TS11). Each type links a schema for each format, a rulebook and optionally a trusted list. → [Registrar](docs/wallet/registrar.md)
+**A registrar and a catalogue of attestations.** (new in 3.0.0) Register a verifier or an issuer and get its access certificate and registration certificate (ETSI TS 119 411-8, TS 119 475), ready for `verifier_info` or `issuer_info`. The catalogue lists attestation types (EC TS11). Each type links a schema for each format, a rulebook and optionally a trusted list. → [Registrar](docs/wallet/registrar.md), [curl walkthrough](docs/wallet/registrar-api.md)
 
 **PIDs and credential templates.** The EUDI PID and the German, Italian and Dutch PIDs are built in as SD-JWT VC and mdoc, with sample identities. The Italian and Dutch PIDs are new in 3.0.0. Templates define your own credentials, and `--credentials` (new in 3.0.0) loads them on every start. → [Templates](docs/templates.md), [startup credentials](docs/wallet/serve.md#startup-credentials)
 
-**A demo issuer and verifier.** The wallet also serves an issuer and a verifier. Use them to try a flow end to end or to test another wallet. Both pass the OIDF conformance plans for issuers and verifiers. → [Serving the wallet](docs/wallet/serve.md), [demo conformance](docs/conformance-run-demorp.md)
+**A demo issuer and verifier.** The wallet also serves an issuer and a verifier. Both pass the OIDF conformance plans for issuers and verifiers. → [Serving the wallet](docs/wallet/serve.md), [demo conformance](docs/conformance-run-demorp.md)
 
 **Developer tools.** Decode credentials, requests, offers and trusted lists, validate signatures and status, scan QR codes, generate DCQL queries, and watch live wallet traffic through a proxy. → [Decode](docs/decode.md), [validate](docs/validate.md), [issue](docs/issue.md), [proxy](docs/proxy.md)
 
@@ -81,7 +81,7 @@ The Go module path is `github.com/dominikschlosser/eudi-dev/v3`. Each major vers
 
 ### Beta releases
 
-A beta, such as `v3.0.0-beta.1`, is a version for testing ahead of its release. It is a prerelease on GitHub. You only get it when you ask for it:
+A beta, such as `v3.0.0-beta.1`, is a GitHub prerelease. You only get it when you ask for it:
 
 | Method | Command |
 |---|---|
@@ -91,7 +91,7 @@ A beta, such as `v3.0.0-beta.1`, is a version for testing ahead of its release. 
 | Binaries | Download them from the prerelease on [GitHub Releases](https://github.com/dominikschlosser/eudi-dev/releases). The binaries aren't signed, so macOS blocks a binary downloaded in the browser. Run `xattr -d com.apple.quarantine eudi` to unblock it |
 | Java tests | [testcontainers-eudi](https://github.com/dominikschlosser/testcontainers-eudi) publishes a matching beta, such as `3.0.0-beta.1`. Maven only uses it when you set that version |
 
-Homebrew and the `latest` Docker tag stay on the newest stable release. If you installed with Homebrew, try a beta with Docker or `go install`. When a stable release is the newest version, `beta` points to it too.
+Homebrew and the `latest` Docker tag stay on the newest stable release. When a stable release is the newest version, `beta` points to it too.
 
 ## Commands
 
@@ -132,8 +132,6 @@ Input is a file path, a URL, a raw credential string or stdin. `--json` prints o
 
 ## Compared to other EUDI tooling
 
-eudi-dev is a wallet for testing your issuer or verifier. The table compares it with other EUDI tools.
-
 | Tool | What it tests | Runs locally | Scriptable |
 |---|---|---|---|
 | **eudi-dev** | your issuer or verifier | yes | CLI and HTTP API |
@@ -169,7 +167,7 @@ When to use something else:
 | [OpenID4VP 1.0 + HAIP 1.0](https://openid.net/certification/certified-oid4vp-haip-final/) | Presentation using `direct_post.jwt` | 18 September 2026 |
 | [OpenID4VCI 1.0 + HAIP 1.0](https://openid.net/certification/certified-oid4vci-haip-final/) | Wallet-initiated issuance and issuer-initiated issuance with offers by value or reference | 3 September 2026 |
 
-The official listings link to the certification submissions and test results. This repository has its own [conformance results](docs/conformance-results.md) and a [runbook](docs/conformance-run.md). The OpenID Certified mark is a trademark of the OpenID Foundation and is used under its [mark usage terms](https://openid.net/certification/mark/).
+This repository has its own [conformance results](docs/conformance-results.md) and a [runbook](docs/conformance-run.md). The OpenID Certified mark is a trademark of the OpenID Foundation and is used under its [mark usage terms](https://openid.net/certification/mark/).
 
 ## Notices
 

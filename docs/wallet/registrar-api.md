@@ -2,7 +2,7 @@
 
 *(new in 3.0.0)*
 
-This walkthrough registers a verifier and an issuer with the wallet's [registrar](registrar.md) over the HTTP API. Then it sends requests and offers signed with these certificates to a wallet running with `--arf`. The wallet checks the certificates. The requests use `curl`, `jq` and `openssl`. The responses come from a wallet started like this:
+This walkthrough registers a verifier and an issuer with the wallet's [registrar](registrar.md) over the HTTP API. Then it sends requests and offers signed with these certificates to a wallet running with `--arf`. The requests use `curl`, `jq` and `openssl`. The responses come from a wallet started like this:
 
 ```bash
 eudi wallet serve --pid --arf --auto-accept
@@ -12,7 +12,7 @@ The wallet API is on port 8085 and its issuer endpoints are on port 8086. Long v
 
 ## Sign with openssl
 
-A verifier signs its request objects and an issuer its metadata, both with ES256. Any JOSE library works. The shell function below signs with `openssl` only. The walkthrough needs no other signing tools:
+A verifier signs its request objects and an issuer its metadata, both with ES256. Any JOSE library works. The shell functions below use only `openssl`:
 
 ```bash
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
@@ -382,7 +382,7 @@ In strict mode the wallet refuses the offer before it requests a token:
 
 ### 5. Ask for a PID before you issue
 
-An issuer that checks your identity before issuance also acts as a verifier. It remains a single relying party. CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration. Add an intended use to the registration from step 1. `PUT /wrp` replaces the whole record, so send the stored record back with the new intended use.
+An issuer that checks your identity before issuance also acts as a verifier. CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration, so add an intended use to the registration from step 1. `PUT /wrp` replaces the whole record, so send the stored record back with the new intended use.
 
 ```bash
 jq '.services[0].intendedUses = [{

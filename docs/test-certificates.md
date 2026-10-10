@@ -25,7 +25,7 @@ Checked on 1 October 2026 against [ARF v3.0.0](https://github.com/eu-digital-ide
 | EU PID attributes | PID Rulebook v1.7 | [Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/6d8f7f8422e5bf6c48186005b6835c078f762a67/rulebooks/pid/pid-rulebook.md) |
 | German PID attributes | German PID Rulebook 1.0.0 consultation draft | [Rulebook](https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/) |
 
-The certificates follow the versions referenced by the regulation. For example, TS 119 412-6 V1.1.1 clauses 4.4.3 and 5.1 require the PID and wallet provider certificates' AIA to identify an intermediate CA certificate.
+TS 119 412-6 V1.1.1 clauses 4.4.3 and 5.1 require the PID and wallet provider certificates' AIA to identify an intermediate CA certificate.
 
 OpenID4VCI 1.0 is the baseline, with 1.1 available as an optional draft feature level. The German PID rulebook is a consultation draft, so its national attributes may change.
 
@@ -52,9 +52,9 @@ Two more self-signed CAs sit beside the root. They have the subject organization
 
 Neither chains to the root. The root anchors credential issuers, and a visitor's CSR must never produce a certificate under it. Credential signer leaves carry the ISO/IEC 18013-5 document signing purpose. The credential signer's subject country matches the credential's `issuing_country`, with `NL` as the default. Its AIA and CRL URLs identify the provider intermediate and its revocation list.
 
-The provider intermediate provides the certificate retrieval path that TS 119 412-6 V1.1.1 clause 4.4.3 requires. In the PID Rulebook, the trust anchors are notified provider keys. ISO/IEC 18013-5:2021 Annex B uses a direct IACA hierarchy whose root has a path length of zero. The generated root has a path length of one, and the OpenID suite reports this as an ISO profile warning. Certificate signatures and trust paths are checked separately.
+In the PID Rulebook, the trust anchors are notified provider keys. ISO/IEC 18013-5:2021 Annex B uses a direct IACA hierarchy whose root has a path length of zero. The generated root has a path length of one, and the OpenID suite reports this as an ISO profile warning. Certificate signatures and trust paths are checked separately.
 
-A configured root with a path length of zero signs provider leaves directly. That chain has no provider intermediate, so it lacks the retrieval path described above. The wallet uses the configured CA's keys and chain, and the trusted lists name only the signing leaves.
+A configured root with a path length of zero signs provider leaves directly. That chain has no provider intermediate, so it lacks the retrieval path that clause 4.4.3 requires. The wallet uses the configured CA's keys and chain, and the trusted lists name only the signing leaves.
 
 PID signatures include the protected certificate references that CIR (EU) 2026/1731 Annex I requires. SD-JWT uses `x5u` and `x5t#S256`. Mdoc uses `x5u` and SHA-256 `x5t`. The `x5u` URLs contain the certificate fingerprint and return PEM for JOSE or DER for COSE. The protected `iat` records the signing time, separate from the credential's issuance time. Published certificates stay available after renewal. Offline issuance has no certificate hosting endpoint.
 
@@ -151,16 +151,16 @@ Both issuer discovery endpoints serve JSON by default and signed metadata when t
 
 Trusted lists publish issuance certificates, their provider CAs and status signing certificates. This keeps credentials verifiable across country overrides and certificate renewal. Protected `iat` and `x5t#S256` headers carry the signing time and the certificate reference, as JAdES requires. Trusted lists use English language code `en`, whole second UTC timestamps, postal addresses and a self pointer. An unchanged list keeps its signed instance until it expires. Changed content or expiry advances the sequence number. Append `/history` to a trusted list URL to list its retained instances, then `/history/<sequence>` to retrieve one.
 
-The schema is ETSI's [published JSON binding](https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities), revision `e84f427f0cde99513b574ef4b5a155ac4a38eab6` from 13 November 2025. The PID, wallet provider, access certificate provider, registration certificate provider and PuB-EAA lists follow Annexes D to H. TS 119 602 defines no list type for QEAA and EAA providers. Their lists use types of this project: `https://eudi-test.dev/LoTEType/QEAAProvidersList` and `https://eudi-test.dev/LoTEType/EAAProvidersList`. The list of trusted lists has the type `https://eudi-test.dev/LoTEType/ListOfTrustedLists`. The fictional provider entries are for local interoperability tests.
+The schema is ETSI's [published JSON binding](https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities), revision `e84f427f0cde99513b574ef4b5a155ac4a38eab6` from 13 November 2025. The PID, wallet provider, access certificate provider, registration certificate provider and PuB-EAA lists follow Annexes D to H. TS 119 602 defines no list type for QEAA and EAA providers. Their lists use types of this project: `https://eudi-test.dev/LoTEType/QEAAProvidersList` and `https://eudi-test.dev/LoTEType/EAAProvidersList`. The list of trusted lists has the type `https://eudi-test.dev/LoTEType/ListOfTrustedLists`.
 
 ## Public PID provider comparison
 
 The Bundesdruckerei [demo](https://demo.pid-provider.bundesdruckerei.de/) and [preproduction](https://preprod.pid-provider.bundesdruckerei.de/) deployments publish separate credential, status and access certificate material. Their PID paths use P-521 CAs and P-256 signing leaves. Signed issuer metadata uses an access certificate.
 
-EUDI Dev uses P-256 keys for all of those roles. Generated data types and names follow the versioned rulebooks.
+EUDI Dev uses P-256 keys for all of those roles.
 
 ## Test scope
 
-The requirements come from the versioned specifications and their regulatory adaptations. The [OpenID Foundation conformance tests](https://openid.net/certification/) cover the selected OpenID4VP, OpenID4VCI and HAIP plans and variants. They do not cover every EUDI requirement. ETSI certificate profiles, trusted lists, registration information, PID rulebooks and ISO mdoc requirements must be checked against their own sources.
+The [OpenID Foundation conformance tests](https://openid.net/certification/) cover the selected OpenID4VP, OpenID4VCI and HAIP plans and variants. They do not cover every EUDI requirement. ETSI certificate profiles, trusted lists, registration information, PID rulebooks and ISO mdoc requirements must be checked against their own sources.
 
 The toolkit tests protocol exchanges, signatures, certificate structure and generated data. The [registrar](wallet/registrar.md) simulates relying party registration, including revocation through a status list. Official trust, certified hardware protection and physical presence checks require the corresponding ecosystem services. Configured key attestation assurance values are simulated. See [spec compliance](spec-compliance.md) and [conformance results](conformance-results.md) for implemented checks and remaining protocol limits.

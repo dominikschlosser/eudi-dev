@@ -18,9 +18,9 @@ The binary includes nine predefined templates:
 
 The `pid-*` templates follow the attribute tables of the [EUDI PID Rulebook v1.7](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/6d8f7f8422e5bf6c48186005b6835c078f762a67/rulebooks/pid/pid-rulebook.md) and use its example identity Jan Wijnand ('t Hart). The `german-pid-*` templates follow the [German PID Rulebook 1.0.0 consultation draft](https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/) and use the ERIKA MUSTERMANN specimen identity. The display description of each predefined PID links to its rulebook.
 
-The `italian-pid-*` templates follow the PID data model of the [IT-Wallet Technical Specifications 1.4.7](https://italia.github.io/eid-wallet-it-docs/releases/1.4.7/en/credential-data-model-pid.html) (§11.2). Their claims match Bianca Rossi, the person on the specimen identity card. That card is also their card image. The Italian PID has no address. The wallet always discloses `sub`, `date_of_expiry`, `verification`, `issuing_authority` and `issuing_country`. `sub` is an opaque identifier. The templates list it in `unique_claims`, so every credential gets its own, including each copy in a batch. The mdoc carries `sub` and `verification` in `eu.europa.ec.eudi.pid.it.1`. The optional `personal_administrative_number` is left out.
+The `italian-pid-*` templates follow the PID data model of the [IT-Wallet Technical Specifications 1.4.7](https://italia.github.io/eid-wallet-it-docs/releases/1.4.7/en/credential-data-model-pid.html) (§11.2). Their claims match Bianca Rossi from the specimen identity card. The Italian PID has no address. The wallet always discloses `sub`, `date_of_expiry`, `verification`, `issuing_authority` and `issuing_country`. `sub` is an opaque identifier. The templates list it in `unique_claims`, so every credential gets its own, including each copy in a batch. The mdoc carries `sub` and `verification` in `eu.europa.ec.eudi.pid.it.1`. The optional `personal_administrative_number` is left out.
 
-The `dutch-pid-*` templates follow the [working draft of the Dutch PID](https://github.com/MinBZK/nl-wallet/blob/ea1402d2ad96202617bee6771ac1395c73e96322/scripts/devenv/eudi_pid_nl_1.json) in the NL Wallet reference implementation. Their claims match Willeke Liselotte De Bruijn, the person on the specimen identity card. That card is also their card image. The address, `bsn` and `recovery_code` come from the NL Wallet sample. The draft adds `bsn`, `recovery_code` and `age_over_18` to the EUDI PID. The templates also carry the mandatory EUDI PID attributes, and country values are ISO 3166-1 codes. The `dutch-pid-mdoc` template uses the PID doctype and puts the Dutch attributes in `eu.europa.ec.eudi.pid.nl.1` (ARF PID_04, PID_05 and PID_06). The [NL Wallet mdoc](https://github.com/MinBZK/nl-wallet/blob/8f2a549cc3933e13697bfa98aea23da891380cf6/scripts/devenv/eudi_pid_nl_1_mdoc.json) uses `urn:eudi:pid:nl:1` as doctype and namespace, so a query for that doctype matches nothing here.
+The `dutch-pid-*` templates follow the [working draft of the Dutch PID](https://github.com/MinBZK/nl-wallet/blob/ea1402d2ad96202617bee6771ac1395c73e96322/scripts/devenv/eudi_pid_nl_1.json) in the NL Wallet reference implementation. Their claims match Willeke Liselotte De Bruijn from the specimen identity card. The address, `bsn` and `recovery_code` come from the NL Wallet sample. The draft adds `bsn`, `recovery_code` and `age_over_18` to the EUDI PID. The templates also carry the mandatory EUDI PID attributes, and country values are ISO 3166-1 codes. The `dutch-pid-mdoc` template uses the PID doctype and puts the Dutch attributes in `eu.europa.ec.eudi.pid.nl.1` (ARF PID_04, PID_05 and PID_06). The [NL Wallet mdoc](https://github.com/MinBZK/nl-wallet/blob/8f2a549cc3933e13697bfa98aea23da891380cf6/scripts/devenv/eudi_pid_nl_1_mdoc.json) uses `urn:eudi:pid:nl:1` as doctype and namespace, so a query for that doctype matches nothing here.
 
 The German rulebook adds national attributes (`birth_name`, `academic_title`, `source_document_type`, `raw_eid_birth_date`, and the age thresholds in `age_equal_or_over`). The EU rulebook defines attributes that the German eID does not have (`sex`, `document_number`, `personal_administrative_number`, `date_of_issuance`, `birth_family_name`). Some shared attributes differ in encoding. The birth name is `birth_name` in the German PID and `birth_family_name` in the EU PID. The German PID includes the house number in the street address. The EU PID uses a separate `address.house_number`.
 
@@ -83,18 +83,16 @@ All fields except `claims` are optional:
 
 A template reference (`--template`, `--from`) with a path separator or a `.json` or `.template` extension loads that file. Any other value is looked up in the template directory (both extensions), then among the predefined templates.
 
-To share a template, share the file (or the output of `templates show`).
-
 `wallet serve --credentials` issues credentials from templates on every start (see [startup credentials](wallet/serve.md#startup-credentials)).
 
 ## Card appearance (display)
 
-The optional `display` object sets the card appearance of credentials issued from the template (OpenID4VCI 1.0 §12.2.4). The wallet UI renders it on the credential card and in the consent and offer dialogs. The demo issuer also publishes it in its issuer metadata. It serves built-in and uploaded images itself, at `/issuer/templates/<template>/logo` and `/issuer/templates/<template>/background_image`. The metadata links an `https://` image directly.
+The optional `display` object sets the card appearance of credentials issued from the template (OpenID4VCI 1.0 §12.2.4). The demo issuer publishes it in its issuer metadata. It serves built-in and uploaded images itself, at `/issuer/templates/<template>/logo` and `/issuer/templates/<template>/background_image`. The metadata links an `https://` image directly.
 
 | Field | Description |
 |-------|-------------|
-| `name` | Display name (the card headline, defaults to the technical type) |
-| `description` | Free text shown behind the card's About control |
+| `name` | Display name (defaults to the technical type) |
+| `description` | Free text |
 | `background_color` | Card background, a CSS color such as `#3d59a1` |
 | `text_color` | Card text, a CSS color such as `#ffffff` |
 | `logo` | Card logo image (see image sources below) |
@@ -109,7 +107,7 @@ The two image fields (`logo`, `background_image`) take one of three sources:
 
 A fetched image is stored in the wallet's size-limited cache and is embedded as a `data:` URI on the issued credential.
 
-The predefined PID templates set `display`: `background_color` `#3d59a1`, `text_color` `#ffffff`, and `logo` `embedded:logo.svg`. The national PIDs show the eudi-dev logo on their country's flag instead, and add a `background_image`. The image is the country's public specimen identity card, showing the same person as the claims:
+The predefined PID templates set `display`: `background_color` `#3d59a1`, `text_color` `#ffffff`, and `logo` `embedded:logo.svg`. The national PIDs show the eudi-dev logo on their country's flag instead, and add the country's specimen identity card as `background_image`:
 
 | Template | Logo | Image | Source and licence |
 |----------|------|-------|--------------------|
@@ -119,7 +117,7 @@ The predefined PID templates set `display`: `background_color` `#3d59a1`, `text_
 
 Display values supplied during issuance override individual template fields. Setting only a name keeps the template's images.
 
-The CLI accepts `--display-name`, `--display-description`, `--background-color`, `--text-color`, `--logo`, `--logo-alt` and `--background-image`. The Issue dialog and `POST /api/issue` accept the same fields.
+The CLI accepts `--display-name`, `--display-description`, `--background-color`, `--text-color`, `--logo`, `--logo-alt` and `--background-image`. `POST /api/issue` accepts the same fields.
 
 ```json
 {
@@ -232,10 +230,10 @@ curl -X POST http://localhost:8085/api/issue \
 
 ## Wallet UI
 
-Choose a template in the issue dialog to fill in the form, then edit any values you need. Uncheck a claim's SD checkbox to make it always visible. In JSON mode, use the "Always visible" field. Dotted paths select nested claims. Enter a name in "Save as template" to save the form after successful issuance.
+An unchecked SD box in the issue dialog puts the claim in `always_disclosed`. "Save as template" saves the form only after the issuance succeeds.
 
-**Templates** in the header and the Templates button list the templates. On a phone the header link is under **Menu**. **New template** and **Edit** open the template editor. It has the issue dialog fields for a template: format, type, claims, expiry and card appearance. A switch at the top changes between the builder and the template JSON. In the JSON you can paste a template to import it, or set other fields such as `unique_claims`. Editing in the builder keeps these fields. **Delete** removes a user template.
+Pasting a template into the editor's JSON view imports it. The JSON view also takes fields the builder lacks, such as `unique_claims`, and the builder keeps them.
 
-The template editor and "Save as template" in the issue dialog have the checkbox "Add the template to the attestation catalogue". Ticking it shows the catalogue fields: the attestation name, the category, the rulebook, the level of security, the holder binding and the trusted list. Choosing a category sets its default level of security, and an empty trusted list links the category's list. The dialog shows an error if a field is invalid or the name is taken, and nothing is saved.
+For a catalogue entry made in the UI, the category sets the default level of security, and an empty trusted list links the category's list.
 
 On a public demo, visitors can save templates too. They can't change or delete the predefined templates or the operator's templates (those present at startup). Visitor templates can't have their own images. The bundled templates keep their images. A demo keeps at most 50 visitor templates, and a reset deletes them.

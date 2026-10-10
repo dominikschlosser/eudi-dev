@@ -2,11 +2,9 @@
 
 # Wallet HTTP API
 
-A running `wallet serve` instance exposes credential management, issuance, templates, certificates, status, deferred issuance, activity logs and test settings over HTTP. [Remote CLI commands](#remote-control) use the same API.
+A running `wallet serve` instance exposes this API. [Remote CLI commands](#remote-control) use it too.
 
 ## HTTP API
-
-Use it to manage a wallet on another host or to drive a hosted instance from automated tests (CI jobs, Testcontainers, E2E suites). It also lets tests simulate errors and choose a preferred credential format.
 
 > **No authentication.** Anyone who can reach the port can control the wallet and read its credentials. Use it for local development and isolated test networks with test data. Public deployments should use [`--demo`](../public-demo.md), which disables administrative operations, restricts outbound connections and resets state periodically. The remaining data and endpoints are public.
 
@@ -16,7 +14,7 @@ Use it to manage a wallet on another host or to drive a hosted instance from aut
 
 ### Consent ownership
 
-`GET /api/requests` and the event stream return the caller's own requests and unowned requests. This keeps each browser's consent dialogs separate on shared wallets. It does not authenticate users.
+`GET /api/requests` and the event stream return the caller's own requests and unowned requests. This does not authenticate users.
 
 A client that opens a wallet page supplies the same browser ID in the page's `owner` query parameter and the API's `X-Eudi-Owner` header. The CLI and remote URL handler do this automatically. Requests without a browser ID remain visible to all callers, including curl, CI jobs and commands using `--no-open`.
 
@@ -26,13 +24,11 @@ The `mine` field of a request document shows ownership. Bundled clients also sen
 
 To approve or deny a request through `POST /api/requests/{id}/approve` or `/deny`, the caller must own it or pass `?request=<id>`. The wallet includes that ID in the browser redirect URL. Other callers receive `404`.
 
-`GET /api/credentials` accepts optional `limit` and `offset` query parameters and reports the total number of stored credentials in the `X-Total-Count` response header. Without parameters it returns every credential. An offset past the end returns an empty array. The web UI uses this to page through long lists ten credentials at a time.
+`GET /api/credentials` accepts optional `limit` and `offset` query parameters and reports the total number of stored credentials in the `X-Total-Count` response header. Without parameters it returns every credential. An offset past the end returns an empty array.
 
 Protected baseline credentials cannot be deleted or revoked through the API. Individual operations return `403`. Deleting all credentials preserves protected entries and reports `kept_protected`. Demo mode marks its generated PIDs as protected. Changing the flag requires direct access to stored state, such as editing `wallet.json` on the file backend.
 
 ### Credential management
-
-The credential endpoints mirror `wallet list`, `wallet show`, `wallet import`, and `wallet remove`:
 
 | Method   | Path                    | Body                  | Description                                        | CLI equivalent        |
 |----------|-------------------------|-----------------------|----------------------------------------------------|-----------------------|
@@ -134,7 +130,7 @@ curl -X POST http://localhost:8085/api/issue \
 
 ### Certificate export
 
-The CA and TLS endpoints mirror `wallet ca-cert` and `wallet tls-cert`. Both return PEM by default. `?format=jwks` returns the public key and `x5c` chain as JWKS.
+The CA and TLS endpoints return PEM by default. `?format=jwks` returns the public key and `x5c` chain as JWKS.
 
 | Method | Path                            | Description                                              | CLI equivalent   |
 |--------|---------------------------------|----------------------------------------------------------|------------------|
@@ -154,8 +150,6 @@ The CA and TLS endpoints mirror `wallet ca-cert` and `wallet tls-cert`. Both ret
 curl http://localhost:8085/api/certificates/ca > wallet-ca-cert.pem
 curl 'http://localhost:8085/api/certificates/tls?format=jwks'
 ```
-
-The TLS certificate matches the HTTPS wallet host of the running server (its effective issuer URL).
 
 Provider roles are the credential categories `pid`, `qeaa`, `pub-eaa` and `eaa`, `wallet` for the wallet provider, `tl-<8 hex digits>` for a credential type with its own trusted list, and `unlisted` for unlisted credentials. Each role has its own provider CA. The country is two uppercase letters such as `NL`. Only existing providers can be retrieved. Signing certificate URLs use the SHA-256 fingerprint of the DER certificate and remain available after renewal. JOSE `x5u` uses PEM and COSE `x5u` uses DER. See [test certificates](../test-certificates.md) for the certificate profiles.
 
@@ -192,7 +186,7 @@ Trusted lists contain service certificates and provider CAs. A separate list ope
 
 These endpoints are available on both wallet ports. Anyone with access to the wallet can register, change and delete relying parties, as with credentials. All `GET` endpoints under `/api/registrar/wrp` and `PUT /api/registrar/wrp` answer with a JWT signed by the registrar (`application/jwt`). Its payload has `iss`, `iat` and `data`. Send `Accept: application/json` without `application/jwt` to get the payload unsigned. See [registrar](registrar.md#registrar-api). The [registrar API walkthrough](registrar-api.md) registers a verifier and an issuer with curl and uses their certificates.
 
-`PUT /api/registrar/wrp` and `PUT /api/catalog/schemas/{id}` have no CLI command. Use the API or the UI for them.
+`PUT /api/registrar/wrp` and `PUT /api/catalog/schemas/{id}` have no CLI command.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -252,7 +246,7 @@ curl -X DELETE http://localhost:8085/api/next-error
 
 ### Preferred credential format
 
-When a DCQL query matches both SD-JWT and mdoc credentials (e.g. both PID formats), the preferred format setting decides which format is presented.
+When a DCQL query matches both SD-JWT and mdoc credentials, the preferred format setting decides which format is presented.
 
 **Set preference:**
 
@@ -302,7 +296,7 @@ DID issuer keys cannot be resolved. Credentials whose `kid` or `iss` starts with
 
 The DID appears in the activity log and the summary's `issuer_key_did` field. `eudi validate --haip` also reports it as a finding.
 
-A credential bound to a holder key requires that private key for presentation. Importing a credential issued to another wallet does not transfer the key. The wallet reports the mismatch in its activity log, CLI warnings, the card's **Wrong holder binding** badge and the summary's `key_binding_not_held` field.
+A credential bound to a holder key requires that private key for presentation. Importing a credential issued to another wallet does not transfer the key. The wallet reports the mismatch in its activity log, CLI warnings, the credential card and the summary's `key_binding_not_held` field.
 
 ```bash
 # Import an SD-JWT
@@ -333,7 +327,7 @@ eudi wallet serve --pid --docker
 eudi wallet serve --pid --base-url http://my-host:8085
 ```
 
-Change the status of a credential at runtime with the API or with the Revoke and Activate buttons on the credential cards:
+Change the status of a credential at runtime:
 
 ```bash
 # Revoke a credential (status=1)
@@ -392,7 +386,7 @@ Each activity log entry has a timestamp, category (`presentation`, `issuance`, `
 | Method   | Path       | Description                                     | CLI equivalent |
 |----------|------------|--------------------------------------------------|----------------|
 | `GET`    | `/api/log` | The persisted activity log, newest last          | `wallet logs`  |
-| `DELETE` | `/api/log` | Clear the log (`204`, used by the wallet UI's Clear button). Demo mode returns `403` | None           |
+| `DELETE` | `/api/log` | Clear the log (`204`). Demo mode returns `403` | None           |
 
 ```bash
 curl http://localhost:8085/api/log
@@ -428,13 +422,11 @@ When `request_uri_method=post`, the wallet sends two form parameters to `request
 
 The wallet accepts a signed or unsecured request JWT, or decrypts a JWE using ECDH-ES with A128GCM or A256GCM. If the response contains `wallet_nonce`, it must match the sent value. An omitted nonce is accepted and logged because the parameter is optional.
 
-The wallet always supplies its encryption key. Use `--require-encrypted-request` to reject request objects returned without encryption:
+`--require-encrypted-request` rejects request objects returned without encryption:
 
 ```bash
 eudi wallet serve --auto-accept --pid --require-encrypted-request
 ```
-
-The proxy dashboard shows `request_uri_method`, `wallet_metadata`, and `wallet_nonce` in the decoded traffic view.
 
 ### Example: E2E test flow
 
@@ -507,13 +499,11 @@ When a live instance serves the same wallet directory and no remote target is co
 
 Use `--remote local` or an explicit `--templates-dir` to bypass routing and access storage directly. While a server is running, prefer routing so the server sees each change immediately.
 
-A routed command uses the settings of the running wallet for every step of a flow, including a credential collected later. So it refuses `--mode`, `--haip`, `--arf`, `--key-attestation-level`, `--relying-party-ca`, `--trust-list-ca` and `--trusted-list`. Set the mode, HAIP, ARF and key attestation level on `wallet serve` or with `PUT /api/config/conformance`. Put CAs and lists on the wallet's trusted lists with `wallet trust`. `--trust-list-ca` can only be set on `wallet serve`.
+A routed command uses the settings of the running wallet for every step of a flow, including a credential collected later. So it refuses `--mode`, `--haip`, `--arf`, `--key-attestation-level`, `--relying-party-ca`, `--trusted-list-ca` and `--trusted-list`. Set the mode, HAIP, ARF and key attestation level on `wallet serve` or with `PUT /api/config/conformance`. Put CAs and lists on the wallet's trusted lists with `wallet trust`. `--trusted-list-ca` can only be set on `wallet serve`.
 
 `wallet info` compares a running instance's configuration with the wallet file and warns when they differ (the file changed after the server started). Restarting `wallet serve` reloads the file.
 
 ### Instances
-
-The CLI lists running wallet instances on the local system, stops them, and switches management to them:
 
 ```bash
 eudi wallet ps                       # list running instances (URL, version, pid, wallet dir)

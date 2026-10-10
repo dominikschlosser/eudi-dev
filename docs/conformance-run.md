@@ -86,7 +86,7 @@ OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-Compare failures with the latest [conformance results](./conformance-results.md) before treating them as regressions. The recorded baseline includes known wallet and suite failures, their conditions and the resulting exit status.
+Compare failures with the latest [conformance results](./conformance-results.md) before treating them as regressions. The baseline lists the known wallet and suite failures and the expected exit status.
 
 ## Rerun Selected Plans or Modules
 
@@ -117,7 +117,7 @@ The wrapper prints the run directory and leaves these artifacts:
 - `results/*-config.json`: generated OIDF config files
 - `results/*-wallet-activity.json`: the wallet's activity log per plan (every token and credential request and response with its body). The certification submission asks for this client-side log with the VCI plans
 
-The Python runner also prints local `plan-detail.html?plan=...` URLs for inspecting the created plans in the suite UI.
+The Python runner also prints the local `plan-detail.html?plan=...` URLs.
 
 Use this query to summarize important runner lines:
 
@@ -189,7 +189,7 @@ OIDF_REQUEST_TIMEOUT=60 \
   scripts/oidf-wallet-conformance.sh
 ```
 
-The wrapper starts no wallet of its own. It drives the tunneled instance over its API, including the per-module conformance switch. `OIDF_VCI_ALIAS` must match the redirect URI of the deployed wallet (the compose file sets `oid4vc-dev-vci-strict`). The wrapper fetches the wallet CA from the wallet's `/api/certificates/ca`. Deploy the release under certification before the run.
+The wrapper starts no wallet of its own. It drives the tunneled instance over its API, including the per-module conformance switch. `OIDF_VCI_ALIAS` must match the redirect URI of the deployed wallet (the compose file sets `oid4vc-dev-vci-strict`). It fetches the wallet CA from the wallet's `/api/certificates/ca`. Deploy the release under certification before the run.
 
 ### Against a local wallet through a tunnel
 

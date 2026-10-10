@@ -25,7 +25,7 @@ sequenceDiagram
     APP->>KC: Authorization request (client wallet-app)
     KC->>W: haip-vp:// request, credential_sets [[pid, membership], [pid]]
     W->>KC: vp_token with the PID alone
-    KC->>KC: Verify the PID against the wallet trust list, no subject credential
+    KC->>KC: Verify the PID against the wallet trusted list, no subject credential
     KC->>BROKER: Brokered identity of a generated subject
     BROKER->>U: Ask for username and password (alice / alice)
     BROKER->>BROKER: oid4vp-subject-binding binds the login to the user and entitles the credential

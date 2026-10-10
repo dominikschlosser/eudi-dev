@@ -28,7 +28,7 @@ Visitor URLs are restricted to public network addresses. The wallet checks resol
 
 ### Validation
 
-Demo mode checks OpenID4VP and issuance against HAIP 1.0 and runs the [ARF checks](wallet/presenting.md#arf-checks). In debug mode, violations appear as warnings in the activity log and the flow continues. The UI shows the active settings under **Conformance**.
+Demo mode checks OpenID4VP and issuance against HAIP 1.0 and runs the [ARF checks](wallet/presenting.md#arf-checks). In debug mode, violations appear as warnings in the activity log and the flow continues.
 
 Presentation checks cover request delivery, client identification, response encryption, credential formats and algorithms. Unsigned Digital Credentials API requests use the platform origin to identify the caller. Issuance checks cover the grant, PAR, PKCE, DPoP and client authentication. See [specification support](spec-compliance.md) for individual requirements.
 
@@ -38,7 +38,7 @@ Use `--mode strict` to reject violations, or `--haip=false` and `--arf=false` to
 
 Resets run every hour by default. `--demo-reset` accepts an interval such as `24h`, a daily time such as `00:00`, or a time with a zone such as `"00:00 Europe/Berlin"`. `0` disables resets. Daily schedules follow local time, including daylight saving changes, and retain their schedule across restarts.
 
-A reset removes visitor credentials, registered relying parties and the providers and lists added to the trusted lists, regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The credential signing certificate is renewed. The footer shows the reset schedule.
+A reset removes visitor credentials, registered relying parties and the providers and lists added to the trusted lists, regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The credential signing certificate is renewed.
 
 ## Browser hardening
 
@@ -61,19 +61,17 @@ Every response includes these headers:
 
 Every wallet server includes an issuer at `/issuer` and a verifier at `/verifier`. The issuer offers a Demo Event Ticket through pre-authorized and authorization code flows. The verifier requests the ticket or a PID through OpenID4VP.
 
-The verifier signs requests delivered from `/verifier/request/{id}` with its access certificate, identifies itself with `x509_hash:` and receives encrypted `direct_post.jwt` responses. It is registered with the wallet's registrar for the credentials of the wallet's templates and sends its registration certificate with each request. On its page you can instead send a request without the registration certificate, or paste your own key, access certificate and `verifier_info`. Each request has its own encryption key and accepts one response. Offers and requests expire after ten minutes and are kept only in memory.
+The verifier signs requests delivered from `/verifier/request/{id}` with its access certificate, identifies itself with `x509_hash:` and receives encrypted `direct_post.jwt` responses. It is registered with the wallet's registrar for the credentials of the wallet's templates and sends its registration certificate with each request. A request can also go out without the registration certificate, or with your own key, access certificate and `verifier_info`. Each request has its own encryption key and accepts one response. Offers and requests expire after ten minutes and are kept only in memory.
 
-The verifier page has a PID format toggle. By default, a PID request accepts either an SD-JWT VC or an mdoc, and the wallet presents a matching credential. Select a format to test whether the wallet can present it. The ticket is always an SD-JWT VC.
+By default, a PID request accepts either an SD-JWT VC or an mdoc. The ticket is always an SD-JWT VC. With **multiple**, the wallet may send several credentials for each query, such as two stored PIDs.
 
-**Demo ticket + PID** asks for both in one request. **With the PID** offers the ticket together with the SD-JWT PID, or a PID alone. **Optional** asks for a PID and lets the wallet skip the ticket. Tick **multiple** to let the wallet send several credentials for each query, such as two stored PIDs.
-
-The issuer page has a status list toggle. When enabled, each ticket references a reserved index in the wallet's own status list. The wallet imports the ticket as revocable. After revocation, the demo verifier rejects the next presentation.
+With the status list option, each ticket references a reserved index in the wallet's own status list. The wallet imports the ticket as revocable. After revocation, the demo verifier rejects the next presentation.
 
 ### PID credentials
 
 The demo starts with four PID credentials: the country-independent EUDI PID (`urn:eudi:pid:1`) and the German PID that extends it (`urn:eudi:pid:de:1`), each as an SD-JWT VC and an mdoc. Each PID type has its own attributes, defined by its rulebook.
 
-The verifier page offers both through its credential toggle. The PID request asks for `urn:eudi:pid:1`. Both credentials match it, and the wallet presents one of them. The German PID request asks for `urn:eudi:pid:de:1`. Only the German credential matches it. See [credential type inheritance](wallet.md#credential-type-inheritance).
+The PID request asks for `urn:eudi:pid:1`. Both credentials match it, and the wallet presents one of them. The German PID request asks for `urn:eudi:pid:de:1`. Only the German credential matches it. See [credential type inheritance](wallet.md#credential-type-inheritance).
 
 `POST /verifier/api/requests` selects the PID type through `vct`. Any type under `urn:eudi:pid:` is accepted, including `urn:eudi:pid:fr:1`. National types request SD-JWT VC only. All PID mdocs use the doctype `eu.europa.ec.eudi.pid.1`. The doctype carries no country.
 
@@ -84,13 +82,11 @@ To include a ticket, set `ticket` in the same request:
 | `"combined"` | One credential set offers PID plus ticket or PID alone |
 | `"optional"` | A second credential set requests the ticket with `required: false` |
 
-The consent dialog shows these choices.
-
 ### Shared state
 
 All four baseline credentials are protected. The UI, the API and the CLI refuse to delete or revoke them. Visitor credentials can be deleted. Removing baseline protection requires direct access to `wallet.json`.
 
-All visitors share credentials, registered relying parties, trusted lists and the activity log. Anyone can issue credentials, delete unprotected credentials, register, revoke and delete relying parties, and read the log. Anyone can also put providers and external lists on the wallet's [trusted lists](wallet/serve.md#trusted-lists). These entries then anchor the `--arf` checks for every visitor. The demo holds at most 20 added providers and 5 added lists. Use test data only. The UI lists ten credentials per page, and the periodic reset clears visitor data.
+All visitors share credentials, registered relying parties, trusted lists and the activity log. Anyone can issue credentials, delete unprotected credentials, register, revoke and delete relying parties, and read the log. Anyone can also put providers and external lists on the wallet's [trusted lists](wallet/serve.md#trusted-lists). These entries then anchor the `--arf` checks for every visitor. The demo holds at most 20 added providers and 5 added lists. Use test data only.
 
 ## Rate limits
 
@@ -106,7 +102,7 @@ Five zones return `429` with `Retry-After` when exceeded:
 | `registrar_hour` | 600 per hour | The same registrar changes |
 | `site` | 1200 per minute | All requests, including the UI and the stats report |
 
-The limits allow interactive use and cap automated traffic. An idle page makes about 14 initial requests, then receives updates through an event stream. Clients behind the same public address share the limit. With another reverse proxy, set equivalent limits there.
+An idle page makes about 14 initial requests, then receives updates through an event stream. Clients behind the same public address share the limit. With another reverse proxy, set equivalent limits there.
 
 ## Base URL and issuer URL
 
@@ -130,13 +126,13 @@ The demo issuer is also its own authorization server. Its metadata at `/.well-kn
 
 It accepts the attestation claims defined by ABCA draft-07, draft-08 and draft-10. A valid attestation for a supported draft other than the configured version produces a warning ([ADR-0014](adr/0014-pinned-draft-versions-stay-supported-alongside-the-latest.md)).
 
-Client authentication is required on the token endpoint for both grants (HAIP 1.0 §4.4.1). `--demo-issuer-client-auth optional` also permits clients without an attestation.
+Client authentication is required on the token endpoint for both grants (HAIP 1.0 §4.4.1). `--demo-issuer-client-auth optional` also permits clients without an attestation. The authorization server then also advertises and accepts `none`. It still verifies any attestation that is sent.
 
 The challenge for the key proof comes from the Nonce Endpoint defined in OpenID4VCI 1.0 §7. The issuer serves it at `POST /issuer/nonce` and advertises it as `nonce_endpoint` in its Credential Issuer metadata. If a proof uses a stale nonce, the issuer returns `invalid_nonce`. The wallet fetches a fresh nonce and retries.
 
-Sign in with **alice / alice**, also shown on the login page. This is the only account. The issuer stores no user data, and the session ends with the flow.
+Sign in with **alice / alice**, the only account. The issuer stores no user data, and the session ends with the flow.
 
-The user signs in while redeeming the offer. The **Authorization code offer** button creates an offer before sign-in. The wallet then runs the pushed authorization request, and the authorization endpoint asks the user to authenticate. The credential is bound to the account that completed that login.
+The user signs in while redeeming the offer, not when it is created. The wallet runs the pushed authorization request, and the authorization endpoint asks the user to authenticate. The credential is bound to the account that completed that login.
 
 The hosted wallet returns the authorization URL to the caller:
 
@@ -145,7 +141,7 @@ The hosted wallet returns the authorization URL to the caller:
 
 The flow waits for the issuer to redirect to `/callback`. The wallet then resumes issuance and returns the browser to the wallet UI.
 
-The callback is matched by `state` alone, so the sign-in can happen in any browser with access to the wallet. This lets `eudi wallet accept` complete an authorization code offer against the hosted demo. The CLI opens the URL locally and polls `GET /api/offers/{offer_id}` until it reports `completed` or `failed`.
+The callback is matched by `state` alone, so the sign-in can happen in any browser with access to the wallet. `eudi wallet accept` can therefore complete an authorization code offer against the hosted demo. The CLI opens the URL locally and polls `GET /api/offers/{offer_id}` until it reports `completed` or `failed`.
 
 By default, PAR and token requests both require a wallet attestation. The issuer verifies its signature and the possession proof, including `sub`, `aud`, `jti` and expiry. It accepts either a separate `OAuth-Client-Attestation-PoP` JWT or a DPoP proof signed by the attested key (`attest_jwt_client_auth_dpop`).
 
@@ -153,11 +149,9 @@ The access token is bound to the DPoP key. The credential request must prove pos
 
 ### Wallets from other providers
 
-The demo issuer trusts the providers on the wallet provider lists of the wallet's [list of trusted lists](wallet/serve.md#trusted-lists). That is the wallet's own `wallet-provider` list at `/api/trustlists/wallet-provider`, providers added with `wallet trust add-ca --list wallet-provider`, and external wallet provider lists. It also accepts attestations from other providers when their signature verifies against the included leaf certificate. The demo issuer can then test other wallets without trusting their provider.
+The demo issuer trusts the providers on the wallet provider lists of the wallet's [list of trusted lists](wallet/serve.md#trusted-lists). That is the wallet's own `wallet-provider` list at `/api/trustlists/wallet-provider`, providers added with `wallet trust add-ca --list wallet-provider`, and external wallet provider lists. It also accepts attestations from other providers when their signature verifies against the included leaf certificate.
 
 The ticket records the result in `wallet_attestation`: `trusted` for a chain to a trusted wallet provider, `untrusted` for another signer, or `none` when authentication was optional and omitted.
-
-To test a wallet without attestation, use `--demo-issuer-client-auth optional`. The authorization server then also advertises and accepts `none`. It still verifies any attestation that is sent. The default is `required` (HAIP 1.0 §4.4.1).
 
 ## Verifying the wallet attestation
 
@@ -168,7 +162,7 @@ The wallet authenticates PAR and token requests with a wallet attestation. With 
 
 When the configuration requires key attestations, the credential proof includes `key-attestation+jwt`. It appears in the JWT proof header or as an attestation proof, depending on the offered format. The reported storage and user authentication levels are test claims. The wallet stores keys unencrypted ([SECURITY.md](../SECURITY.md)).
 
-The certificate chain is included in the attestation. These endpoints publish the corresponding trust material:
+These endpoints publish the trust material:
 
 | Source | URL |
 | --- | --- |
@@ -186,15 +180,15 @@ The issuer metadata endpoints return JSON by default and a JWT signed with the a
 
 ## Imprint
 
-Pass `--imprint-file` with an HTML snippet containing the operator's name, address and contact details. The wallet serves it at `/imprint` and `/decoder/imprint`, adds the EU non-affiliation notice and links it from the footer. The standalone decoder accepts the same flag.
+Pass `--imprint-file` with an HTML snippet containing the operator's name, address and contact details. The wallet serves it at `/imprint` and `/decoder/imprint`, and adds the EU non-affiliation notice. The standalone decoder accepts the same flag.
 
 ## News
 
-Pass `--news-file` with an HTML snippet to tell visitors about new features. The wallet opens it in a popup on the first visit and links it as **News** in the footer. A changed file opens once more. It needs `--demo`.
+Pass `--news-file` with an HTML snippet. The wallet opens it on a visitor's first visit and again after the file changes. It needs `--demo`.
 
 An image next to the snippet, such as `<img src="overview.png">`, is embedded in the page, because the wallet loads images only from itself. Images can be PNG, JPEG, GIF, WebP or SVG, up to 2 MiB each. A paragraph with `class="lead"` stands out as the summary.
 
-The example stack mounts the `news` folder, and `./deploy.sh push` copies it to the host. On eudi-test.dev it points visitors to the beta on the preview host. `3.0.0-beta.source.html` is the page the overview image is rendered from.
+The example stack mounts the `news` folder, and `./deploy.sh push` copies it to the host. `3.0.0-beta.source.html` is the page the overview image is rendered from.
 
 The demo uses the `eudi_session` cookie to associate consent requests with a browser. It is an opaque session value with `HttpOnly`, `SameSite=Lax` and, for HTTPS connections, `Secure`. The activity log remains shared.
 
@@ -228,9 +222,9 @@ The script pulls the image before switching, so an unpublished tag leaves the ru
 
 ### Preview host
 
-Use the preview host to try a release before deploying it to the main site. It runs a second wallet with its own volume and release, behind the same Caddy at a separate subdomain. Point the subdomain at the same host and add its URL to `deploy.env`.
+The preview host runs a second wallet with its own volume and release, behind the same Caddy at a separate subdomain. Point the subdomain at the same host and add its URL to `deploy.env`.
 
-On eudi-test.dev the preview host is <https://preview.eudi-test.dev>. It runs the Docker tag `beta`, the newest release including betas.
+On eudi-test.dev the preview host is <https://preview.eudi-test.dev>.
 
 ```bash
 # in deploy.env, alongside DEMO_HOST and DEMO_URL:
@@ -295,9 +289,9 @@ Visitor counts are approximate because addresses are masked. Everyone sharing an
 - Terminate TLS in a reverse proxy (the example uses Caddy with automatic Let's Encrypt) and forward to the wallet's HTTP port. The wallet derives all advertised URLs from `--base-url`.
 - Mount a volume at `/home/app/.eudi-dev` and set `EUDI_DEV_STORAGE=file` and `EUDI_DEV_SEED=`. This persists credentials, keys and the shared CA. Mount the parent of `wallet/` so the CA survives restarts and verifiers can reuse their trusted lists.
 - Run one replica when using file storage.
+- Keep the rate limiting in the proxy. The Caddyfile of the compose example enables the `rate_limit` zones described above.
 - Leave `HTTP_PROXY` and `HTTPS_PROXY` unset in the container and do not pass `--http-proxy` or `--https-proxy`. With an outbound proxy, the connection-time address checks see only the proxy's address.
 - Requests to the demo's own public URL, such as a pasted offer, resolve through public DNS. This works on cloud hosts that support hairpin NAT. A compose network alias for the public hostname would resolve to a private address and be blocked.
-- Keep the rate limiting in the proxy. The compose example's Caddyfile enables the `rate_limit` zones described above.
 
 ## Pointing the CLI at the demo
 

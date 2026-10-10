@@ -5,7 +5,7 @@ The wallet can run behind a reverse proxy in two ways:
 - on its own host, such as `https://eudi.example.com`
 - under a path prefix on a shared host, such as `https://example.com/some/context`
 
-This page mostly covers the path prefix setup. It applies to the wallet, its demo issuer and verifier, and the [proxy dashboard](#proxy-dashboard).
+The path prefix setup applies to the wallet, its demo issuer and verifier, and the proxy dashboard.
 
 ## Base URL
 
@@ -34,7 +34,7 @@ Issuance needs a few more routes. The specs put issuer metadata at the root of t
 | `/.well-known/openid-credential-issuer/some/context` | The wallet's own issuer metadata |
 | `/.well-known/jwt-vc-issuer/some/context` | Verifiers that look up the wallet's signing key there (only for credentials without an `x5c` certificate chain) |
 
-Presentations don't need these routes. If you only use the demo verifier, you can leave them out.
+Presentations don't need these routes.
 
 Requests that bypass the proxy, for example through `kubectl port-forward`, are served at the root.
 
