@@ -5,6 +5,12 @@ Notable changes by release.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-10-10
+
+### Added
+
+- **News for demo visitors.** `wallet serve --demo --news-file news.html` shows an HTML snippet in a popup on the first visit and links it as **News** in the footer. A changed file opens once more (see [public demo hosting](docs/public-demo.md#news)).
+
 ## [2.6.1] - 2026-10-06
 
 ### Fixed
