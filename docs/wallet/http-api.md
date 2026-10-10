@@ -197,6 +197,8 @@ These endpoints are available on both wallet ports. Anyone with access to the wa
 | `POST` | `/api/registrar/wrp` | Register a relying party |
 | `PUT` | `/api/registrar/wrp` | Replace a registration and answer the stored registration in `data`. If an intended use or a service changes or is missing, its certificates are revoked |
 | `DELETE` | `/api/registrar/wrp/{identifier}` | Delete a registration |
+| `POST` | `/api/registrar/enrolments` | Register a relying party and issue its certificates in one step |
+| `PUT` | `/api/registrar/enrolments` | Change a registration and issue its certificates in one step |
 | `POST` | `/api/registrar/access-certificates` | Issue an access certificate for a CSR of a registered relying party |
 | `POST` | `/api/registrar/registration-certificates` | Issue a registration certificate for a registered intended use (answers `verifierInfo`) or an issuer service (answers `issuerInfo`). Answers `409` if the registration changed in the meantime |
 | `GET` | `/api/registrar/registration-certificates` | Status list entries of the issued registration certificates. A current certificate comes with its `verifierInfo` or `issuerInfo` value |

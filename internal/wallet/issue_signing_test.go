@@ -133,7 +133,9 @@ func TestParseSigningOverride(t *testing.T) {
 
 func TestDemoRefusesSigningOverride(t *testing.T) {
 	srv := newTestServer(t, true)
-	srv.SetDemo(DemoOptions{ResetInterval: time.Hour})
+	if err := srv.SetDemo(DemoOptions{ResetInterval: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
 
 	rec := serverRequest(t, srv, "POST", "/api/issue", `{"format":"sdjwt","signing_key":"key","signing_cert":"cert"}`)
 	if rec.Code != 403 {

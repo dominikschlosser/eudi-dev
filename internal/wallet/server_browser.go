@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 )
@@ -155,76 +154,40 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	}
 
 	reqServer.log("  Mode:          interactive (waiting for consent)")
-	consentReq := &ConsentRequest{
-		ID:           newConsentID(),
-		Type:         "presentation",
-		Owner:        requestOwner(r),
-		MatchedCreds: matches,
-		Status:       "pending",
-		ResultCh:     make(chan ConsentResult, 1),
-		SubmissionCh: make(chan SubmissionResult, 1),
-		CreatedAt:    time.Now(),
-		ClientID:     authReq.ClientID,
-		Nonce:        authReq.Nonce,
-		ResponseURI:  authReq.ResponseURI,
-		DCQLQuery:    authReq.DCQLQuery,
-		Findings:     authReq.Findings,
-
-		CredentialOptions: credentialOptions,
-	}
-	consentReq.Purposes, consentReq.PrivacyPolicies = consentRegistration(authReq)
-	consentReq.applyClientAuth(authReq)
-
+	consentReq := newPresentationConsent("presentation", requestOwner(r), authReq.ClientID, authReq, matches, credentialOptions)
 	reqServer.wallet.CreateConsentRequest(consentReq)
 	reqServer.triggerUIRequest(consentReq.ID)
 	if reqServer.onConsentRequest != nil {
 		reqServer.onConsentRequest(consentReq)
 	}
 
-	handle := func(result ConsentResult) {
-		if !result.Approved {
-			reqServer.log("  Consent:       denied")
-			browserResult, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, "access_denied", "User denied presentation")
-			if buildErr != nil {
-				reqServer.log("  ERROR: Browser error response failed: %v", buildErr)
-				reqServer.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
-				consentReq.SubmissionCh <- SubmissionResult{Error: buildErr.Error()}
-				writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
-				return
-			}
-			denialDetails := presentationRequestLogDetails(authReq)
-			denialDetails["direction"] = "outbound"
-			denialDetails["source"] = "browser_api"
-			denialDetails["error"] = "access_denied"
-			denialDetails["browser_api_result"] = browserResult
-			reqServer.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true, denialDetails)
-			consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK, Error: "access_denied"}
-			writeJSON(w, http.StatusOK, browserResult)
-			return
-		}
-
-		matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
-
-		matches = reqServer.wallet.applySelectedClaims(matches, result.SelectedClaims)
-
-		submission := reqServer.writeBrowserPresentationResult(w, authReq, protocol, matches)
-		consentReq.SubmissionCh <- submission
-	}
-
 	reqServer.allowSlowResponse(w, config.ConsentTimeout)
-	select {
-	case result := <-consentReq.ResultCh:
-		handle(result)
-	case <-time.After(config.ConsentTimeout):
-		// The timer can race with consent. Only time out requests that are still
-		// pending.
-		if _, ok := reqServer.wallet.ResolveRequest(consentReq.ID, statusExpired); !ok {
-			handle(<-consentReq.ResultCh)
-			return
-		}
+	result, answered := reqServer.wallet.awaitConsent(consentReq, config.ConsentTimeout)
+	switch {
+	case !answered:
 		reqServer.wallet.AddLog("presentation", "Consent timeout", false)
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}
 		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})
+	case !result.Approved:
+		reqServer.log("  Consent:       denied")
+		browserResult, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, "access_denied", "User denied presentation")
+		if buildErr != nil {
+			reqServer.log("  ERROR: Browser error response failed: %v", buildErr)
+			reqServer.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
+			consentReq.SubmissionCh <- SubmissionResult{Error: buildErr.Error()}
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
+			return
+		}
+		denialDetails := presentationRequestLogDetails(authReq)
+		denialDetails["direction"] = "outbound"
+		denialDetails["source"] = "browser_api"
+		denialDetails["error"] = "access_denied"
+		denialDetails["browser_api_result"] = browserResult
+		reqServer.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true, denialDetails)
+		consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK, Error: "access_denied"}
+		writeJSON(w, http.StatusOK, browserResult)
+	default:
+		consentReq.SubmissionCh <- reqServer.writeBrowserPresentationResult(w, authReq, protocol, reqServer.wallet.consentedMatches(consentReq, matches, result))
 	}
 }
 

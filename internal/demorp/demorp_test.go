@@ -1723,20 +1723,23 @@ func TestIssuerRefusesStatusOfferWithoutAStatusList(t *testing.T) {
 	}
 }
 
-// Reserving an index changes wallet state that every wallet API request
-// reloads from disk, so it has to be persisted right away.
-func TestIssuerPersistsTheReservedStatusIndex(t *testing.T) {
+// A new attestation type and a reserved index change wallet state that every
+// wallet API request reloads from disk, so they have to be persisted right away.
+func TestIssuerPersistsItsWalletChanges(t *testing.T) {
 	d, w, holderKey := newDemoRP(t)
 	w.BaseURL = "http://demo.example"
 	saves := 0
 	d.SetOnWalletChange(func() { saves++ })
 
-	if _, err := d.signGranted(&holderKey.PublicKey, ticketGrant{configID: ticketConfigurationID}); err != nil {
-		t.Fatalf("signing a ticket without a status reference: %v", err)
+	for range 2 {
+		if _, err := d.signGranted(&holderKey.PublicKey, ticketGrant{configID: ticketConfigurationID}); err != nil {
+			t.Fatalf("signing a ticket without a status reference: %v", err)
+		}
 	}
-	if saves != 0 {
-		t.Errorf("a ticket without a status reference saved the wallet %d times", saves)
+	if saves != 1 {
+		t.Errorf("registering the ticket type saved the wallet %d times, want 1", saves)
 	}
+	saves = 0
 	if _, err := d.signGranted(&holderKey.PublicKey, ticketGrant{tokenState: tokenState{offerSettings: offerSettings{configIDs: []string{ticketConfigurationID}, withStatus: true}}, configID: ticketConfigurationID}); err != nil {
 		t.Fatalf("signing a ticket with a status reference: %v", err)
 	}

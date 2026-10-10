@@ -565,11 +565,7 @@ func TestInteractiveRequestPinsTheIssuerCA(t *testing.T) {
 		t.Errorf("a credential issued under this CA carries aki %q, but the request pins %q", got, aki)
 	}
 
-	request, err := d.interactivePresentationRequest(&requestState{
-		queryID: "pid", mdocQueryID: "pid_mdoc", nonce: "n",
-		vct: mock.DefaultPIDVCT, docType: "org.iso.18013.5.1.mDL",
-		want: []string{"given_name"}, wantMDOC: []string{"given_name"},
-	})
+	request, err := d.interactivePresentationRequest(d.newInteractivePIDRequest())
 	if err != nil {
 		t.Fatal(err)
 	}

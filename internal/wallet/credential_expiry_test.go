@@ -23,15 +23,17 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
-// Expiry is read from both formats. A credential without one is never due
-// for renewal.
-func TestCredentialExpiryReadsBothFormats(t *testing.T) {
+// Validity is read from both formats. A credential without an expiry is never
+// due for renewal.
+func TestCredentialValidityReadsBothFormats(t *testing.T) {
 	w := generateTestWallet(t)
+	notBefore := time.Now().Add(time.Hour).Truncate(time.Second)
 
 	sdjwtCred, err := w.IssueCredential(IssueOptions{
 		Format: "sdjwt", VCT: "urn:test:expiry:1",
 		Claims:    map[string]any{"given_name": "Alice"},
 		ExpiresIn: 2 * time.Hour,
+		NotBefore: &notBefore,
 	})
 	if err != nil {
 		t.Fatalf("issuing the sd-jwt: %v", err)
@@ -40,13 +42,17 @@ func TestCredentialExpiryReadsBothFormats(t *testing.T) {
 		Format: "mdoc", DocType: "eu.europa.ec.eudi.pid.1",
 		Claims:    map[string]any{"eu.europa.ec.eudi.pid.1": map[string]any{"given_name": "Alice"}},
 		ExpiresIn: 2 * time.Hour,
+		NotBefore: &notBefore,
 	})
 	if err != nil {
 		t.Fatalf("issuing the mdoc: %v", err)
 	}
 
 	for name, cred := range map[string]StoredCredential{"sd-jwt": *sdjwtCred.Credential, "mdoc": *mdocCred.Credential} {
-		expiry := CredentialExpiry(cred)
+		validFrom, expiry := CredentialValidity(cred)
+		if !validFrom.Equal(notBefore) {
+			t.Errorf("%s: valid from %v, want %v", name, validFrom, notBefore)
+		}
 		if expiry.IsZero() {
 			t.Errorf("%s: no expiry read, so the wallet cannot know when to renew it", name)
 			continue
@@ -67,7 +73,7 @@ func TestCredentialExpiryReadsBothFormats(t *testing.T) {
 }
 
 func TestCredentialWithoutAStatedLifetimeNeverExpires(t *testing.T) {
-	if got := CredentialExpiry(StoredCredential{Format: "dc+sd-jwt", Raw: "not-a-credential"}); !got.IsZero() {
+	if _, got := CredentialValidity(StoredCredential{Format: "dc+sd-jwt", Raw: "not-a-credential"}); !got.IsZero() {
 		t.Errorf("an unparsable credential reported expiry %v", got)
 	}
 	if CredentialNeedsRenewal(StoredCredential{Format: "dc+sd-jwt", Raw: "not-a-credential"}, time.Now()) {

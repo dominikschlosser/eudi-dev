@@ -107,7 +107,9 @@ type authGrant struct {
 	// issuerState names the offer that the token redeems. A flow started by
 	// scope has none.
 	issuerState string
-	settings    offerSettings
+	// dpopJKT is the DPoP key the code is bound to (RFC 9449 §10), if any.
+	dpopJKT  string
+	settings offerSettings
 }
 
 // resolveAuthGrant resolves what an authorization flow issues: the settings
@@ -165,9 +167,8 @@ type authRequestState struct {
 	code                 string
 	codeUsed             bool
 	resolved             bool
-	subject              string
-	// holderClaims are the claims of the credential presented to obtain this
-	// code. Only interactive authorization sets them.
+	// holderClaims name the holder of the code: the account's names after
+	// the sign-in, or the requested claims of a presented credential.
 	holderClaims map[string]any
 	expires      time.Time
 }
@@ -260,7 +261,6 @@ func (d *DemoRP) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 // endpoint. A DPoP proof that is sent must verify. It can also be the
 // attestation PoP (dpop_combined).
 func (d *DemoRP) handlePushedAuthorizationRequest(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := r.ParseForm(); err != nil {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request", "could not read the request body"))
 		return
@@ -273,14 +273,19 @@ func (d *DemoRP) handlePushedAuthorizationRequest(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request", "client_id is required"))
 		return
 	}
-	var jkt string
-	if strings.TrimSpace(r.Header.Get("DPoP")) != "" {
-		var err error
-		jkt, err = d.verifyDPoPProof(r, d.issuerID()+"/par", "")
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, oauthError("invalid_dpop_proof", err.Error()))
-			return
-		}
+	jkt, errResp := d.dpopKey(r, d.issuerID()+"/par")
+	if errResp != nil {
+		writeJSON(w, http.StatusBadRequest, errResp)
+		return
+	}
+	// RFC 9449 §10: a DPoP key at PAR, or dpop_jkt, binds the code to it.
+	codeKey := r.PostFormValue("dpop_jkt")
+	if codeKey != "" && jkt != "" && codeKey != jkt {
+		writeJSON(w, http.StatusBadRequest, oauthError("invalid_dpop_proof", "dpop_jkt does not match the key of the DPoP proof"))
+		return
+	}
+	if codeKey == "" {
+		codeKey = jkt
 	}
 	if _, authErr := d.authenticateClient(r, clientID, jkt); authErr != nil {
 		writeJSON(w, http.StatusUnauthorized, oauthError(authErr.code, authErr.description))
@@ -307,6 +312,7 @@ func (d *DemoRP) handlePushedAuthorizationRequest(w http.ResponseWriter, r *http
 		redirectURI:   redirectURI,
 		state:         r.PostFormValue("state"),
 		issuerState:   r.PostFormValue("issuer_state"),
+		dpopJKT:       codeKey,
 	}, r.PostFormValue("scope"), r.PostFormValue("authorization_details"))
 	if errResp != nil {
 		writeJSON(w, http.StatusBadRequest, errResp)
@@ -334,7 +340,6 @@ func (d *DemoRP) handlePushedAuthorizationRequest(w http.ResponseWriter, r *http
 // handleAuthorizeSubmit completes the login and redirects with the
 // authorization code.
 func (d *DemoRP) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := r.ParseForm(); err != nil {
 		writeAuthorizeError(w, "could not read the form")
 		return
@@ -357,19 +362,20 @@ func (d *DemoRP) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	d.redirectWithCode(w, r, request, demoAccountUsername)
+	// The account that signed in is the holder.
+	d.redirectWithCode(w, r, request, map[string]any{"given_name": demoAccountGivenName, "family_name": demoAccountFamily})
 }
 
 // redirectWithCode issues the authorization code and redirects to the wallet
 // redirect URI. It includes the iss parameter (RFC 9207) because a wallet in
 // strict mode requires it.
-func (d *DemoRP) redirectWithCode(w http.ResponseWriter, r *http.Request, request *authRequestState, subject string) {
+func (d *DemoRP) redirectWithCode(w http.ResponseWriter, r *http.Request, request *authRequestState, holderClaims map[string]any) {
 	// Read the shared request under the lock because the token endpoint reads
 	// the same struct concurrently.
 	code := randToken()
 	d.mu.Lock()
 	request.code = code
-	request.subject = subject
+	request.holderClaims = holderClaims
 	makeRoom(d.codes, func(r *authRequestState) time.Time { return r.expires })
 	d.codes[code] = request
 	redirectURI, state := request.redirectURI, request.state
@@ -393,9 +399,9 @@ func (d *DemoRP) redirectWithCode(w http.ResponseWriter, r *http.Request, reques
 // handleAuthorizationCodeToken exchanges the code for an access token. It
 // checks PKCE, the redirect URI, the client attestation and the DPoP key.
 func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Request) {
-	jkt, err := d.verifyDPoPProof(r, d.issuerID()+"/token", "")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, oauthError("invalid_dpop_proof", err.Error()))
+	jkt, errResp := d.dpopKey(r, d.issuerID()+"/token")
+	if errResp != nil {
+		writeJSON(w, http.StatusBadRequest, errResp)
 		return
 	}
 	clientID := r.PostFormValue("client_id")
@@ -444,6 +450,10 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_grant", "code_verifier does not match the code_challenge"))
 		return
 	}
+	if granted.dpopJKT != "" && jkt != granted.dpopJKT {
+		writeJSON(w, http.StatusBadRequest, oauthError("invalid_dpop_proof", "the code is bound to another DPoP key (RFC 9449 §10)"))
+		return
+	}
 
 	d.mu.Lock()
 	// The token redeems the offer, so an issuer_state grants one token.
@@ -454,7 +464,6 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 	}
 	token := d.issueTokenLocked(tokenState{
 		offerSettings: granted.settings,
-		subject:       granted.subject,
 		holderClaims:  granted.holderClaims,
 		jkt:           jkt,
 		clientAuth:    &clientAuth,
@@ -513,6 +522,21 @@ func oauthError(code, description string) map[string]string {
 // verifyDPoPProof checks the signature, HTTP method and URL of a DPoP proof
 // under RFC 9449. It returns the thumbprint of the key that the token is
 // bound to.
+// dpopKey verifies the DPoP proof of a request to an endpoint that issues a
+// code or a token. A proof binds what the endpoint issues to its key (RFC
+// 9449). Without one it issues a bearer value. HAIP 1.0 §4 asks the issuer to
+// support DPoP, and every issuing endpoint applies this one rule.
+func (d *DemoRP) dpopKey(r *http.Request, endpoint string) (string, map[string]string) {
+	if strings.TrimSpace(r.Header.Get("DPoP")) == "" {
+		return "", nil
+	}
+	jkt, err := d.verifyDPoPProof(r, endpoint, "")
+	if err != nil {
+		return "", oauthError("invalid_dpop_proof", err.Error())
+	}
+	return jkt, nil
+}
+
 func (d *DemoRP) verifyDPoPProof(r *http.Request, expectedURL, accessToken string) (string, error) {
 	raw := strings.TrimSpace(r.Header.Get("DPoP"))
 	if raw == "" {

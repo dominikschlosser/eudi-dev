@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 
@@ -243,7 +244,7 @@ func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registr
 	}
 	templates, err := credtemplate.List(w.Templates)
 	if err != nil {
-		templates = credtemplate.PredefinedTemplates()
+		log.Printf("[Wallet] WARNING: the demo issuer is registered without the templates the wallet can't read: %v", err)
 	}
 	for _, t := range templates {
 		switch format, _ := credtemplate.NormalizeFormat(t.Format); {

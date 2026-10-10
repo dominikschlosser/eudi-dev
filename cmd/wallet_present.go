@@ -726,7 +726,7 @@ func applyARFOptions(w *wallet.Wallet, arf bool, relyingPartyCAs, trustListCAs, 
 		w.RequireARF = true
 	}
 	for _, list := range trustedLists {
-		if u, err := url.Parse(list); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		if !format.IsWebURL(list) {
 			return fmt.Errorf("--trusted-list %q is not an http or https URL", list)
 		}
 	}

@@ -26,37 +26,45 @@ import (
 // has to cover the round trip to the issuer.
 const renewalMargin = time.Minute
 
-// CredentialExpiry reads exp from a JWT payload or validUntil from an mdoc
-// MSO. It returns the zero time when the credential has no expiry.
-func CredentialExpiry(cred StoredCredential) time.Time {
+// CredentialValidity reads nbf and exp from a JWT payload, or validFrom and
+// validUntil from an mdoc MSO. A bound the credential does not state is the
+// zero time.
+func CredentialValidity(cred StoredCredential) (notBefore, expiry time.Time) {
 	switch cred.Format {
 	case "mso_mdoc":
 		doc, err := mdoc.Parse(cred.Raw)
-		if err != nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
-			return time.Time{}
+		if err != nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil || doc.IssuerAuth.MSO.ValidityInfo == nil {
+			return time.Time{}, time.Time{}
 		}
 		validity := doc.IssuerAuth.MSO.ValidityInfo
-		if validity == nil || validity.ValidUntil == nil {
-			return time.Time{}
+		if validity.ValidFrom != nil {
+			notBefore = *validity.ValidFrom
 		}
-		return *validity.ValidUntil
+		if validity.ValidUntil != nil {
+			expiry = *validity.ValidUntil
+		}
+		return notBefore, expiry
 	default:
 		token, err := sdjwt.ParseLenient(cred.Raw)
 		if err != nil || token == nil {
-			return time.Time{}
+			return time.Time{}, time.Time{}
 		}
-		exp, ok := token.Payload["exp"].(float64)
-		if !ok || exp <= 0 {
-			return time.Time{}
-		}
-		return time.Unix(int64(exp), 0)
+		return unixClaim(token.Payload, "nbf"), unixClaim(token.Payload, "exp")
 	}
+}
+
+func unixClaim(payload map[string]any, name string) time.Time {
+	value, ok := payload[name].(float64)
+	if !ok || value <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(int64(value), 0)
 }
 
 // CredentialNeedsRenewal is false for a credential without an expiry, since
 // there is nothing to schedule against.
 func CredentialNeedsRenewal(cred StoredCredential, now time.Time) bool {
-	expiry := CredentialExpiry(cred)
+	_, expiry := CredentialValidity(cred)
 	if expiry.IsZero() {
 		return false
 	}

@@ -21,10 +21,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
@@ -308,26 +306,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	}
 
 	s.log("  Mode:          interactive (waiting for consent)")
-	consentReq := &ConsentRequest{
-		ID:           newConsentID(),
-		Type:         "presentation",
-		Owner:        authReq.Session,
-		MatchedCreds: matches,
-		Status:       "pending",
-		ResultCh:     make(chan ConsentResult, 1),
-		SubmissionCh: make(chan SubmissionResult, 1),
-		CreatedAt:    time.Now(),
-		ClientID:     authReq.ClientID,
-		Nonce:        authReq.Nonce,
-		ResponseURI:  authReq.ResponseURI,
-		DCQLQuery:    authReq.DCQLQuery,
-
-		CredentialOptions: credentialOptions,
-		Findings:          authReq.Findings,
-	}
-	consentReq.Purposes, consentReq.PrivacyPolicies = consentRegistration(authReq)
-	consentReq.applyClientAuth(authReq)
-
+	consentReq := newPresentationConsent("presentation", authReq.Session, authReq.ClientID, authReq, matches, credentialOptions)
 	s.wallet.CreateConsentRequest(consentReq)
 	s.triggerUIRequest(consentReq.ID)
 
@@ -347,40 +326,20 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 // The submission channel also delivers the result to the approve API.
 func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *AuthorizationRequestParams, matches []CredentialMatch, consentReq *ConsentRequest) {
-	handle := func(result ConsentResult) {
-		if !result.Approved {
-			s.log("  Consent:       denied")
-			s.wallet.AddLog("presentation", fmt.Sprintf("Denied presentation to %s", authReq.ClientID), false)
-			submission := s.submitAuthorizationError(w, authReq, "denied", "access_denied", "User denied presentation")
-			consentReq.SubmissionCh <- submission
-			return
-		}
-
-		s.log("  Consent:       approved")
-
-		// Keep the automatic selection unless the user chose a different option or
-		// credential.
-		matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
-
-		matches = s.wallet.applySelectedClaims(matches, result.SelectedClaims)
-
-		s.submitPresentationWithNotify(w, authReq, matches, consentReq.SubmissionCh)
-	}
-
 	s.allowSlowResponse(w, config.ConsentTimeout)
-	select {
-	case result := <-consentReq.ResultCh:
-		handle(result)
-	case <-time.After(config.ConsentTimeout):
-		// The timer can race with consent. Only time out requests that are still
-		// pending.
-		if _, ok := s.wallet.ResolveRequest(consentReq.ID, statusExpired); !ok {
-			handle(<-consentReq.ResultCh)
-			return
-		}
+	result, answered := s.wallet.awaitConsent(consentReq, config.ConsentTimeout)
+	switch {
+	case !answered:
 		s.wallet.AddLog("presentation", "Consent timeout", false)
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}
 		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})
+	case !result.Approved:
+		s.log("  Consent:       denied")
+		s.wallet.AddLog("presentation", fmt.Sprintf("Denied presentation to %s", authReq.ClientID), false)
+		consentReq.SubmissionCh <- s.submitAuthorizationError(w, authReq, "denied", "access_denied", "User denied presentation")
+	default:
+		s.log("  Consent:       approved")
+		s.submitPresentationWithNotify(w, authReq, s.wallet.consentedMatches(consentReq, matches, result), consentReq.SubmissionCh)
 	}
 }
 
@@ -702,29 +661,11 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		return ""
 	}
 
-	fullParams := make(map[string]string, len(values))
-	for key := range values {
-		fullParams[key] = get(key)
+	if cm := get("client_metadata"); cm != "" && !json.Valid([]byte(cm)) {
+		return nil, fmt.Errorf("parsing client_metadata: not valid JSON")
 	}
-
-	params := &AuthorizationRequestParams{
-		ClientID:         get("client_id"),
-		ResponseType:     get("response_type"),
-		ResponseMode:     get("response_mode"),
-		Nonce:            get("nonce"),
-		State:            get("state"),
-		RedirectURI:      get("redirect_uri"),
-		ResponseURI:      oid4vc.DeriveResponseURI(get("client_id"), get("response_mode"), get("response_uri")),
-		RequestURIMethod: get("request_uri_method"),
-		FullParams:       fullParams,
-	}
-
-	if cm := get("client_metadata"); cm != "" {
-		var clientMetadata map[string]any
-		if err := json.Unmarshal([]byte(cm), &clientMetadata); err != nil {
-			return nil, fmt.Errorf("parsing client_metadata: %w", err)
-		}
-		params.ClientMetadata = clientMetadata
+	if dq := get("dcql_query"); dq != "" && !json.Valid([]byte(dq)) {
+		return nil, fmt.Errorf("parsing dcql_query: not valid JSON")
 	}
 
 	if td := get("transaction_data"); td != "" {
@@ -751,63 +692,14 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		}
 	}
 
-	if dq := get("dcql_query"); dq != "" {
-		var query map[string]any
-		if err := json.Unmarshal([]byte(dq), &query); err != nil {
-			return nil, fmt.Errorf("parsing dcql_query: %w", err)
-		}
-		params.DCQLQuery = query
+	parsed, err := oid4vc.ParseAuthorizationParams(values, opts)
+	switch {
+	case err != nil && get("request_uri") != "":
+		return nil, fmt.Errorf("parsing request_uri %q: %w", get("request_uri"), err)
+	case err != nil:
+		return nil, fmt.Errorf("parsing request JWT: %w", err)
 	}
-
-	// Pass all parameters to the parser so it can fetch request_uri using the
-	// requested method.
-	if requestURI := get("request_uri"); requestURI != "" {
-		syntheticParams := url.Values{}
-		for k, vs := range values {
-			if len(vs) > 0 {
-				syntheticParams.Set(k, vs[0])
-			}
-		}
-		syntheticURI := "openid4vp://authorize?" + syntheticParams.Encode()
-
-		parsed, err := ParseAuthorizationRequestWithOptions(syntheticURI, opts)
-		if err != nil {
-			return nil, fmt.Errorf("parsing request_uri %q: %w", requestURI, err)
-		}
-		params.ClientID = parsed.ClientID
-		params.ResponseType = parsed.ResponseType
-		params.Nonce = parsed.Nonce
-		params.State = parsed.State
-		params.ResponseURI = parsed.ResponseURI
-		params.RedirectURI = parsed.RedirectURI
-		params.ResponseMode = parsed.ResponseMode
-		params.RequestURIMethod = parsed.RequestURIMethod
-		params.RequestURI = parsed.RequestURI
-		params.ClientMetadata = parsed.ClientMetadata
-		params.DCQLQuery = parsed.DCQLQuery
-		params.RequestObject = parsed.RequestObject
-		params.RequestPayload = requestPayload(parsed.RequestObject, nil)
-	}
-
-	if requestJWT := get("request"); requestJWT != "" {
-		parsed, err := ParseAuthorizationRequestWithOptions(requestJWT, opts)
-		if err != nil {
-			return nil, fmt.Errorf("parsing request JWT: %w", err)
-		}
-		params.ClientID = parsed.ClientID
-		params.ResponseType = parsed.ResponseType
-		params.Nonce = parsed.Nonce
-		params.State = parsed.State
-		params.ResponseURI = parsed.ResponseURI
-		params.RedirectURI = parsed.RedirectURI
-		params.ResponseMode = parsed.ResponseMode
-		params.RequestURIMethod = parsed.RequestURIMethod
-		params.ClientMetadata = parsed.ClientMetadata
-		params.DCQLQuery = parsed.DCQLQuery
-		params.RequestObject = parsed.RequestObject
-		params.RequestPayload = requestPayload(parsed.RequestObject, nil)
-	}
-
+	params := authorizationParams(parsed)
 	if params.ClientID == "" {
 		return nil, fmt.Errorf("missing client_id")
 	}
@@ -817,6 +709,28 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 
 func requestPayload(reqObj *oid4vc.RequestObjectJWT, fallback map[string]any) map[string]any {
 	return RequestPayload(reqObj, fallback)
+}
+
+// authorizationParams carries a parsed authorization request into the
+// wallet's flow. Callers add where the request came from.
+func authorizationParams(parsed *oid4vc.AuthorizationRequest) *AuthorizationRequestParams {
+	return &AuthorizationRequestParams{
+		ClientID:         parsed.ClientID,
+		ResponseType:     parsed.ResponseType,
+		ResponseMode:     parsed.ResponseMode,
+		Nonce:            parsed.Nonce,
+		State:            parsed.State,
+		RedirectURI:      parsed.RedirectURI,
+		ResponseURI:      parsed.ResponseURI,
+		Scope:            parsed.Scope,
+		RequestURIMethod: parsed.RequestURIMethod,
+		RequestURI:       parsed.RequestURI,
+		ClientMetadata:   parsed.ClientMetadata,
+		DCQLQuery:        parsed.DCQLQuery,
+		RequestObject:    parsed.RequestObject,
+		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
+		FullParams:       parsed.FullParams,
+	}
 }
 
 // shortID shortens a credential ID for the console. An ID from a credentials

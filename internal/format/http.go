@@ -19,6 +19,8 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 type policyTransport struct {
@@ -90,4 +92,16 @@ func TLSRoots(pem []byte) (*x509.CertPool, error) {
 		return nil, fmt.Errorf("TLS CA bundle contains no PEM certificates")
 	}
 	return roots, nil
+}
+
+// IsWebURL reports whether rawURL is an absolute http or https URL with a host.
+// url.Parse also accepts javascript: and data: URLs, which must never reach a
+// link or a browser.
+func IsWebURL(rawURL string) bool {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	return scheme == "http" || scheme == "https"
 }

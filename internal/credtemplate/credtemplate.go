@@ -388,6 +388,9 @@ func (t *Template) WithUniqueClaims(claims map[string]any) map[string]any {
 // List returns all templates: pre-defined templates plus user templates from
 // loc (the default directory for the zero Location). A user template with the
 // same name as a built-in replaces it. The result is sorted by name.
+// List returns the predefined templates and every readable stored template.
+// It reports the templates it can't read as an error and still returns the
+// others, so a caller that only reads them can go on with what it got.
 func List(loc Location) ([]Template, error) {
 	loc = loc.orDefault()
 
@@ -396,9 +399,10 @@ func List(loc Location) ([]Template, error) {
 		byName[t.Name] = t
 	}
 
+	var errs []error
 	stored, err := loc.Store.List(loc.Prefix)
 	if err != nil {
-		return nil, fmt.Errorf("reading template directory: %w", err)
+		errs = append(errs, fmt.Errorf("reading template directory: %w", err))
 	}
 	for _, name := range stored {
 		if !hasTemplateExtension(name) {
@@ -406,7 +410,8 @@ func List(loc Location) ([]Template, error) {
 		}
 		t, err := loadStored(loc, name)
 		if err != nil {
-			return nil, err
+			errs = append(errs, err)
+			continue
 		}
 		byName[t.Name] = *t
 	}
@@ -421,7 +426,7 @@ func List(loc Location) ([]Template, error) {
 	for _, name := range names {
 		templates = append(templates, byName[name])
 	}
-	return templates, nil
+	return templates, errors.Join(errs...)
 }
 
 // Load resolves a template by name or file path. Names are looked up in loc

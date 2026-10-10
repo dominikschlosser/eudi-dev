@@ -43,10 +43,6 @@ func CredentialTypes(meta any) []string {
 	return types
 }
 
-func IsWebURL(value string) bool {
-	return strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "http://")
-}
-
 func dedupeStrings(values []string) []string {
 	out := make([]string, 0, len(values))
 	for _, v := range values {

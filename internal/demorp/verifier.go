@@ -50,21 +50,11 @@ const (
 )
 
 type requestState struct {
-	id      string
-	queryID string
-	vct     string
-	// docType is set if the request also accepts the mdoc PID. wantMDOC then
-	// holds the mdoc element names.
-	docType     string
-	mdocQueryID string
-	wantMDOC    []string
-	want        []string
-	// ticketQueryID is set if a PID request also asks for the demo ticket.
-	// ticketWant holds the requested ticket claims.
-	ticketQueryID string
-	ticketWant    []string
-	// multiple is set when every credential query carries multiple.
-	multiple bool
+	id string
+	// queries and sets are the DCQL query. The request sends them and the
+	// response is checked against them.
+	queries  []credentialQuery
+	sets     []credentialSet
 	nonce    string
 	clientID string
 	// interactiveEndpoint is set for a request inside an OpenID4VCI 1.1 §6
@@ -80,28 +70,12 @@ type requestState struct {
 	requestObject string
 	encKey        *ecdsa.PrivateKey
 
-	// custom has one entry per DCQL credential query of a custom request. If
-	// it is set, the preset query ids above are unused.
-	custom []customEntry
-
 	status string // pending | verified | failed
 	err    string
 	claims map[string]any
 	checks []map[string]any
 	// presentation is kept for the decoder even if verification fails.
 	presentation string
-}
-
-// queryIDs lists the query ids of the PID entry. The ticket has its own
-// entry.
-func (r *requestState) queryIDs() []string {
-	var ids []string
-	for _, id := range []string{r.queryID, r.mdocQueryID} {
-		if id != "" {
-			ids = append(ids, fmt.Sprintf("%q", id))
-		}
-	}
-	return ids
 }
 
 // VerifierHandler returns the demo verifier. Mount it with the /verifier
@@ -116,7 +90,7 @@ func (d *DemoRP) VerifierHandler() http.Handler {
 	mux.HandleFunc("POST /response/{id}", d.handlePresentationResponse)
 	// GuardAPI covers only /api/, which the page calls. Wallets on other
 	// origins call the protocol endpoints.
-	return httpsec.GuardAPI(mux, d.baseURL())
+	return httpsec.GuardAPI(limitBodies(mux), d.baseURL())
 }
 
 func (d *DemoRP) handleRequestObject(w http.ResponseWriter, r *http.Request) {
@@ -195,14 +169,100 @@ type customCredentialTO struct {
 	Multiple bool `json:"multiple"`
 }
 
-type customEntry struct {
-	queryID string
-	format  string
-	vct     string
-	docType string
-	// paths are the requested DCQL claims paths.
+// credentialQuery is one DCQL credential query (OpenID4VP 1.0 §6.1).
+type credentialQuery struct {
+	id       string
+	format   string
+	vct      string
+	docType  string
 	paths    [][]any
 	multiple bool
+	// trustedAuthorities is the trusted_authorities value, if any.
+	trustedAuthorities []map[string]any
+	// resultKey names the entry of the verified claims. An empty key puts the
+	// claims of a single presentation at the top level.
+	resultKey string
+}
+
+// credentialSet is one DCQL credential set. Each option lists query ids.
+type credentialSet struct {
+	options  [][]string
+	optional bool
+}
+
+func (q credentialQuery) label() string {
+	if q.resultKey != "" {
+		return q.resultKey
+	}
+	return q.id
+}
+
+// dcqlQuery is the dcql_query parameter of the request.
+func (r *requestState) dcqlQuery() map[string]any {
+	credentials := make([]map[string]any, 0, len(r.queries))
+	for _, q := range r.queries {
+		entry := map[string]any{"id": q.id, "format": q.format}
+		if q.format == "mso_mdoc" {
+			entry["meta"] = map[string]any{"doctype_value": q.docType}
+		} else {
+			entry["meta"] = map[string]any{"vct_values": []string{q.vct}}
+		}
+		if len(q.paths) > 0 {
+			claims := make([]map[string]any, 0, len(q.paths))
+			for _, path := range q.paths {
+				claims = append(claims, map[string]any{"path": path})
+			}
+			entry["claims"] = claims
+		}
+		if q.multiple {
+			entry["multiple"] = true
+		}
+		if len(q.trustedAuthorities) > 0 {
+			entry["trusted_authorities"] = q.trustedAuthorities
+		}
+		credentials = append(credentials, entry)
+	}
+	dcql := map[string]any{"credentials": credentials}
+	if len(r.sets) > 0 {
+		sets := make([]map[string]any, 0, len(r.sets))
+		for _, set := range r.sets {
+			entry := map[string]any{"options": set.options}
+			if set.optional {
+				entry["required"] = false
+			}
+			sets = append(sets, entry)
+		}
+		dcql["credential_sets"] = sets
+	}
+	return dcql
+}
+
+// unsatisfied explains why the answered query ids do not satisfy the request.
+// Without credential_sets every query is required. With them, each required
+// set needs one option whose queries are all answered.
+func (r *requestState) unsatisfied(answered map[string]bool) error {
+	if len(r.sets) == 0 {
+		var missing []string
+		for _, q := range r.queries {
+			if !answered[q.id] {
+				missing = append(missing, q.id)
+			}
+		}
+		return errIf(len(missing) > 0, "no presentation for %s", strings.Join(missing, ", "))
+	}
+	for _, set := range r.sets {
+		if set.optional || slices.ContainsFunc(set.options, func(option []string) bool {
+			return !slices.ContainsFunc(option, func(id string) bool { return !answered[id] })
+		}) {
+			continue
+		}
+		var options []string
+		for _, option := range set.options {
+			options = append(options, "["+strings.Join(option, ", ")+"]")
+		}
+		return fmt.Errorf("no presentation answers any of the options %s", strings.Join(options, " or "))
+	}
+	return nil
 }
 
 func normalizePIDFormat(format string) (sdjwt, mdoc bool, err error) {
@@ -232,7 +292,6 @@ func normalizePIDVCT(vct string) (string, error) {
 }
 
 func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var body createRequestBody
 	if err := decodeJSONBody(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
@@ -319,27 +378,44 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 
 	base := d.baseURL()
 	req := &requestState{
-		id:       randToken(),
-		vct:      vct,
-		docType:  docType,
-		want:     claims,
-		wantMDOC: mdocClaims,
-		nonce:    randToken(),
-		multiple: body.Multiple,
-		status:   "pending",
-		expires:  time.Now().Add(entryTTL),
+		id:      randToken(),
+		nonce:   randToken(),
+		status:  "pending",
+		expires: time.Now().Add(entryTTL),
 	}
-	// Only the requested formats get a query id, so a response in another
-	// format is not accepted.
+	// Only the requested formats get a query, so a response in another format
+	// is not accepted.
+	var sdjwtID, mdocID, ticketID string
 	if vct != "" {
-		req.queryID = body.Type
+		sdjwtID = body.Type
+		req.queries = append(req.queries, credentialQuery{id: sdjwtID, format: "dc+sd-jwt", vct: vct, paths: namePaths("", claims), multiple: body.Multiple})
 	}
 	if docType != "" {
-		req.mdocQueryID = body.Type + "_mdoc"
+		mdocID = body.Type + "_mdoc"
+		req.queries = append(req.queries, credentialQuery{id: mdocID, format: "mso_mdoc", docType: docType, paths: namePaths(docType, mdocClaims), multiple: body.Multiple})
 	}
 	if ticketMode != "" {
-		req.ticketQueryID = "ticket"
-		req.ticketWant = []string{"event", "tier", "seat", "given_name", "family_name"}
+		ticketID = "ticket"
+		req.queries = append(req.queries, credentialQuery{id: ticketID, format: "dc+sd-jwt", vct: TicketVCT, paths: namePaths("", d.ticketClaimNames()), multiple: body.Multiple, resultKey: "ticket"})
+	}
+
+	// The credential set options make one PID format enough.
+	var pidOptions [][]string
+	for _, id := range []string{sdjwtID, mdocID} {
+		if id != "" {
+			pidOptions = append(pidOptions, []string{id})
+		}
+	}
+	switch ticketMode {
+	case "combined":
+		options := append([][]string{{sdjwtID, ticketID}}, pidOptions...)
+		req.sets = []credentialSet{{options: options}}
+	case "optional":
+		req.sets = []credentialSet{{options: pidOptions}, {options: [][]string{{ticketID}}, optional: true}}
+	default:
+		if len(pidOptions) > 1 {
+			req.sets = []credentialSet{{options: pidOptions}}
+		}
 	}
 	responseURI := base + "/verifier/response/" + req.id
 
@@ -351,84 +427,10 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	req.clientID = wallet.X509HashClientID(chain[0])
 
-	encKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	req.encKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "generating response encryption key: " + err.Error()})
 		return
-	}
-	req.encKey = encKey
-
-	credentials := make([]map[string]any, 0, 2)
-	if req.queryID != "" {
-		dcqlClaims := make([]map[string]any, 0, len(claims))
-		for _, c := range claims {
-			dcqlClaims = append(dcqlClaims, map[string]any{"path": []string{c}})
-		}
-		credentials = append(credentials, map[string]any{
-			"id":     req.queryID,
-			"format": "dc+sd-jwt",
-			"meta":   map[string]any{"vct_values": []string{vct}},
-			"claims": dcqlClaims,
-		})
-	}
-	if req.mdocQueryID != "" {
-		mdocDCQLClaims := make([]map[string]any, 0, len(mdocClaims))
-		for _, c := range mdocClaims {
-			mdocDCQLClaims = append(mdocDCQLClaims, map[string]any{"path": []string{docType, c}})
-		}
-		credentials = append(credentials, map[string]any{
-			"id":     req.mdocQueryID,
-			"format": "mso_mdoc",
-			"meta":   map[string]any{"doctype_value": docType},
-			"claims": mdocDCQLClaims,
-		})
-	}
-	if req.ticketQueryID != "" {
-		ticketDCQLClaims := make([]map[string]any, 0, len(req.ticketWant))
-		for _, c := range req.ticketWant {
-			ticketDCQLClaims = append(ticketDCQLClaims, map[string]any{"path": []string{c}})
-		}
-		credentials = append(credentials, map[string]any{
-			"id":     req.ticketQueryID,
-			"format": "dc+sd-jwt",
-			"meta":   map[string]any{"vct_values": []string{TicketVCT}},
-			"claims": ticketDCQLClaims,
-		})
-	}
-	if req.multiple {
-		for _, q := range credentials {
-			q["multiple"] = true
-		}
-	}
-	dcql := map[string]any{"credentials": credentials}
-
-	// The credential set options make one PID format enough.
-	var sets []map[string]any
-	switch ticketMode {
-	case "combined":
-		options := [][]string{{req.queryID, req.ticketQueryID}, {req.queryID}}
-		if req.mdocQueryID != "" {
-			options = append(options, []string{req.mdocQueryID})
-		}
-		sets = append(sets, map[string]any{"options": options})
-	case "optional":
-		var pidOptions [][]string
-		if req.queryID != "" {
-			pidOptions = append(pidOptions, []string{req.queryID})
-		}
-		if req.mdocQueryID != "" {
-			pidOptions = append(pidOptions, []string{req.mdocQueryID})
-		}
-		sets = append(sets,
-			map[string]any{"options": pidOptions},
-			map[string]any{"options": [][]string{{req.ticketQueryID}}, "required": false})
-	default:
-		if req.queryID != "" && req.mdocQueryID != "" {
-			sets = append(sets, map[string]any{"options": [][]string{{req.queryID}, {req.mdocQueryID}}})
-		}
-	}
-	if len(sets) > 0 {
-		dcql["credential_sets"] = sets
 	}
 
 	info, err := d.verifierInfo(body)
@@ -436,7 +438,7 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration certificate: " + err.Error()})
 		return
 	}
-	d.finalizeRequest(w, req, dcql, responseURI, base, signingKey, chain, info)
+	d.finalizeRequest(w, req, responseURI, base, signingKey, chain, info)
 }
 
 func (d *DemoRP) requestSigningMaterial(body createRequestBody) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
@@ -473,7 +475,7 @@ func writeSigningMaterialError(w http.ResponseWriter, body createRequestBody, er
 
 // finalizeRequest signs the request object, stores the request and returns the
 // wallet URL.
-func (d *DemoRP) finalizeRequest(w http.ResponseWriter, req *requestState, dcql map[string]any, responseURI, base string, signingKey *ecdsa.PrivateKey, chain []*x509.Certificate, verifierInfo []any) {
+func (d *DemoRP) finalizeRequest(w http.ResponseWriter, req *requestState, responseURI, base string, signingKey *ecdsa.PrivateKey, chain []*x509.Certificate, verifierInfo []any) {
 	now := time.Now()
 	claims := map[string]any{
 		"iss":             req.clientID,
@@ -486,7 +488,7 @@ func (d *DemoRP) finalizeRequest(w http.ResponseWriter, req *requestState, dcql 
 		"response_uri":    responseURI,
 		"nonce":           req.nonce,
 		"state":           req.id,
-		"dcql_query":      dcql,
+		"dcql_query":      req.dcqlQuery(),
 		"client_metadata": responseEncryptionMetadata(req.encKey),
 	}
 	if len(verifierInfo) > 0 {
@@ -558,61 +560,39 @@ func (d *DemoRP) createCustomRequest(w http.ResponseWriter, body createRequestBo
 		return
 	}
 
-	credentials := make([]map[string]any, 0, len(body.Credentials))
 	for i, c := range body.Credentials {
 		format := strings.TrimSpace(c.Format)
-		var meta map[string]any
-		switch format {
-		case "dc+sd-jwt":
-			if strings.TrimSpace(c.VCT) == "" {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a dc+sd-jwt credential needs a vct"})
-				return
-			}
-			meta = map[string]any{"vct_values": []string{c.VCT}}
-		case "mso_mdoc":
-			if strings.TrimSpace(c.DocType) == "" {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an mso_mdoc credential needs a doctype"})
-				return
-			}
-			meta = map[string]any{"doctype_value": c.DocType}
-		default:
+		switch {
+		case format == "dc+sd-jwt" && strings.TrimSpace(c.VCT) == "":
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a dc+sd-jwt credential needs a vct"})
+			return
+		case format == "mso_mdoc" && strings.TrimSpace(c.DocType) == "":
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an mso_mdoc credential needs a doctype"})
+			return
+		case format != "dc+sd-jwt" && format != "mso_mdoc":
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "format must be dc+sd-jwt or mso_mdoc"})
 			return
 		}
-
-		dcqlClaims := make([]map[string]any, 0, len(c.Claims))
 		var paths [][]any
 		for _, path := range c.Claims {
-			if len(path) == 0 {
-				continue
+			if len(path) > 0 {
+				paths = append(paths, path)
 			}
-			dcqlClaims = append(dcqlClaims, map[string]any{"path": path})
-			paths = append(paths, path)
 		}
-
 		id := fmt.Sprintf("cred_%d", i)
-		q := map[string]any{"id": id, "format": format, "meta": meta}
-		if c.Multiple {
-			q["multiple"] = true
-		}
-		if len(dcqlClaims) > 0 {
-			q["claims"] = dcqlClaims
-		}
-		credentials = append(credentials, q)
-		req.custom = append(req.custom, customEntry{queryID: id, format: format, vct: c.VCT, docType: c.DocType, paths: paths, multiple: c.Multiple})
+		req.queries = append(req.queries, credentialQuery{id: id, format: format, vct: c.VCT, docType: c.DocType, paths: paths, multiple: c.Multiple, resultKey: id})
 	}
 
-	dcql := map[string]any{"credentials": credentials}
 	if signed {
 		info, err := d.verifierInfo(body)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration certificate: " + err.Error()})
 			return
 		}
-		d.finalizeRequest(w, req, dcql, responseURI, base, signingKey, chain, info)
+		d.finalizeRequest(w, req, responseURI, base, signingKey, chain, info)
 		return
 	}
-	d.deliverUnsignedRequest(w, req, dcql, responseURI, base)
+	d.deliverUnsignedRequest(w, req, responseURI, base)
 }
 
 // customClientID builds the client identifier for the selected prefix
@@ -649,8 +629,8 @@ func customClientID(scheme string, chain []*x509.Certificate, responseURI, preRe
 // deliverUnsignedRequest sends a redirect_uri or pre-registered request as
 // plain query parameters (OpenID4VP 1.0 §5.10). The response is encrypted to
 // the key in client_metadata.
-func (d *DemoRP) deliverUnsignedRequest(w http.ResponseWriter, req *requestState, dcql map[string]any, responseURI, base string) {
-	dcqlJSON, err := json.Marshal(dcql)
+func (d *DemoRP) deliverUnsignedRequest(w http.ResponseWriter, req *requestState, responseURI, base string) {
+	dcqlJSON, err := json.Marshal(req.dcqlQuery())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "encoding dcql_query: " + err.Error()})
 		return
@@ -884,7 +864,6 @@ func (d *DemoRP) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *DemoRP) handlePresentationResponse(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	id := r.PathValue("id")
 
 	d.mu.Lock()
@@ -954,7 +933,9 @@ func decryptResponse(req *requestState, form url.Values) (string, error) {
 	if err := json.Unmarshal([]byte(plaintext), &payload); err != nil {
 		return "", fmt.Errorf("parsing the decrypted response: %w", err)
 	}
-	if payload.State != "" && payload.State != req.id {
+	// The request carries state, and RFC 6749 §4.1.2 makes the response
+	// return it.
+	if payload.State != req.id {
 		return "", fmt.Errorf("the decrypted response is for a different request")
 	}
 	if payload.VPToken == nil {
@@ -1003,164 +984,70 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		return nil, log.entries, check("vp_token parses", fmt.Errorf("vp_token is not a JSON object of query id to presentations: %w", err))
 	}
 
-	if len(req.custom) > 0 {
-		return d.verifyCustomPresentation(req, tokenDoc, log)
+	answered := map[string]bool{}
+	for id, presentations := range tokenDoc {
+		if !slices.ContainsFunc(req.queries, func(q credentialQuery) bool { return q.id == id }) {
+			return nil, log.entries, check("vp_token answers only requested queries", fmt.Errorf("the request has no credential query %q", id))
+		}
+		answered[id] = len(presentations) > 0
 	}
-
-	// A PID request can offer both formats. The wallet answers under the query
-	// id of the format it holds.
-	var presentations []string
-	if req.queryID != "" {
-		presentations = tokenDoc[req.queryID]
-	}
-	answeredMDOC := false
-	if len(presentations) == 0 && req.mdocQueryID != "" {
-		presentations = tokenDoc[req.mdocQueryID]
-		answeredMDOC = len(presentations) > 0
-	}
-	if len(presentations) > 0 {
-		// Failed presentations stay available in the decoder.
-		d.recordPresentation(req, presentations[0])
-	}
-	if err := check("vp_token holds one of the requested query ids",
-		errIf(len(presentations) == 0, "no presentation for query id %s", strings.Join(req.queryIDs(), " or "))); err != nil {
+	if err := check("vp_token satisfies the credential query", req.unsatisfied(answered)); err != nil {
 		return nil, log.entries, err
 	}
 
-	// OpenID4VP 1.0 §8.1: "When multiple is omitted, or set to false, the array
-	// MUST contain only one Presentation."
-	if !req.multiple {
-		if err := check("vp_token holds exactly one presentation",
-			errIf(len(presentations) != 1, "expected 1 presentation, got %d", len(presentations))); err != nil {
-			return nil, log.entries, err
-		}
-	}
-
-	answered := req.queryID
-	if answeredMDOC {
-		answered = req.mdocQueryID
-	}
-	var verified []any
-	for i, presentation := range presentations {
-		label := ""
-		if req.multiple {
-			label = fmt.Sprintf("%s[%d]: ", answered, i)
-		}
-		var claims map[string]any
-		var err error
-		if answeredMDOC {
-			claims, _, err = d.verifyMDOCPresentation(req, presentation, req.docType, namePaths(req.docType, req.wantMDOC), log)
-		} else {
-			claims, err = d.verifySDJWTEntry(req, presentation, req.vct, namePaths("", req.want), label, log)
-		}
-		if err != nil {
-			d.recordPresentation(req, presentation)
-			return nil, log.entries, err
-		}
-		verified = append(verified, claims)
-	}
-	// A multiple request lists the claims of each presentation under its
-	// query id.
-	resultClaims := verified[0].(map[string]any)
-	if req.multiple {
-		_ = check(fmt.Sprintf("%s: %d presentation(s) verified", answered, len(verified)), nil)
-		resultClaims = map[string]any{answered: verified}
-	}
-
-	// A missing ticket entry is valid. The wallet chose a PID-only option or
-	// skipped the optional set.
-	if req.ticketQueryID != "" {
-		ticketPresentations := tokenDoc[req.ticketQueryID]
-		if len(ticketPresentations) == 0 {
-			_ = log.record("ticket: not presented, which the request allows", nil)
-		} else {
-			if !req.multiple {
-				if err := check("ticket: vp_token holds exactly one presentation",
-					errIf(len(ticketPresentations) != 1, "expected 1 presentation, got %d", len(ticketPresentations))); err != nil {
-					return nil, log.entries, err
-				}
-			}
-			var tickets []any
-			for i, presentation := range ticketPresentations {
-				label := "ticket: "
-				if req.multiple {
-					label = fmt.Sprintf("ticket[%d]: ", i)
-				}
-				ticketClaims, err := d.verifySDJWTEntry(req, presentation, TicketVCT, namePaths("", req.ticketWant), label, log)
-				if err != nil {
-					// The decoder shows the failed ticket.
-					d.recordPresentation(req, presentation)
-					return nil, log.entries, err
-				}
-				tickets = append(tickets, ticketClaims)
-			}
-			if req.multiple {
-				resultClaims["ticket"] = tickets
-			} else {
-				resultClaims["ticket"] = tickets[0]
-			}
-		}
-	}
-
-	return resultClaims, log.entries, nil
-}
-
-// verifyCustomPresentation verifies each credential query of a custom request
-// by its format. An unanswered query is recorded and does not fail the
-// request, because a custom request may ask for several credentials.
-func (d *DemoRP) verifyCustomPresentation(req *requestState, tokenDoc map[string][]string, log *checklist) (map[string]any, []map[string]any, error) {
-	check := log.record
 	result := map[string]any{}
 	recorded := false
-	for _, entry := range req.custom {
-		presentations := tokenDoc[entry.queryID]
-		label := entry.queryID + ": "
+	for _, q := range req.queries {
+		presentations := tokenDoc[q.id]
 		if len(presentations) == 0 {
-			_ = check(label+"not presented", nil)
+			_ = log.record(q.label()+": not presented, which the request allows", nil)
 			continue
 		}
 		if !recorded {
+			// Failed presentations stay available in the decoder.
 			d.recordPresentation(req, presentations[0])
 			recorded = true
 		}
+		label := ""
+		if q.resultKey != "" {
+			label = q.resultKey + ": "
+		}
 		// OpenID4VP 1.0 §8.1: "When multiple is omitted, or set to false, the
 		// array MUST contain only one Presentation."
-		if !entry.multiple {
+		if !q.multiple {
 			if err := check(label+"vp_token holds exactly one presentation",
 				errIf(len(presentations) != 1, "expected 1 presentation, got %d", len(presentations))); err != nil {
-				d.recordPresentation(req, presentations[0])
 				return nil, log.entries, err
 			}
 		}
 		var answers []any
 		for i, presentation := range presentations {
 			itemLabel := label
-			if entry.multiple {
-				itemLabel = fmt.Sprintf("%s[%d]: ", entry.queryID, i)
+			if q.multiple {
+				itemLabel = fmt.Sprintf("%s[%d]: ", q.label(), i)
 			}
 			var claims map[string]any
 			var err error
-			if entry.format == "mso_mdoc" {
-				claims, _, err = d.verifyMDOCPresentation(req, presentation, entry.docType, entry.paths, log)
+			if q.format == "mso_mdoc" {
+				claims, _, err = d.verifyMDOCPresentation(req, presentation, q.docType, q.paths, log)
 			} else {
-				claims, err = d.verifySDJWTEntry(req, presentation, entry.vct, entry.paths, itemLabel, log)
+				claims, err = d.verifySDJWTEntry(req, presentation, q.vct, q.paths, itemLabel, log)
 			}
 			if err != nil {
-				// Failed presentations stay available in the decoder.
 				d.recordPresentation(req, presentation)
 				return nil, log.entries, err
 			}
 			answers = append(answers, claims)
 		}
-		if entry.multiple {
-			_ = check(fmt.Sprintf("%s%d presentation(s) verified", label, len(answers)), nil)
-			result[entry.queryID] = answers
-		} else {
-			result[entry.queryID] = answers[0]
+		switch {
+		case q.multiple:
+			_ = check(fmt.Sprintf("%s: %d presentation(s) verified", q.label(), len(answers)), nil)
+			result[q.label()] = answers
+		case q.resultKey == "":
+			maps.Copy(result, answers[0].(map[string]any))
+		default:
+			result[q.resultKey] = answers[0]
 		}
-	}
-	if len(result) == 0 {
-		return nil, log.entries, check("vp_token answers a requested credential", fmt.Errorf("the response carried no presentation for any requested credential"))
 	}
 	return result, log.entries, nil
 }

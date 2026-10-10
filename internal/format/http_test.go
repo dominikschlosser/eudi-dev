@@ -161,3 +161,26 @@ func TestTLSVerificationRejectsExpiredTrustedCertificate(t *testing.T) {
 		t.Fatalf("expected certificate expiration, got %v", err)
 	}
 }
+
+// Links, redirects and the system opener accept only http and https.
+func TestIsWebURL(t *testing.T) {
+	for _, tc := range []struct {
+		url  string
+		want bool
+	}{
+		{"https://issuer.example/authorize?x=1", true},
+		{"https:///no-host", false},
+		{"http://localhost:8085/callback", true},
+		{"HTTPS://issuer.example/", true},
+		{"javascript:alert(1)", false},
+		{"data:text/html,<script>alert(1)</script>", false},
+		{"file:///etc/passwd", false},
+		{"vnc://192.168.1.1", false},
+		{"/relative/path", false},
+		{"", false},
+	} {
+		if got := IsWebURL(tc.url); got != tc.want {
+			t.Errorf("IsWebURL(%q) = %v, want %v", tc.url, got, tc.want)
+		}
+	}
+}

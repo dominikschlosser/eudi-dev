@@ -156,7 +156,7 @@ func registrationPurposes(certs []map[string]any) (purposes, privacyPolicies []s
 				purposes = append(purposes, purpose)
 			}
 		}
-		if policy := stringClaim(cert["privacy_policy"]); registrar.IsWebURL(policy) && !containsPurpose(privacyPolicies, policy) {
+		if policy := stringClaim(cert["privacy_policy"]); format.IsWebURL(policy) && !containsPurpose(privacyPolicies, policy) {
 			privacyPolicies = append(privacyPolicies, policy)
 		}
 	}

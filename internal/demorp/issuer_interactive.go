@@ -86,9 +86,9 @@ func (d *DemoRP) handleAuthorizationChallenge(w http.ResponseWriter, r *http.Req
 	// DPoP and client authentication work as at the token endpoint. §6.1 says
 	// a Wallet Attestation "has to be included in this request" if the server
 	// requires one.
-	jkt, err := d.verifyDPoPProof(r, d.challengeEndpoint(), "")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, oauthError("invalid_dpop_proof", err.Error()))
+	jkt, errResp := d.dpopKey(r, d.challengeEndpoint())
+	if errResp != nil {
+		writeJSON(w, http.StatusBadRequest, errResp)
 		return
 	}
 	clientID := r.PostFormValue("client_id")
@@ -101,12 +101,12 @@ func (d *DemoRP) handleAuthorizationChallenge(w http.ResponseWriter, r *http.Req
 		d.continueInteractiveAuthorization(w, r, session, clientID)
 		return
 	}
-	d.startInteractiveAuthorization(w, r, clientID)
+	d.startInteractiveAuthorization(w, r, clientID, jkt)
 }
 
 // startInteractiveAuthorization answers an Initial Request (§6.1.1) with the
 // Interaction Required Response of §6.2.1.
-func (d *DemoRP) startInteractiveAuthorization(w http.ResponseWriter, r *http.Request, clientID string) {
+func (d *DemoRP) startInteractiveAuthorization(w http.ResponseWriter, r *http.Request, clientID, jkt string) {
 	if got := r.PostFormValue("response_type"); got != "code" {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request", fmt.Sprintf("response_type must be code, got %q", got)))
 		return
@@ -127,6 +127,7 @@ func (d *DemoRP) startInteractiveAuthorization(w http.ResponseWriter, r *http.Re
 		redirectURI:   r.PostFormValue("redirect_uri"),
 		state:         r.PostFormValue("state"),
 		issuerState:   r.PostFormValue("issuer_state"),
+		dpopJKT:       jkt,
 	}, r.PostFormValue("scope"), r.PostFormValue("authorization_details"))
 	if errResp != nil {
 		writeJSON(w, http.StatusBadRequest, errResp)
@@ -245,8 +246,7 @@ func (d *DemoRP) continueInteractiveAuthorization(w http.ResponseWriter, r *http
 	granted := &authRequestState{
 		authGrant:    session.authGrant,
 		code:         code,
-		subject:      presentedHolder(claims),
-		holderClaims: requestedClaims(claims, session.request.want),
+		holderClaims: requestedClaims(claims, identityClaims),
 		expires:      time.Now().Add(entryTTL),
 	}
 	d.mu.Lock()
@@ -337,17 +337,27 @@ func (d *DemoRP) redirectChallengeToWeb(w http.ResponseWriter, grant authGrant) 
 	})
 }
 
+// identityClaims are the PID claims of the identity check. They become the
+// holder claims of the issued credential.
+var identityClaims = []string{"given_name", "family_name"}
+
 // newInteractivePIDRequest asks for a PID in either format, bound to the
-// Authorization Challenge Endpoint.
+// Authorization Challenge Endpoint. verifyPresentation accepts only
+// credentials under the issuer CA, so trusted_authorities names that CA and
+// the wallet can pick a matching credential.
 func (d *DemoRP) newInteractivePIDRequest() *requestState {
+	var authorities []map[string]any
+	if aki := d.trustAnchorAKI(); aki != "" {
+		authorities = []map[string]any{{"type": "aki", "values": []string{aki}}}
+	}
 	return &requestState{
-		id:                  randToken(),
-		queryID:             "pid",
-		mdocQueryID:         "pid_mdoc",
-		vct:                 PIDVCT,
-		docType:             PIDDocType,
-		want:                []string{"given_name", "family_name"},
-		wantMDOC:            []string{"given_name", "family_name"},
+		id: randToken(),
+		queries: []credentialQuery{
+			{id: "pid", format: "dc+sd-jwt", vct: PIDVCT, paths: namePaths("", identityClaims), trustedAuthorities: authorities},
+			{id: "pid_mdoc", format: "mso_mdoc", docType: PIDDocType, paths: namePaths(PIDDocType, identityClaims), trustedAuthorities: authorities},
+		},
+		// Either format satisfies the request.
+		sets:                []credentialSet{{options: [][]string{{"pid"}, {"pid_mdoc"}}}},
 		nonce:               randToken(),
 		clientID:            d.issuerID(),
 		interactiveEndpoint: d.challengeEndpoint(),
@@ -360,38 +370,12 @@ func (d *DemoRP) newInteractivePIDRequest() *requestState {
 // request is signed with an x509_hash client ID. Without signing material it
 // is sent unsigned.
 func (d *DemoRP) interactivePresentationRequest(req *requestState) (map[string]any, error) {
-	sdjwtCred := map[string]any{
-		"id":     req.queryID,
-		"format": "dc+sd-jwt",
-		"meta":   map[string]any{"vct_values": []string{req.vct}},
-		"claims": claimPaths(req.want),
-	}
-	mdocCred := map[string]any{
-		"id":     req.mdocQueryID,
-		"format": "mso_mdoc",
-		"meta":   map[string]any{"doctype_value": req.docType},
-		"claims": namespacedClaimPaths(req.docType, req.wantMDOC),
-	}
-	// verifyPresentation accepts only credentials under the issuer CA. Listing
-	// that CA in trusted_authorities lets the wallet pick a matching credential.
-	if aki := d.trustAnchorAKI(); aki != "" {
-		authorities := []map[string]any{{"type": "aki", "values": []string{aki}}}
-		sdjwtCred["trusted_authorities"] = authorities
-		mdocCred["trusted_authorities"] = authorities
-	}
-
 	claims := map[string]any{
 		"response_type":    "vp_token",
 		"response_mode":    "ia_post",
 		"nonce":            req.nonce,
 		"expected_origins": []string{originOf(d.challengeEndpoint())},
-		"dcql_query": map[string]any{
-			"credentials": []map[string]any{sdjwtCred, mdocCred},
-			// Either format satisfies the request.
-			"credential_sets": []map[string]any{{
-				"options": [][]string{{req.queryID}, {req.mdocQueryID}},
-			}},
-		},
+		"dcql_query":       req.dcqlQuery(),
 	}
 
 	signingKey, chain, err := d.wallet.AccessSigningMaterial()
@@ -431,22 +415,6 @@ func (d *DemoRP) trustAnchorAKI() string {
 	return format.EncodeBase64URL(ca.SubjectKeyId)
 }
 
-func claimPaths(names []string) []map[string]any {
-	paths := make([]map[string]any, 0, len(names))
-	for _, name := range names {
-		paths = append(paths, map[string]any{"path": []string{name}})
-	}
-	return paths
-}
-
-func namespacedClaimPaths(namespace string, names []string) []map[string]any {
-	paths := make([]map[string]any, 0, len(names))
-	for _, name := range names {
-		paths = append(paths, map[string]any{"path": []string{namespace, name}})
-	}
-	return paths
-}
-
 // offersInteractionType reports whether the comma-separated
 // interaction_types_supported list contains want (§6.1.1).
 func offersInteractionType(list, want string) bool {
@@ -471,13 +439,4 @@ func requestedClaims(claims map[string]any, names []string) map[string]any {
 		}
 	}
 	return requested
-}
-
-func presentedHolder(claims map[string]any) string {
-	given, _ := claims["given_name"].(string)
-	family, _ := claims["family_name"].(string)
-	if name := strings.TrimSpace(given + " " + family); name != "" {
-		return name
-	}
-	return demoAccountUsername
 }

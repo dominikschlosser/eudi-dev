@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"net/url"
 	"regexp"
@@ -28,6 +29,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 )
 
 // AttestationSchema is the SchemaMeta of the catalogue of attestations (EC
@@ -88,6 +90,8 @@ type CatalogCredential struct {
 const (
 	catalogSchemaPath = "/api/catalog/schemas"
 	maxCatalogEntries = 200
+	// maxPageSize caps the limit of the list endpoints.
+	maxPageSize = 200
 )
 
 var (
@@ -107,9 +111,9 @@ func (r *Registrar) CatalogAttestations() []CatalogAttestation {
 	base := r.env.RegistrarBase()
 	r.mu.RLock()
 	added := slices.DeleteFunc(slices.Clone(r.state.Catalog), func(e CatalogAttestation) bool { return e.Removed })
-	removed := r.removedTemplateIDsLocked()
+	removed := r.removedTemplateTypesLocked()
 	r.mu.RUnlock()
-	entries := slices.DeleteFunc(r.templateCatalog(base), func(e CatalogAttestation) bool { return removed[e.Schema.ID] })
+	entries := slices.DeleteFunc(r.templateCatalog(base), removed.hides)
 	sort.SliceStable(added, func(i, j int) bool { return strings.ToLower(added[i].Name) < strings.ToLower(added[j].Name) })
 	for _, entry := range added {
 		entries = append(entries, completed(cloneCatalogAttestation(entry), base))
@@ -164,9 +168,9 @@ func (r *Registrar) CheckCatalogAttestation(entry CatalogAttestation) error {
 // checkNewCatalogEntryLocked keeps names and types unique. The wallet finds
 // the trusted list of a received credential by its type.
 func (r *Registrar) checkNewCatalogEntryLocked(entry CatalogAttestation, fromTemplates []CatalogAttestation) error {
-	removed := r.removedTemplateIDsLocked()
+	removed := r.removedTemplateTypesLocked()
 	for _, existing := range append(fromTemplates, r.state.Catalog...) {
-		if existing.Removed || removed[existing.Schema.ID] {
+		if existing.Removed || (existing.Template && removed.hides(existing)) {
 			continue
 		}
 		if strings.EqualFold(existing.Name, entry.Name) {
@@ -179,7 +183,7 @@ func (r *Registrar) checkNewCatalogEntryLocked(entry CatalogAttestation, fromTem
 		}
 	}
 	// The markers of removed template entries don't take a place.
-	added := len(r.state.Catalog) - len(removed)
+	added := len(r.state.Catalog) - removed.markers
 	if added >= maxCatalogEntries {
 		return errCatalogFull
 	}
@@ -258,13 +262,14 @@ func (r *Registrar) UpdateCatalogSchema(id string, schema AttestationSchema) (Ca
 // template.
 func (r *Registrar) DeleteCatalogAttestation(id string) error {
 	base := r.env.RegistrarBase()
-	if r.isTemplateCatalogID(id, base) {
+	templates := r.templateCatalog(base)
+	if i := slices.IndexFunc(templates, func(e CatalogAttestation) bool { return e.Schema.ID == id }); i >= 0 {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.removedTemplateIDsLocked()[id] {
+		if r.removedTemplateTypesLocked().hides(templates[i]) {
 			return fmt.Errorf("%w: %s", errCatalogNotFound, id)
 		}
-		r.state.Catalog = append(r.state.Catalog, CatalogAttestation{Template: true, Removed: true, Schema: AttestationSchema{ID: id}})
+		r.state.Catalog = append(r.state.Catalog, CatalogAttestation{Template: true, Removed: true, Schema: AttestationSchema{ID: id}, Credentials: templates[i].Credentials})
 		return nil
 	}
 	r.mu.Lock()
@@ -277,14 +282,31 @@ func (r *Registrar) DeleteCatalogAttestation(id string) error {
 	return nil
 }
 
-func (r *Registrar) removedTemplateIDsLocked() map[string]bool {
-	removed := map[string]bool{}
+// removedTemplateTypes are the types of the removed template entries. A
+// marker records the types, so a template entry stays removed when its
+// template is renamed.
+type removedTemplateTypes struct {
+	types   map[string]bool
+	markers int
+}
+
+func (r *Registrar) removedTemplateTypesLocked() removedTemplateTypes {
+	removed := removedTemplateTypes{types: map[string]bool{}}
 	for _, e := range r.state.Catalog {
-		if e.Removed {
-			removed[e.Schema.ID] = true
+		if !e.Removed {
+			continue
+		}
+		removed.markers++
+		for _, c := range e.Credentials {
+			removed.types[c.Format+" "+c.Type] = true
 		}
 	}
 	return removed
+}
+
+// hides reports whether a template entry names a removed type.
+func (removed removedTemplateTypes) hides(entry CatalogAttestation) bool {
+	return slices.ContainsFunc(entry.Credentials, func(c CatalogCredential) bool { return removed.types[c.Format+" "+c.Type] })
 }
 
 // IsTemplateCatalogID reports whether an entry comes from a predefined
@@ -343,7 +365,7 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 		return fmt.Errorf("version %q does not follow semantic versioning (TS11 v1.0 §4.5.1)", s.Version)
 	}
 	s.RulebookURI = firstNonEmpty(s.RulebookURI, base+"/rulebook")
-	if !IsWebURL(s.RulebookURI) {
+	if !format.IsWebURL(s.RulebookURI) {
 		return fmt.Errorf("rulebookURI %q is not an http or https URL", s.RulebookURI)
 	}
 	s.AttestationLoS = firstNonEmpty(s.AttestationLoS, CategoryOf(entry.Category).AttestationLoS)
@@ -369,7 +391,7 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 		}
 		// An aki value is a key identifier. The other framework types identify
 		// a list or an entity by URI, and the UI links them.
-		if a.FrameworkType != "aki" && !IsWebURL(a.Value) {
+		if a.FrameworkType != "aki" && !format.IsWebURL(a.Value) {
 			return fmt.Errorf("the %s value %q is not an http or https URL", a.FrameworkType, a.Value)
 		}
 	}
@@ -458,7 +480,7 @@ var templateCatalogNamespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://g
 func (r *Registrar) templateCatalog(base string) []CatalogAttestation {
 	templates, err := credtemplate.List(r.env.TemplateLocation())
 	if err != nil {
-		templates = credtemplate.PredefinedTemplates()
+		log.Printf("[Registrar] WARNING: the catalogue leaves out templates it can't read: %v", err)
 	}
 	predefined := map[string]bool{}
 	for _, t := range credtemplate.PredefinedTemplates() {

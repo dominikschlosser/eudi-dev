@@ -62,7 +62,6 @@ func (d *DemoRP) deferIssuance(holderKeys []*ecdsa.PublicKey, granted ticketGran
 // returns a transaction_id and an interval until the credential is ready.
 // Then it returns the credentials array.
 func (d *DemoRP) handleDeferredCredential(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
 	token, _, errResp := d.authorizeAccessToken(r, "/deferred_credential")
 	if errResp != nil {

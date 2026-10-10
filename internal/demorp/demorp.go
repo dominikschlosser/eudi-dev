@@ -42,9 +42,19 @@ const (
 	entryTTL = 10 * time.Minute
 	// maxEntries caps each state map. Anonymous visitors could otherwise grow
 	// memory without limit between TTL sweeps (see makeRoom).
-	maxEntries   = 500
-	maxBodyBytes = 64 << 10
+	maxEntries = 500
+	// maxBodyBytes leaves room for a form-encoded presentation with a portrait.
+	maxBodyBytes = 256 << 10
 )
+
+// limitBodies caps every request body, since anonymous visitors call these
+// endpoints.
+func limitBodies(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		next.ServeHTTP(w, r)
+	})
+}
 
 type DemoRP struct {
 	wallet  *wallet.Wallet

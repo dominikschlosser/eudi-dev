@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -843,9 +844,16 @@ func (w *Wallet) GenerateProtectedDefaults() error {
 }
 
 func (w *Wallet) RegisterIssuedAttestation(spec IssuedAttestationSpec) error {
+	_, err := w.EnsureIssuedAttestation(spec)
+	return err
+}
+
+// EnsureIssuedAttestation registers the attestation type and reports whether
+// the wallet changed.
+func (w *Wallet) EnsureIssuedAttestation(spec IssuedAttestationSpec) (bool, error) {
 	normalized, err := NormalizeIssuedAttestationSpec(spec, "")
 	if err != nil {
-		return err
+		return false, err
 	}
 	key := normalized.Format + "|" + normalized.VCT + "|" + normalized.DocType
 
@@ -854,13 +862,16 @@ func (w *Wallet) RegisterIssuedAttestation(spec IssuedAttestationSpec) error {
 	for i, existing := range w.IssuedAttestations {
 		existingKey := existing.Format + "|" + existing.VCT + "|" + existing.DocType
 		if existingKey == key {
+			if reflect.DeepEqual(existing, normalized) {
+				return false, nil
+			}
 			w.IssuedAttestations[i] = normalized
-			return nil
+			return true, nil
 		}
 	}
 	w.IssuedAttestations = append(w.IssuedAttestations, normalized)
 	w.IssuedAttestations = dedupeIssuedAttestations(w.IssuedAttestations)
-	return nil
+	return true, nil
 }
 
 func (w *Wallet) GetCredentials() []StoredCredential {
@@ -1162,7 +1173,11 @@ func CredentialSummary(c StoredCredential) map[string]any {
 	if disp := displayForListing(c); disp != nil {
 		summary["display"] = disp
 	}
-	if expiry := CredentialExpiry(c); !expiry.IsZero() {
+	notBefore, expiry := CredentialValidity(c)
+	if !notBefore.IsZero() {
+		summary["valid_from"] = notBefore.UTC().Format(time.RFC3339)
+	}
+	if !expiry.IsZero() {
 		summary["expires_at"] = expiry.UTC().Format(time.RFC3339)
 	}
 	if issued := CredentialIssuedAt(c); !issued.IsZero() {

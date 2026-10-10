@@ -1092,7 +1092,8 @@ header h1 {
   color: var(--yellow);
 }
 
-.status-expiring {
+.status-expiring,
+.status-not-yet-valid {
   background: rgba(224, 175, 104, 0.2);
   color: var(--yellow);
 }

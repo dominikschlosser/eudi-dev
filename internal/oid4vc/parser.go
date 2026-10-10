@@ -182,6 +182,16 @@ func parseVCIJSON(data []byte) (RequestType, any, error) {
 	return TypeVCI, offer, nil
 }
 
+// ParseAuthorizationParams parses the parameters of an authorization request.
+// It fetches request_uri and applies a request object like ParseWithOptions.
+func ParseAuthorizationParams(q url.Values, opts ParseOptions) (*AuthorizationRequest, error) {
+	_, req, err := parseVPParams(q, opts)
+	if err != nil {
+		return nil, err
+	}
+	return req.(*AuthorizationRequest), nil
+}
+
 func parseVPParams(q url.Values, opts ParseOptions) (RequestType, any, error) {
 	req := &AuthorizationRequest{
 		FullParams: make(map[string]string),

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -70,6 +71,8 @@ func (h *Server) Routes() map[string]http.HandlerFunc {
 		"POST /api/registrar/wrp":                                          h.handleRegisterRelyingParty,
 		"PUT /api/registrar/wrp":                                           h.handleUpdateRelyingParty,
 		"DELETE /api/registrar/wrp/{identifier}":                           h.handleDeleteRelyingParty,
+		"POST /api/registrar/enrolments":                                   h.handleEnrol(false),
+		"PUT /api/registrar/enrolments":                                    h.handleEnrol(true),
 		"POST /api/registrar/registration-certificates":                    h.handleIssueRegistrationCertificate,
 		"GET /api/registrar/registration-certificates":                     h.handleRegistrationCertificateStatuses,
 		"POST /api/registrar/registration-certificates/status":             h.handleSetRegistrationCertificateStatus,
@@ -166,6 +169,45 @@ func (h *Server) handleDeleteRelyingParty(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleEnrol registers or changes a relying party and issues its
+// certificates in one request, so a failed certificate leaves no half-done
+// registration.
+func (h *Server) handleEnrol(update bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var e Enrolment
+		if err := json.NewDecoder(io.LimitReader(r.Body, 128<<10)).Decode(&e); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid enrolment: " + err.Error()})
+			return
+		}
+		if err := checkRegistrationSize(e.RelyingParty); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if update {
+			for _, id := range e.RelyingParty.Identifier {
+				if h.refuseProtected(w, id.Identifier) {
+					return
+				}
+			}
+		}
+		var result *EnrolmentResult
+		var err error
+		h.Mutate(func() bool {
+			result, err = h.Registrar().Enrol(e, update)
+			return err == nil
+		})
+		if err != nil {
+			writeRegistrarError(w, err)
+			return
+		}
+		status := http.StatusCreated
+		if update {
+			status = http.StatusOK
+		}
+		writeJSON(w, status, result)
+	}
+}
+
 func decodeRelyingParty(w http.ResponseWriter, r *http.Request) (WalletRelyingParty, bool) {
 	var rp WalletRelyingParty
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&rp); err != nil {
@@ -189,22 +231,42 @@ func (h *Server) handleRegistrarWRPList(w http.ResponseWriter, r *http.Request) 
 			matching[i].Services = slices.DeleteFunc(matching[i].Services, func(s WalletRelyingPartyService) bool { return s.ServiceIdentifier != service })
 		}
 	}
-	limit := 20
-	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
-		limit = n
+	start, end, _, err := page(q, "cursor", len(matching))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
-	offset, _ := strconv.Atoi(q.Get("cursor"))
-	offset = max(0, min(offset, len(matching)))
-	end := offset + min(limit, len(matching)-offset)
 	pagination := map[string]any{"has_next_page": end < len(matching)}
 	if end < len(matching) {
 		pagination["next_cursor"] = strconv.Itoa(end)
 	}
-	h.writeRegistrarResponse(w, r, map[string]any{"data": matching[offset:end], "pagination": pagination})
+	h.writeRegistrarResponse(w, r, map[string]any{"data": matching[start:end], "pagination": pagination})
+}
+
+// page reads limit and the offset parameter and returns the bounds of the
+// page in a list of total items, and the limit it applied.
+func page(q url.Values, offsetParam string, total int) (start, end, limit int, err error) {
+	limit, offset := 20, 0
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return 0, 0, 0, errors.New("limit must be a positive integer")
+		}
+		limit = min(n, maxPageSize)
+	}
+	if v := q.Get(offsetParam); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return 0, 0, 0, fmt.Errorf("%s must be a non-negative integer", offsetParam)
+		}
+		offset = n
+	}
+	start = min(offset, total)
+	return start, start + min(limit, total-start), limit, nil
 }
 
 func (h *Server) handleRegistrarWRPByIdentifier(w http.ResponseWriter, r *http.Request) {
-	rp, ok := h.registrarRecord(r.PathValue("identifier"))
+	rp, ok := h.Registrar().RelyingParty(r.PathValue("identifier"))
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "relying party not registered"})
 		return
@@ -214,7 +276,7 @@ func (h *Server) handleRegistrarWRPByIdentifier(w http.ResponseWriter, r *http.R
 
 // handleRegistrarWRPService narrows a record to one service (TS05 v1.5 §3.2.2).
 func (h *Server) handleRegistrarWRPService(w http.ResponseWriter, r *http.Request) {
-	rp, ok := h.registrarRecord(r.PathValue("identifier"))
+	rp, ok := h.Registrar().RelyingParty(r.PathValue("identifier"))
 	if ok {
 		rp.Services = slices.DeleteFunc(slices.Clone(rp.Services), func(service WalletRelyingPartyService) bool {
 			return service.ServiceIdentifier != r.PathValue("serviceidentifier")
@@ -234,7 +296,7 @@ func (h *Server) handleCheckIntendedUse(w http.ResponseWriter, r *http.Request) 
 	q := r.URL.Query()
 	parties := h.Registrar().RegisteredRelyingParties()
 	if identifier := strings.TrimSpace(q.Get("identifier")); identifier != "" {
-		rp, ok := h.registrarRecord(identifier)
+		rp, ok := h.Registrar().RelyingParty(identifier)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "relying party not registered"})
 			return
@@ -243,14 +305,6 @@ func (h *Server) handleCheckIntendedUse(w http.ResponseWriter, r *http.Request) 
 	}
 	registered := slices.ContainsFunc(parties, func(rp WalletRelyingParty) bool { return registersIntendedUse(rp, q) })
 	h.writeRegistrarResponse(w, r, map[string]any{"data": map[string]any{"isRegistered": registered}})
-}
-
-func (h *Server) registrarRecord(identifier string) (WalletRelyingParty, bool) {
-	records := h.Registrar().RegisteredRelyingParties()
-	if i := relyingPartyIndex(records, identifier); i >= 0 {
-		return records[i], true
-	}
-	return WalletRelyingParty{}, false
 }
 
 // writeRegistrarResponse adds iss and iat and signs the payload, as TS05 v1.5
@@ -329,7 +383,7 @@ func writeRegistrarError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errRelyingPartyNotFound):
 		status = http.StatusNotFound
-	case errors.Is(err, errRelyingPartyExists), errors.Is(err, errRegistrarFull), errors.Is(err, errRegistrationStatusFull), errors.Is(err, errRegistrationChanged):
+	case errors.Is(err, errRelyingPartyExists), errors.Is(err, errRegistrarFull), errors.Is(err, errRegistrationStatusFull), errors.Is(err, errPartyCertificatesFull), errors.Is(err, errRegistrationChanged):
 		status = http.StatusConflict
 	case errors.Is(err, errRegistrarSigning):
 		status = http.StatusInternalServerError
@@ -348,31 +402,17 @@ func (h *Server) handleCatalogSchemas(w http.ResponseWriter, r *http.Request) {
 			matching = append(matching, entry.Schema)
 		}
 	}
-	limit, offset := 20, 0
-	if v := q.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "limit must be a positive integer"})
-			return
-		}
-		limit = min(n, maxCatalogEntries)
+	start, end, limit, err := page(q, "offset", len(matching))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
-	if v := q.Get("offset"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "offset must be a non-negative integer"})
-			return
-		}
-		offset = n
-	}
-	start := min(offset, len(matching))
-	end := start + min(limit, len(matching)-start)
-	page := matching[start:end]
-	if page == nil {
-		page = []AttestationSchema{}
+	schemas := matching[start:end]
+	if schemas == nil {
+		schemas = []AttestationSchema{}
 	}
 	h.writeRegistrarResponse(w, r, map[string]any{"data": map[string]any{
-		"total": len(matching), "limit": limit, "offset": offset, "data": page,
+		"total": len(matching), "limit": limit, "offset": start, "data": schemas,
 	}})
 }
 
@@ -539,10 +579,6 @@ func (h *Server) handleIssueRegistrationCertificate(w http.ResponseWriter, r *ht
 		return
 	}
 	if h.refuseProtected(w, req.Identifier) {
-		return
-	}
-	if h.Registrar().CertificateCount(req.Identifier) >= maxCertificatesPerRelyingParty {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("%s holds %d registration certificates, the most the registrar issues to one relying party. Older ones free up when they expire", req.Identifier, maxCertificatesPerRelyingParty)})
 		return
 	}
 	var result *RegistrationCertificateResult

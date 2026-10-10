@@ -141,20 +141,25 @@ func TestACertificateForChangedContentIsNotIssued(t *testing.T) {
 	}
 }
 
-// The API issues at most 100 certificates to one relying party, so visitors
-// of a public demo can't fill the status list.
-func TestTheAPICapsTheCertificatesOfARelyingParty(t *testing.T) {
+// The registrar issues at most 100 certificates to one relying party, so
+// visitors of a public demo can't fill the status list.
+func TestTheRegistrarCapsTheCertificatesOfARelyingParty(t *testing.T) {
 	reg := generateTestWallet(t)
 	rp := registerTestRelyingParty(t, reg)
 	for i := range maxCertificatesPerRelyingParty {
 		reg.State.RegistrationStatuses = append(reg.State.RegistrationStatuses, RegistrationStatus{Index: i + 1, Identifier: rp.Identifier[0].Identifier, Superseded: true})
 	}
 	h := &Server{Registrar: func() *Registrar { return reg.Registrar }, Mutate: func(change func() bool) { change() }}
-	body, _ := json.Marshal(RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier})
+	request := RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier}
+	body, _ := json.Marshal(request)
 	rec := httptest.NewRecorder()
 	h.Routes()["POST /api/registrar/registration-certificates"](rec, httptest.NewRequest(http.MethodPost, "/api/registrar/registration-certificates", bytes.NewReader(body)))
 	if rec.Code != http.StatusConflict {
 		t.Errorf("%d %s, want the per-party cap", rec.Code, rec.Body)
+	}
+	// Direct callers get the same cap.
+	if _, err := reg.Registrar.IssueRegistrationCertificate(request); err == nil {
+		t.Error("a direct call issued past the cap")
 	}
 }
 

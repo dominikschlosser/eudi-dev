@@ -405,3 +405,25 @@ func TestMergeClaims(t *testing.T) {
 		t.Error("MergeClaims must not share nested maps with base")
 	}
 }
+
+// An unreadable template is reported, and the readable ones still come back.
+func TestListReturnsTheReadableTemplatesWithTheError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "broken.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(FileLocation(dir), Template{Name: "club", Format: "sdjwt", VCT: "urn:example:club:1"}); err != nil {
+		t.Fatal(err)
+	}
+	templates, err := List(FileLocation(dir))
+	if err == nil {
+		t.Error("the broken template was not reported")
+	}
+	names := map[string]bool{}
+	for _, tpl := range templates {
+		names[tpl.Name] = true
+	}
+	if !names["club"] || !names["demo-ticket"] {
+		t.Errorf("templates %v, want the stored and the predefined ones", names)
+	}
+}

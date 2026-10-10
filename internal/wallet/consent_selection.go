@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"time"
 )
 
 // ValidateConsentSelection checks the choices made in the consent dialog: one
@@ -321,4 +322,48 @@ func (w *Wallet) applySelectedClaims(matches []CredentialMatch, selected map[str
 		log.Printf("[VP]   %s: disclosing %v", shortID(m.CredentialID), keys)
 	}
 	return matches
+}
+
+// newPresentationConsent is the consent request for a presentation. typ tells a
+// verifier's request from one an issuer makes during issuance.
+func newPresentationConsent(typ, owner, clientID string, authReq *AuthorizationRequestParams, matches []CredentialMatch, options *ConsentCredentialOptions) *ConsentRequest {
+	req := &ConsentRequest{
+		ID:                newConsentID(),
+		Type:              typ,
+		Owner:             owner,
+		MatchedCreds:      matches,
+		Status:            "pending",
+		ResultCh:          make(chan ConsentResult, 1),
+		SubmissionCh:      make(chan SubmissionResult, 1),
+		CreatedAt:         time.Now(),
+		ClientID:          clientID,
+		Nonce:             authReq.Nonce,
+		ResponseURI:       authReq.ResponseURI,
+		DCQLQuery:         authReq.DCQLQuery,
+		Findings:          authReq.Findings,
+		CredentialOptions: options,
+	}
+	req.Purposes, req.PrivacyPolicies = consentRegistration(authReq)
+	req.applyClientAuth(authReq)
+	return req
+}
+
+// consentedMatches applies the credentials and claims the user chose.
+func (w *Wallet) consentedMatches(req *ConsentRequest, matches []CredentialMatch, result ConsentResult) []CredentialMatch {
+	return w.applySelectedClaims(ApplyConsentSelection(req.CredentialOptions, matches, result), result.SelectedClaims)
+}
+
+// awaitConsent waits for the decision on req. After timeout a request that is
+// still pending expires and awaitConsent reports false. A decision that
+// arrives together with the timeout wins.
+func (w *Wallet) awaitConsent(req *ConsentRequest, timeout time.Duration) (ConsentResult, bool) {
+	select {
+	case result := <-req.ResultCh:
+		return result, true
+	case <-time.After(timeout):
+		if _, ok := w.ResolveRequest(req.ID, statusExpired); !ok {
+			return <-req.ResultCh, true
+		}
+		return ConsentResult{}, false
+	}
 }

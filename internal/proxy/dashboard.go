@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/httpsec"
@@ -107,6 +108,8 @@ func (d *Dashboard) ListenAndServe() error {
 func (d *Dashboard) handleEntries(w http.ResponseWriter, r *http.Request) {
 	entries := d.store.Entries()
 	w.Header().Set("Content-Type", "application/json")
+	// The page keeps no more entries than the store.
+	w.Header().Set("X-Entries-Limit", strconv.Itoa(d.store.MaxSize()))
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	enc.Encode(entries)

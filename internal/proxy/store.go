@@ -86,6 +86,9 @@ func (s *Store) Add(entry *TrafficEntry) {
 	}
 }
 
+// MaxSize is how many entries the store keeps.
+func (s *Store) MaxSize() int { return s.maxSize }
+
 func (s *Store) Entries() []*TrafficEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

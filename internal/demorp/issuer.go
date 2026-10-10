@@ -21,7 +21,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -67,31 +66,6 @@ func parseBatchSize(value string) int {
 	return n
 }
 
-// ticketClaims adds the holder to the claims of the ticket template. It also
-// records the wallet attester and its trust status, since the demo accepts
-// attestations from unknown CAs.
-func ticketClaims(base map[string]any, subject string, holder map[string]any, auth *clientAuthentication) map[string]any {
-	claims := maps.Clone(base)
-	if claims == nil {
-		claims = map[string]any{}
-	}
-	if subject == demoAccountUsername {
-		claims["given_name"] = demoAccountGivenName
-		claims["family_name"] = demoAccountFamily
-	}
-	// Interactive authorization identifies the holder by the presented
-	// credential. The ticket carries that holder's name.
-	for _, name := range []string{"given_name", "family_name"} {
-		if value, ok := holder[name].(string); ok && value != "" {
-			claims[name] = value
-		}
-	}
-	if auth != nil {
-		claims["wallet_attestation"] = auth.ticketClaim()
-	}
-	return claims
-}
-
 // offerState tracks one credential offer until the credential is collected.
 // A pre-authorized offer has a pre-authorized code. An authorization code
 // offer has the issuer_state that links it to a browser login.
@@ -112,10 +86,9 @@ type offerState struct {
 // issueTokenLocked.
 type tokenState struct {
 	offerSettings
-	// subject and holderClaims name the holder: the account that signed in,
+	// holderClaims name the holder: the names of the account that signed in,
 	// or the requested claims of the credential presented to authorize the
 	// issuance (OpenID4VCI 1.1 §6). A pre-authorized code leaves them empty.
-	subject      string
 	holderClaims map[string]any
 	// jkt is the thumbprint of the DPoP key that binds the token. It is
 	// empty for a bearer token.
@@ -168,7 +141,7 @@ func (d *DemoRP) IssuerHandler() http.Handler {
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", d.AuthorizationServerMetadataHandler())
 	// GuardAPI covers only /api/, which the page calls. Wallets on other
 	// origins call the protocol endpoints.
-	return httpsec.GuardAPI(mux, d.baseURL())
+	return httpsec.GuardAPI(limitBodies(mux), d.baseURL())
 }
 
 // IssuerMetadataHandler serves the issuer metadata. Also register it at
@@ -337,7 +310,6 @@ func (d *DemoRP) handleOfferByReference(w http.ResponseWriter, r *http.Request) 
 }
 
 func (d *DemoRP) handleToken(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := r.ParseForm(); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 		return
@@ -356,16 +328,11 @@ func (d *DemoRP) handleToken(w http.ResponseWriter, r *http.Request) {
 	}
 	// HAIP 1.0 §4.4.1 requires client authentication at the token endpoint.
 	// The metadata lists only attestation-based methods, so both grants
-	// authenticate the same way. A DPoP proof binds the token if the wallet
-	// sends one.
-	var jkt string
-	if strings.TrimSpace(r.Header.Get("DPoP")) != "" {
-		var err error
-		jkt, err = d.verifyDPoPProof(r, d.issuerID()+"/token", "")
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, oauthError("invalid_dpop_proof", err.Error()))
-			return
-		}
+	// authenticate the same way.
+	jkt, errResp := d.dpopKey(r, d.issuerID()+"/token")
+	if errResp != nil {
+		writeJSON(w, http.StatusBadRequest, errResp)
+		return
 	}
 	clientAuth, ok := d.authenticateTokenClient(w, r, r.PostFormValue("client_id"), jkt)
 	if !ok {
@@ -481,7 +448,6 @@ type credentialRequest struct {
 }
 
 func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
 	token, tok, errResp := d.authorizeAccessToken(r, "/credential")
 	if errResp != nil {

@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
@@ -210,5 +211,41 @@ func TestACatalogueTypeHasOneEntry(t *testing.T) {
 	_, err := w.AddCatalogAttestation(CatalogAttestation{Name: "Other PID", Credentials: []CatalogCredential{{Format: "dc+sd-jwt", Type: "urn:eudi:pid:1"}}})
 	if err == nil || !strings.Contains(err.Error(), "EUDI PID") {
 		t.Errorf("a second entry for the PID type: %v", err)
+	}
+}
+
+// A removed template entry stays removed when its template is renamed,
+// because the removal records the entry's types.
+func TestARemovedTemplateEntryStaysRemovedAfterARename(t *testing.T) {
+	w := generateTestWallet(t)
+	var ticket credtemplate.Template
+	for _, tpl := range credtemplate.PredefinedTemplates() {
+		if tpl.Name == "demo-ticket" {
+			ticket = tpl
+		}
+	}
+	entryFor := func() (CatalogAttestation, bool) {
+		for _, e := range w.CatalogAttestations() {
+			if slices.ContainsFunc(e.Credentials, func(c CatalogCredential) bool { return c.Type == ticket.VCT }) {
+				return e, true
+			}
+		}
+		return CatalogAttestation{}, false
+	}
+	entry, ok := entryFor()
+	if !ok {
+		t.Fatal("the demo ticket has no catalogue entry")
+	}
+	if err := w.DeleteCatalogAttestation(entry.Schema.ID); err != nil {
+		t.Fatal(err)
+	}
+	renamed := *ticket.Display
+	renamed.Name = "Renamed ticket"
+	ticket.Display = &renamed
+	if _, err := credtemplate.Save(w.env.templates, ticket); err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := entryFor(); ok {
+		t.Errorf("the renamed template brought back %q", e.Name)
 	}
 }

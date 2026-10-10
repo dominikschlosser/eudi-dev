@@ -108,16 +108,19 @@ const (
 	maxDemoDeferred    = 100
 )
 
-func (s *Server) SetDemo(opts DemoOptions) {
-	s.demo = &demoState{opts: opts, fixedTemplates: map[string]bool{}}
-	s.wallet.SetCapacity(maxDemoCredentials, maxDemoDeferred)
+// SetDemo turns on the public demo profile. The templates present now are
+// the operator's and stay fixed, so a template it can't read stops it.
+func (s *Server) SetDemo(opts DemoOptions) error {
 	templates, err := credtemplate.List(s.wallet.Templates)
 	if err != nil {
-		templates = credtemplate.PredefinedTemplates()
+		return fmt.Errorf("reading the operator's templates: %w", err)
 	}
+	s.demo = &demoState{opts: opts, fixedTemplates: map[string]bool{}}
+	s.wallet.SetCapacity(maxDemoCredentials, maxDemoDeferred)
 	for _, t := range templates {
 		s.demo.fixedTemplates[t.Name] = true
 	}
+	return nil
 }
 
 func (s *Server) DemoEnabled() bool {

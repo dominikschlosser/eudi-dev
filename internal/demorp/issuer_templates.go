@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"slices"
@@ -50,7 +51,7 @@ type templateConfiguration struct {
 func (d *DemoRP) templateConfigurations() []templateConfiguration {
 	templates, err := credtemplate.List(d.wallet.Templates)
 	if err != nil {
-		return nil
+		log.Printf("[Demo issuer] WARNING: the issuer offers no templates it can't read: %v", err)
 	}
 	configs := make([]templateConfiguration, 0, len(templates))
 	for _, tpl := range templates {
@@ -247,17 +248,23 @@ func (d *DemoRP) signTemplate(cfg templateConfiguration, holderKey *ecdsa.Public
 			expiresIn = parsed
 		}
 	}
-	claims := tpl.WithUniqueClaims(credtemplate.MergeClaims(tpl.Claims, granted.holderClaims))
-	if cfg.id == ticketConfigurationID {
-		claims = tpl.WithUniqueClaims(ticketClaims(tpl.Claims, granted.subject, granted.holderClaims, granted.clientAuth))
+	merged := credtemplate.MergeClaims(tpl.Claims, granted.holderClaims)
+	// The demo ticket records the wallet attestation of its issuance and its
+	// trust status, since the demo accepts attestations from unknown CAs.
+	if cfg.id == ticketConfigurationID && granted.clientAuth != nil {
+		merged["wallet_attestation"] = granted.clientAuth.ticketClaim()
 	}
+	claims := tpl.WithUniqueClaims(merged)
 	spec := wallet.IssuedAttestationSpec{Format: cfg.format, VCT: cfg.vct, DocType: cfg.docType}
 	spec.Category = d.wallet.CredentialCategory(&tpl, spec)
 	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, "")
 	if err != nil {
 		return "", fmt.Errorf("building attestation spec for %s: %w", cfg.id, err)
 	}
-	_ = d.wallet.RegisterIssuedAttestation(spec)
+	changed, err := d.wallet.EnsureIssuedAttestation(spec)
+	if err != nil {
+		return "", fmt.Errorf("registering the attestation type of %s: %w", cfg.id, err)
+	}
 	signingKey, chain, err := d.wallet.SigningMaterialForIssuedCredential(spec, claims)
 	if err != nil {
 		return "", fmt.Errorf("building signing certificate chain for %s: %w", cfg.id, err)
@@ -272,6 +279,9 @@ func (d *DemoRP) signTemplate(cfg templateConfiguration, holderKey *ecdsa.Public
 		if err != nil {
 			return "", err
 		}
+		changed = true
+	}
+	if changed {
 		d.saveWallet()
 	}
 	switch cfg.format {

@@ -111,27 +111,11 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		reqServer.log("  Request URI Method: %s", parsed.RequestURIMethod)
 	}
 
-	authReq := &AuthorizationRequestParams{
-		ClientID:          parsed.ClientID,
-		ResponseType:      parsed.ResponseType,
-		ResponseMode:      parsed.ResponseMode,
-		Nonce:             parsed.Nonce,
-		State:             parsed.State,
-		RedirectURI:       parsed.RedirectURI,
-		ResponseURI:       parsed.ResponseURI,
-		Scope:             parsed.Scope,
-		RequestURIMethod:  parsed.RequestURIMethod,
-		RequestURI:        parsed.RequestURI,
-		ClientMetadata:    parsed.ClientMetadata,
-		DCQLQuery:         parsed.DCQLQuery,
-		RequestObject:     parsed.RequestObject,
-		RequestPayload:    requestPayload(parsed.RequestObject, parsed.FullJSON),
-		FullParams:        parsed.FullParams,
-		Source:            "api",
-		Session:           requestOwner(r),
-		AutoAccept:        body.AutoAccept,
-		SessionTranscript: transcript,
-	}
+	authReq := authorizationParams(parsed)
+	authReq.Source = "api"
+	authReq.Session = requestOwner(r)
+	authReq.AutoAccept = body.AutoAccept
+	authReq.SessionTranscript = transcript
 
 	if body.Interactive {
 		// Scheme dispatches still require interactive consent even though they use the

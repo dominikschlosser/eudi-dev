@@ -11,6 +11,7 @@
   const timelineToggle = document.getElementById("timeline-toggle");
 
   let entries = [];
+  let entriesLimit = Infinity;
   // Remember cleared traffic locally so a server resync does not restore it.
   let clearedThroughID = 0;
   let showAll = false;
@@ -326,6 +327,11 @@
 
   function addEntry(entry) {
     entries.push(entry);
+    if (entries.length > entriesLimit) {
+      entries.splice(0, entries.length - entriesLimit);
+      renderEntries();
+      return;
+    }
     if (!isVisible(entry)) return;
 
     if (timelineView) {
@@ -344,7 +350,11 @@
   // every connection fetches the existing entries.
   function syncEntries() {
     return fetch("api/entries")
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        var limit = parseInt(r.headers.get("X-Entries-Limit"), 10);
+        if (limit > 0) entriesLimit = limit;
+        return r.json();
+      })
       .then(function (data) {
         if (!data || data.length === 0) return;
         var known = {};
@@ -362,6 +372,7 @@
         if (!added) return;
         // The timeline stores entries oldest first. The list renders them reversed.
         entries.sort(function (a, b) { return a.id - b.id; });
+        if (entries.length > entriesLimit) entries.splice(0, entries.length - entriesLimit);
         renderEntries();
       })
       .catch(function (err) {

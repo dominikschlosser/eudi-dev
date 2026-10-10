@@ -750,7 +750,9 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		srv.SetNews(n)
 	}
 	if opts.Demo {
-		srv.SetDemo(demoOpts)
+		if err := srv.SetDemo(demoOpts); err != nil {
+			return err
+		}
 	}
 	// Embed the credential decoder UI so stored credentials can be inspected
 	// from the wallet UI. Its links refer to a credential by id.

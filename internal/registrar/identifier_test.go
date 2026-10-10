@@ -86,3 +86,20 @@ func TestAnUpdateThroughTheSemanticsIdentifierKeepsOneIdentifier(t *testing.T) {
 		t.Errorf("identifiers %+v, want one", updated.Identifier)
 	}
 }
+
+// An empty service identifier names a party's only service. With several,
+// the caller names one.
+func TestAnEmptyServiceIdentifierNamesTheOnlyService(t *testing.T) {
+	one := WalletRelyingParty{Identifier: []Identifier{{Identifier: "NLTEST.1"}}, Services: []WalletRelyingPartyService{{ServiceIdentifier: "web"}}}
+	if service, err := findService(one, ""); err != nil || service.ServiceIdentifier != "web" {
+		t.Errorf("one service: %+v, %v", service, err)
+	}
+	two := one
+	two.Services = append(two.Services, WalletRelyingPartyService{ServiceIdentifier: "app"})
+	if _, err := findService(two, ""); err == nil {
+		t.Error("an empty identifier picked one of two services")
+	}
+	if service, err := findService(two, "app"); err != nil || service.ServiceIdentifier != "app" {
+		t.Errorf("named service: %+v, %v", service, err)
+	}
+}

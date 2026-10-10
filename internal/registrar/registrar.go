@@ -633,14 +633,19 @@ func findIntendedUse(rp WalletRelyingParty, serviceIdentifier, intendedUseIdenti
 }
 
 // findService returns the service with the identifier. An empty identifier
-// selects the first service.
-func findService(rp WalletRelyingParty, serviceIdentifier string) (WalletRelyingPartyService, bool) {
-	for _, service := range rp.Services {
-		if serviceIdentifier == "" || service.ServiceIdentifier == serviceIdentifier {
-			return service, true
+// names the party's only service.
+func findService(rp WalletRelyingParty, serviceIdentifier string) (WalletRelyingPartyService, error) {
+	if serviceIdentifier == "" {
+		if len(rp.Services) != 1 {
+			return WalletRelyingPartyService{}, fmt.Errorf("%s has %d services, so name the service", rp.Identifier[0].Identifier, len(rp.Services))
 		}
+		return rp.Services[0], nil
 	}
-	return WalletRelyingPartyService{}, false
+	service, ok := serviceByIdentifier(rp, serviceIdentifier)
+	if !ok {
+		return service, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, serviceIdentifier)
+	}
+	return service, nil
 }
 
 func newRegistrarID() string {

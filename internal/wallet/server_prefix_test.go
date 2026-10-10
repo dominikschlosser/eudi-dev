@@ -131,7 +131,9 @@ func TestPrefixServesWellKnownAtHostRoot(t *testing.T) {
 
 func TestPrefixKeepsAPIProtections(t *testing.T) {
 	srv := newPrefixTestServer(t, prefixBaseURL)
-	srv.SetDemo(DemoOptions{})
+	if err := srv.SetDemo(DemoOptions{}); err != nil {
+		t.Fatal(err)
+	}
 	for _, mode := range proxyModes {
 		t.Run(mode.name, func(t *testing.T) {
 			if rec := prefixRequest(srv, http.MethodPost, mode.route("/api/shutdown"), nil); rec.Code != http.StatusForbidden {

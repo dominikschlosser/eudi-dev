@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -237,7 +236,7 @@ func (w *Wallet) AddTrustedList(rawURL string) (TrustedListLink, error) {
 // refuses a list the wallet can't read. Debug mode reports why in the link.
 func (w *Wallet) CheckTrustedList(rawURL string) (TrustedListLink, error) {
 	rawURL = strings.TrimSpace(rawURL)
-	if u, err := url.Parse(rawURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+	if !format.IsWebURL(rawURL) {
 		return TrustedListLink{}, fmt.Errorf("%q is not an http or https URL", rawURL)
 	}
 	w.listCacheMu.Lock()

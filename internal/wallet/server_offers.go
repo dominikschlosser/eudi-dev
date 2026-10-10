@@ -344,20 +344,14 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 
 	// Wait first for offer consent, then for any presentation the issuer requests.
 	s.allowSlowResponse(w, config.ConsentTimeout+interactiveAuthorizationConsentTimeout)
-	select {
-	case consent := <-consentReq.ResultCh:
-		handle(consent)
-	case <-time.After(config.ConsentTimeout):
-		// The timer can race with consent. Only time out requests that are still
-		// pending.
-		if _, ok := s.wallet.ResolveRequest(consentReq.ID, statusExpired); !ok {
-			handle(<-consentReq.ResultCh)
-			return
-		}
+	consent, answered := s.wallet.awaitConsent(consentReq, config.ConsentTimeout)
+	if !answered {
 		s.wallet.AddLog("issuance", "Consent timeout", false)
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout", StatusCode: http.StatusRequestTimeout}
 		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})
+		return
 	}
+	handle(consent)
 }
 
 func (s *Server) processOfferDirectly(w http.ResponseWriter, uri, txCode, session string, browserRedirect, apiInitiated bool) {

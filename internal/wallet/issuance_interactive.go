@@ -480,23 +480,8 @@ func (w *Wallet) parseInteractiveAuthorizationRequest(request map[string]any, en
 		return nil, fmt.Errorf("parsing openid4vp_request: %w", err)
 	}
 
-	params := &AuthorizationRequestParams{
-		ClientID:         parsed.ClientID,
-		ResponseType:     parsed.ResponseType,
-		ResponseMode:     parsed.ResponseMode,
-		Nonce:            parsed.Nonce,
-		State:            parsed.State,
-		RedirectURI:      parsed.RedirectURI,
-		ResponseURI:      parsed.ResponseURI,
-		Scope:            parsed.Scope,
-		RequestURIMethod: parsed.RequestURIMethod,
-		RequestURI:       parsed.RequestURI,
-		ClientMetadata:   parsed.ClientMetadata,
-		DCQLQuery:        parsed.DCQLQuery,
-		RequestObject:    parsed.RequestObject,
-		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
-		Source:           "interactive_authorization",
-	}
+	params := authorizationParams(parsed)
+	params.Source = "interactive_authorization"
 
 	// §6.2.1.1: "The response_mode MUST be either ia_post for unencrypted
 	// responses or ia_post.jwt for encrypted responses."
@@ -572,48 +557,20 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 	if asking == "" {
 		asking = derivedOrigin(endpoint)
 	}
-	consentReq := &ConsentRequest{
-		ID: newConsentID(),
-		// On a shared wallet the browser that started issuance gets this prompt.
-		Type:         ConsentTypeIssuancePresentation,
-		Owner:        owner,
-		MatchedCreds: matches,
-		Status:       "pending",
-		ResultCh:     make(chan ConsentResult, 1),
-		SubmissionCh: make(chan SubmissionResult, 1),
-		CreatedAt:    time.Now(),
-		ClientID:     asking,
-		Nonce:        authReq.Nonce,
-		DCQLQuery:    authReq.DCQLQuery,
-		Findings:     authReq.Findings,
-
-		CredentialOptions: credentialOptions,
-	}
-	consentReq.Purposes, consentReq.PrivacyPolicies = consentRegistration(authReq)
-	consentReq.applyClientAuth(authReq)
+	// On a shared wallet the browser that started issuance gets this prompt.
+	consentReq := newPresentationConsent(ConsentTypeIssuancePresentation, owner, asking, authReq, matches, credentialOptions)
 	w.CreateConsentRequest(consentReq)
 
-	handle := func(result ConsentResult) ([]CredentialMatch, bool, error) {
-		if result.Approved {
-			matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
-			matches = w.applySelectedClaims(matches, result.SelectedClaims)
-		}
-		consentReq.SubmissionCh <- SubmissionResult{StatusCode: 200}
-		return matches, result.Approved, nil
-	}
-
-	select {
-	case result := <-consentReq.ResultCh:
-		return handle(result)
-	case <-time.After(interactiveAuthorizationConsentTimeout):
-		// A decision that arrives together with the timeout wins. Only a request
-		// that is still pending times out.
-		if _, ok := w.ResolveRequest(consentReq.ID, statusExpired); !ok {
-			return handle(<-consentReq.ResultCh)
-		}
+	result, answered := w.awaitConsent(consentReq, interactiveAuthorizationConsentTimeout)
+	if !answered {
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}
 		return matches, false, fmt.Errorf("no answer to the presentation the issuer asked for")
 	}
+	consentReq.SubmissionCh <- SubmissionResult{StatusCode: 200}
+	if !result.Approved {
+		return matches, false, nil
+	}
+	return w.consentedMatches(consentReq, matches, result), true, nil
 }
 
 func (w *Wallet) addPresentationRequestLogEntry(authReq *AuthorizationRequestParams) {

@@ -39,6 +39,7 @@ const maxCertificatesPerRelyingParty = 100
 
 var (
 	errRegistrationStatusFull = errors.New("the registrar has issued its maximum number of registration certificates. Entries free up when certificates expire")
+	errPartyCertificatesFull  = fmt.Errorf("the relying party holds %d registration certificates, the most the registrar issues to one relying party. Older ones free up when they expire", maxCertificatesPerRelyingParty)
 	errRegistrationChanged    = errors.New("the registration changed while the certificate was being issued. Try again")
 )
 
@@ -111,6 +112,15 @@ func (r *Registrar) allocateRegistrationStatus(rp WalletRelyingParty, key certif
 	r.state.RegistrationStatuses = slices.DeleteFunc(r.state.RegistrationStatuses, func(s RegistrationStatus) bool { return s.Expires > 0 && s.Expires < now })
 	if len(r.state.RegistrationStatuses) >= registrationStatusListSize/2 {
 		return 0, errRegistrationStatusFull
+	}
+	held := 0
+	for _, s := range r.state.RegistrationStatuses {
+		if s.Identifier == identifier {
+			held++
+		}
+	}
+	if held >= maxCertificatesPerRelyingParty {
+		return 0, errPartyCertificatesFull
 	}
 	for {
 		n, err := rand.Int(rand.Reader, big.NewInt(registrationStatusListSize-1))
@@ -288,9 +298,9 @@ func scopeFilter(rp WalletRelyingParty, scope RegistrationScope) (func(Registrat
 	if scope.ServiceIdentifier == "" {
 		return func(RegistrationStatus) bool { return true }, nil
 	}
-	service, ok := findService(rp, scope.ServiceIdentifier)
-	if !ok {
-		return nil, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, scope.ServiceIdentifier)
+	service, err := findService(rp, scope.ServiceIdentifier)
+	if err != nil {
+		return nil, err
 	}
 	return func(s RegistrationStatus) bool {
 		if s.IntendedUse == "" {
@@ -298,22 +308,6 @@ func scopeFilter(rp WalletRelyingParty, scope RegistrationScope) (func(Registrat
 		}
 		return slices.ContainsFunc(service.IntendedUses, func(u IntendedUse) bool { return u.IntendedUseIdentifier == s.IntendedUse })
 	}, nil
-}
-
-// CertificateCount is the number of unexpired registration certificates of
-// the relying party, superseded ones included.
-func (r *Registrar) CertificateCount(identifier string) int {
-	identifier = r.registeredIdentifier(identifier)
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	now := time.Now().Unix()
-	n := 0
-	for _, s := range r.state.RegistrationStatuses {
-		if s.Identifier == identifier && (s.Expires == 0 || s.Expires >= now) {
-			n++
-		}
-	}
-	return n
 }
 
 // registeredIdentifier resolves any identifier of a relying party to the one

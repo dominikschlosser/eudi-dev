@@ -71,22 +71,35 @@ func (r *Registrar) IssueAccessCertificate(req AccessCertificateRequest) (*Acces
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", errRelyingPartyNotFound, req.Identifier)
 	}
-	publicKey, err := csrPublicKey(req.CSR)
+	publicKey, validity, err := req.parse()
 	if err != nil {
 		return nil, err
-	}
-	validity := MaxAccessCertificateValidity
-	if strings.TrimSpace(req.Validity) != "" {
-		parsed, err := time.ParseDuration(strings.TrimSpace(req.Validity))
-		if err != nil || parsed <= 0 || parsed > MaxAccessCertificateValidity {
-			return nil, fmt.Errorf("validity %q is not a Go duration of at most %s", req.Validity, MaxAccessCertificateValidity)
-		}
-		validity = parsed
 	}
 	chain, err := r.AccessCertificateFor(rp, req.ServiceIdentifier, publicKey, req.DNSNames, validity)
 	if err != nil {
 		return nil, err
 	}
+	return accessCertificateResult(chain), nil
+}
+
+// parse reads the key of the CSR and the validity.
+func (req AccessCertificateRequest) parse() (*ecdsa.PublicKey, time.Duration, error) {
+	publicKey, err := csrPublicKey(req.CSR)
+	if err != nil {
+		return nil, 0, err
+	}
+	validity := MaxAccessCertificateValidity
+	if strings.TrimSpace(req.Validity) != "" {
+		parsed, err := time.ParseDuration(strings.TrimSpace(req.Validity))
+		if err != nil || parsed <= 0 || parsed > MaxAccessCertificateValidity {
+			return nil, 0, fmt.Errorf("validity %q is not a Go duration of at most %s", req.Validity, MaxAccessCertificateValidity)
+		}
+		validity = parsed
+	}
+	return publicKey, validity, nil
+}
+
+func accessCertificateResult(chain []*x509.Certificate) *AccessCertificateResult {
 	leaf, ca := chain[0], chain[1]
 	certificate := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw}))
 	hash := sha256.Sum256(leaf.Raw)
@@ -98,15 +111,15 @@ func (r *Registrar) IssueAccessCertificate(req AccessCertificateRequest) (*Acces
 		Certificate: certificate,
 		Chain:       certificate + string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})),
 		ClientIDs:   clientIDs,
-	}, nil
+	}
 }
 
 // AccessCertificateFor signs an access certificate for a service of rp with
 // the relying party access CA. It returns the certificate and the CA.
 func (r *Registrar) AccessCertificateFor(rp WalletRelyingParty, serviceIdentifier string, publicKey *ecdsa.PublicKey, dnsNames []string, validity time.Duration) ([]*x509.Certificate, error) {
-	service, ok := findService(rp, serviceIdentifier)
-	if !ok {
-		return nil, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, serviceIdentifier)
+	service, err := findService(rp, serviceIdentifier)
+	if err != nil {
+		return nil, err
 	}
 	subject, err := SemanticIdentifier(rp.Identifier[0], rp.Country)
 	if err != nil {

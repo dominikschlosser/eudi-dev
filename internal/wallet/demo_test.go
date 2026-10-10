@@ -37,7 +37,9 @@ func newDemoTestServer(t *testing.T) *Server {
 	t.Helper()
 	srv := newTestServer(t, true)
 	srv.wallet.Templates = credtemplate.FileLocation(t.TempDir())
-	srv.SetDemo(DemoOptions{ResetInterval: time.Hour})
+	if err := srv.SetDemo(DemoOptions{ResetInterval: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
 	// A running server registers the demo parties at startup.
 	if err := srv.registerDemoParties(); err != nil {
 		t.Fatal(err)
@@ -89,7 +91,9 @@ func TestDemoVisitorTemplates(t *testing.T) {
 	if _, err := credtemplate.Save(srv.wallet.Templates, credtemplate.Template{Name: "operator-card", Format: "sdjwt", VCT: "urn:example:operator:1", Claims: map[string]any{}}); err != nil {
 		t.Fatal(err)
 	}
-	srv.SetDemo(DemoOptions{ResetInterval: time.Hour})
+	if err := srv.SetDemo(DemoOptions{ResetInterval: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tt := range []struct {
 		method, path, body string
@@ -263,7 +267,9 @@ func TestStartDemoResetUsesDailySchedule(t *testing.T) {
 		t.Fatalf("loading zone: %v", err)
 	}
 	srv := newTestServer(t, true)
-	srv.SetDemo(DemoOptions{ResetDaily: &DailySchedule{Hour: 3, Minute: 30, Location: berlin}})
+	if err := srv.SetDemo(DemoOptions{ResetDaily: &DailySchedule{Hour: 3, Minute: 30, Location: berlin}}); err != nil {
+		t.Fatal(err)
+	}
 	srv.startDemoReset()
 	defer srv.stopDemoReset()
 
@@ -556,7 +562,9 @@ func TestRequestBodyIsCapped(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			srv := newTestServer(t, false)
 			if demo {
-				srv.SetDemo(DemoOptions{})
+				if err := srv.SetDemo(DemoOptions{}); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			// An oversized credential also fails parsing. The body-read error
@@ -663,7 +671,9 @@ func TestDemoResetRestoresTheStartupCredentials(t *testing.T) {
 		t.Fatalf("ParseCredentialsFile: %v", err)
 	}
 	baseline := func() error { return srv.wallet.AddFileCredentials(file, true) }
-	srv.SetDemo(DemoOptions{ResetInterval: time.Hour, Baseline: baseline})
+	if err := srv.SetDemo(DemoOptions{ResetInterval: time.Hour, Baseline: baseline}); err != nil {
+		t.Fatal(err)
+	}
 	if err := baseline(); err != nil {
 		t.Fatalf("baseline: %v", err)
 	}

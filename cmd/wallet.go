@@ -756,7 +756,7 @@ func applySessionTranscriptMode(w *wallet.Wallet, mode string) error {
 // Some URLs come from a remote wallet. Restrict their schemes because the system
 // opener can also launch files and applications.
 func openBrowser(rawURL string) bool {
-	if !isWebURL(rawURL) {
+	if !format.IsWebURL(rawURL) {
 		fmt.Fprintf(os.Stderr, "refusing to open %q: only http and https URLs\n", rawURL)
 		return false
 	}
@@ -783,17 +783,6 @@ func hasDesktopSession() bool {
 	default:
 		return true
 	}
-}
-
-// url.Parse accepts javascript: and data: as absolute URLs. Browser navigation must
-// allow only HTTP and HTTPS.
-func isWebURL(rawURL string) bool {
-	u, err := url.Parse(rawURL)
-	if err != nil || !u.IsAbs() {
-		return false
-	}
-	scheme := strings.ToLower(u.Scheme)
-	return scheme == "http" || scheme == "https"
 }
 
 func loadWalletECKey(path, label string) (*ecdsa.PrivateKey, error) {

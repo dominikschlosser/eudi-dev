@@ -20,29 +20,6 @@ import (
 	"testing"
 )
 
-// A URL handed to the browser can come from a remote wallet. The system
-// opener launches more than web pages, so only http and https are allowed.
-func TestIsWebURL(t *testing.T) {
-	for _, tc := range []struct {
-		url  string
-		want bool
-	}{
-		{"https://issuer.example/authorize?x=1", true},
-		{"http://localhost:8085/callback", true},
-		{"HTTPS://issuer.example/", true},
-		{"javascript:alert(1)", false},
-		{"data:text/html,<script>alert(1)</script>", false},
-		{"file:///etc/passwd", false},
-		{"vnc://192.168.1.1", false},
-		{"/relative/path", false},
-		{"", false},
-	} {
-		if got := isWebURL(tc.url); got != tc.want {
-			t.Errorf("isWebURL(%q) = %v, want %v", tc.url, got, tc.want)
-		}
-	}
-}
-
 func TestHasDesktopSession(t *testing.T) {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skipf("no session heuristic on %s", runtime.GOOS)

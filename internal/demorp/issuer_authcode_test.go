@@ -820,3 +820,54 @@ func TestAuthorizationServerMetadataFollowsTheClientAuthMode(t *testing.T) {
 		t.Errorf("methods = %v, want the attestation still offered in optional mode", methods)
 	}
 }
+
+// RFC 9449 §10: the DPoP key of the pushed request binds the code, so the
+// token request has to prove the same key.
+func TestTheCodeIsBoundToTheDPoPKeyOfThePushedRequest(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.IssuerHandler()
+	provider := foreignWalletProvider(t)
+	clientKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientID := "http://wallet.example"
+	verifier := "aVeryLongCodeVerifierThatIsAtLeastFortyThreeCharacters"
+	sum := sha256.Sum256([]byte(verifier))
+	pushed := pushAuthorizationRequest(t, h, clientID, holderKey, format.EncodeBase64URL(sum[:]), map[string]string{
+		"OAuth-Client-Attestation":     provider.attest(t, clientID, clientKey),
+		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+	})
+	var pushedDoc map[string]any
+	if err := json.Unmarshal(pushed.Body.Bytes(), &pushedDoc); err != nil {
+		t.Fatal(err)
+	}
+	login := postForm(t, h, "/authorize", url.Values{
+		"request_uri": {pushedDoc["request_uri"].(string)},
+		"username":    {demoAccountUsername},
+		"password":    {demoAccountPassword},
+	})
+	redirect, err := url.Parse(login.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenForm := url.Values{
+		"grant_type":    {authCodeGrant},
+		"code":          {redirect.Query().Get("code")},
+		"redirect_uri":  {"http://wallet.example/cb"},
+		"code_verifier": {verifier},
+	}
+	code, doc := doJSON(t, h, "POST", "/token", tokenForm.Encode(), map[string]string{
+		"Content-Type":                 "application/x-www-form-urlencoded",
+		"DPoP":                         dpopProof(t, otherKey, "POST", demoIssuerID+"/token"),
+		"OAuth-Client-Attestation":     provider.attest(t, clientID, clientKey),
+		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+	})
+	if code != http.StatusBadRequest || doc["error"] != "invalid_dpop_proof" {
+		t.Errorf("token with another DPoP key: %d %v, want invalid_dpop_proof", code, doc)
+	}
+}

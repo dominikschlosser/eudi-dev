@@ -137,24 +137,10 @@ func parseBrowserAuthorizationRequest(protocol string, data any, opts oid4vc.Par
 		return nil, err
 	}
 
-	return &AuthorizationRequestParams{
-		ClientID:         parsed.ClientID,
-		ResponseType:     parsed.ResponseType,
-		ResponseMode:     parsed.ResponseMode,
-		Nonce:            parsed.Nonce,
-		State:            parsed.State,
-		RequestOrigin:    requestOrigin,
-		RedirectURI:      parsed.RedirectURI,
-		ResponseURI:      parsed.ResponseURI,
-		Scope:            parsed.Scope,
-		RequestURIMethod: parsed.RequestURIMethod,
-		RequestURI:       parsed.RequestURI,
-		ClientMetadata:   parsed.ClientMetadata,
-		DCQLQuery:        parsed.DCQLQuery,
-		RequestObject:    parsed.RequestObject,
-		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
-		UnsignedDCAPI:    unsignedDCAPI,
-	}, nil
+	params := authorizationParams(parsed)
+	params.RequestOrigin = requestOrigin
+	params.UnsignedDCAPI = unsignedDCAPI
+	return params, nil
 }
 
 func parseMultiSignedBrowserAuthorizationRequest(requestObject map[string]any, opts oid4vc.ParseOptions, requestOrigin string) (*AuthorizationRequestParams, error) {
@@ -187,23 +173,9 @@ func parseMultiSignedBrowserAuthorizationRequest(requestObject map[string]any, o
 			clientID = jsonutil.GetString(parsed.RequestObject.Header, "client_id")
 		}
 
-		candidate := &AuthorizationRequestParams{
-			ClientID:         clientID,
-			ResponseType:     parsed.ResponseType,
-			ResponseMode:     parsed.ResponseMode,
-			Nonce:            parsed.Nonce,
-			State:            parsed.State,
-			RequestOrigin:    requestOrigin,
-			RedirectURI:      parsed.RedirectURI,
-			ResponseURI:      parsed.ResponseURI,
-			Scope:            parsed.Scope,
-			RequestURIMethod: parsed.RequestURIMethod,
-			RequestURI:       parsed.RequestURI,
-			ClientMetadata:   parsed.ClientMetadata,
-			DCQLQuery:        parsed.DCQLQuery,
-			RequestObject:    parsed.RequestObject,
-			RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
-		}
+		candidate := authorizationParams(parsed)
+		candidate.ClientID = clientID
+		candidate.RequestOrigin = requestOrigin
 		if firstCandidate == nil {
 			firstCandidate = candidate
 		}

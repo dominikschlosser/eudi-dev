@@ -222,6 +222,8 @@
 
   async function loadCredentials() {
     const loadId = ++credentialLoadId;
+    // A renewal replaces a credential under the same id.
+    candidateDetails.clear();
     credLoading.hidden = credentialsLoaded;
     credError.hidden = true;
     try {
@@ -254,7 +256,7 @@
   document.getElementById('cred-retry').addEventListener('click', loadCredentials);
 
   // Consent summaries contain only requested claims. Cache full credentials for Edit,
-  // including failed reads to avoid repeated requests.
+  // including failed reads to avoid repeated requests, until the list reloads.
   const candidateDetails = new Map();
 
   async function loadCandidateDetails(ids) {
@@ -371,7 +373,7 @@
       statusBadge = '<span class="status-badge status-none ico-circle" id="' + idPrefix + 'status-' + cred.id + '" title="This credential carries no status list, so revocation cannot be checked.">No status</span>';
     }
 
-    const expiry = expiryInfo(cred.expires_at);
+    const expiry = validityInfo(cred.valid_from, cred.expires_at);
     let expiryBadge = '';
     if (expiry) {
       dataset.expiry = expiry.state;
@@ -610,7 +612,11 @@
       body + '</svg>';
   }
 
-  function expiryInfo(value) {
+  function validityInfo(validFrom, value) {
+    const from = new Date(validFrom || NaN);
+    if (!isNaN(from.getTime()) && from.getTime() > Date.now()) {
+      return { state: 'not-yet-valid', label: 'Not yet valid', title: 'Valid from ' + from.toLocaleString() };
+    }
     if (!value) return null;
     const when = new Date(value);
     if (isNaN(when.getTime())) return null;
@@ -1979,7 +1985,7 @@
     es.addEventListener('authorize', (event) => {
       try {
         const { url } = JSON.parse(event.data);
-        if (navigable(url)) window.location.href = url;
+        if (isWebURL(url)) window.location.href = url;
       } catch (e) {
         console.error('SSE authorize parse error:', e);
       }
@@ -2065,9 +2071,10 @@
     });
   }
 
-  // Restrict redirects to web URLs. javascript: and data: URLs could execute content in
-  // the wallet origin.
-  function navigable(url) {
+  // Links and redirects built from data accept only web URLs. javascript: and data:
+  // URLs could execute content in the wallet origin.
+  function isWebURL(url) {
+    if (!url) return false;
     try {
       const scheme = new URL(url, window.location.href).protocol;
       return scheme === 'http:' || scheme === 'https:';
@@ -2080,7 +2087,7 @@
   // an Authorization Response and after an Authorization Error Response.
   function followVerifierRedirect(result) {
     if (!result.redirect_uri) return false;
-    if (!navigable(result.redirect_uri)) {
+    if (!isWebURL(result.redirect_uri)) {
       console.error('refusing to navigate to', result.redirect_uri);
       return false;
     }
@@ -2450,7 +2457,7 @@
       // ARF RPA_10: show the privacy policy with the intended use.
       const policies = isIssuance ? [] : (req.privacy_policies || []);
       const policyLinks = '<span class="consent-privacy-policies" id="consent-privacy-policies">' +
-        policies.map((url, idx) => '<a id="consent-privacy-policy-' + idx + '" href="' + escHtml(url) + '" title="' + escHtml(url) +
+        policies.filter(isWebURL).map((url, idx) => '<a id="consent-privacy-policy-' + idx + '" href="' + escHtml(url) + '" title="' + escHtml(url) +
           '" target="_blank" rel="noopener noreferrer">' + (policies.length > 1 ? 'Privacy policy ' + (idx + 1) : 'Privacy policy') + ' ↗</a>').join('') +
         '</span>';
       const purposes = isIssuance ? [] : (req.purposes || []);
@@ -3303,7 +3310,7 @@
       groups.get(category).forEach(entry => {
         const url = entry.advertised_url || entry.url ||
           (entry.path ? window.location.origin + entry.path : '');
-        if (!url) return;
+        if (!isWebURL(url)) return;
         const prefix = 'trust-list-' + domID(entry.id || 'list');
         const links = document.createElement('span');
         links.className = 'trust-links';
@@ -4363,26 +4370,21 @@
       }],
     };
     submit.disabled = true;
-    let registered = null;
     try {
       let key = '';
       let csr = registrarValue('registrar-csr');
       if (!csr) ({ key, csr } = await window.eudiCreateKeyAndCSR());
-      registered = await registrarRequest('POST', 'api/registrar/wrp', relyingParty);
+      const { relyingParty: registered, access, registration } = await registrarRequest('POST', 'api/registrar/enrolments', {
+        relyingParty: relyingParty,
+        access: {
+          serviceIdentifier: serviceIdentifier,
+          csr: csr,
+          dnsNames: registrarValue('registrar-dns').split(',').map(n => n.trim()).filter(Boolean),
+          validity: registrarValue('registrar-access-validity'),
+        },
+        registration: { serviceIdentifier: serviceIdentifier, validity: registrarValue('registrar-registration-validity') },
+      });
       const assigned = registered.identifier[0].identifier;
-      const access = await registrarRequest('POST', 'api/registrar/access-certificates', {
-        identifier: assigned,
-        serviceIdentifier: serviceIdentifier,
-        csr: csr,
-        dnsNames: registrarValue('registrar-dns').split(',').map(n => n.trim()).filter(Boolean),
-        validity: registrarValue('registrar-access-validity'),
-      });
-      const registration = await registrarRequest('POST', 'api/registrar/registration-certificates', {
-        identifier: assigned,
-        serviceIdentifier: serviceIdentifier,
-        intendedUseIdentifier: registered.services[0].intendedUses[0].intendedUseIdentifier,
-        validity: registrarValue('registrar-registration-validity'),
-      });
       document.getElementById('registrar-result-identifier').textContent = assigned;
       document.getElementById('registrar-client-ids').innerHTML = (access.clientIds || []).map((id, i) =>
         '<li><code id="registrar-client-id-' + i + '">' + escHtml(id) + '</code></li>').join('');
@@ -4394,9 +4396,6 @@
       showRegistrationResult();
     } catch (e) {
       showRegistrarError(e.message);
-      if (registered) {
-        registrarRequest('DELETE', 'api/registrar/wrp/' + encodeURIComponent(registered.identifier[0].identifier)).catch(() => {});
-      }
     } finally {
       submit.disabled = submit.classList.contains('registrar-registered');
       // The disabled button dropped the focus while the request ran.
@@ -4439,24 +4438,16 @@
       }],
     };
     submit.disabled = true;
-    let registered = null;
     try {
       let key = '';
       let csr = registrarValue('registrar-csr');
       if (!csr) ({ key, csr } = await window.eudiCreateKeyAndCSR());
-      registered = await registrarRequest('POST', 'api/registrar/wrp', issuer);
+      const { relyingParty: registered, access, registration } = await registrarRequest('POST', 'api/registrar/enrolments', {
+        relyingParty: issuer,
+        access: { serviceIdentifier: serviceIdentifier, csr: csr, validity: registrarValue('registrar-access-validity') },
+        registration: { provider: true, serviceIdentifier: serviceIdentifier, validity: registrarValue('registrar-registration-validity') },
+      });
       const assigned = registered.identifier[0].identifier;
-      const access = await registrarRequest('POST', 'api/registrar/access-certificates', {
-        identifier: assigned,
-        serviceIdentifier: serviceIdentifier,
-        csr: csr,
-        validity: registrarValue('registrar-access-validity'),
-      });
-      const registration = await registrarRequest('POST', 'api/registrar/registration-certificates', {
-        identifier: assigned,
-        serviceIdentifier: serviceIdentifier,
-        validity: registrarValue('registrar-registration-validity'),
-      });
       document.getElementById('registrar-result-identifier').textContent = assigned;
       document.getElementById('registrar-pem-label').textContent = key ? 'Signing key and access certificate chain' : 'Access certificate chain';
       document.getElementById('registrar-pem').value = key + access.chain;
@@ -4464,9 +4455,6 @@
       showRegistrationResult();
     } catch (e) {
       showRegistrarError(e.message);
-      if (registered) {
-        registrarRequest('DELETE', 'api/registrar/wrp/' + encodeURIComponent(registered.identifier[0].identifier)).catch(() => {});
-      }
     } finally {
       submit.disabled = submit.classList.contains('registrar-registered');
       if (!submit.disabled && document.activeElement === document.body) submit.focus();
@@ -4494,8 +4482,7 @@
   }
 
   // Each registration certificate covers one intended use, so a new certificate
-  // needs a new intended use. If the certificate fails, the registration is
-  // restored.
+  // needs a new intended use.
   async function addIntendedUse(submit) {
     const use = intendedUseFromForm();
     if (use.purpose.length === 0) {
@@ -4506,23 +4493,15 @@
       showRegistrarError('Add at least one credential.', firstCredentialTypeField());
       return;
     }
-    const before = registrarTarget;
-    const identifier = before.identifier[0].identifier;
-    const known = new Set((before.services || []).flatMap(s => (s.intendedUses || []).map(u => u.intendedUseIdentifier)));
-    const updated = JSON.parse(JSON.stringify(before));
+    const identifier = registrarTarget.identifier[0].identifier;
+    const updated = JSON.parse(JSON.stringify(registrarTarget));
     updated.services = updated.services && updated.services.length > 0 ? updated.services : [{}];
     updated.services[0].intendedUses = (updated.services[0].intendedUses || []).concat([use]);
     submit.disabled = true;
-    let saved = null;
     try {
-      saved = (await registrarRequest('PUT', 'api/registrar/wrp', updated)).data;
-      const service = saved.services[0];
-      const added = (service.intendedUses || []).find(u => !known.has(u.intendedUseIdentifier));
-      const registration = await registrarRequest('POST', 'api/registrar/registration-certificates', {
-        identifier: identifier,
-        serviceIdentifier: service.serviceIdentifier || '',
-        intendedUseIdentifier: added.intendedUseIdentifier,
-        validity: registrarValue('registrar-registration-validity'),
+      const { relyingParty: saved, registration } = await registrarRequest('PUT', 'api/registrar/enrolments', {
+        relyingParty: updated,
+        registration: { validity: registrarValue('registrar-registration-validity') },
       });
       registrarTarget = saved;
       document.getElementById('registrar-result-identifier').textContent = identifier;
@@ -4530,7 +4509,6 @@
       showRegistrationResult();
     } catch (e) {
       showRegistrarError(e.message);
-      if (saved) registrarRequest('PUT', 'api/registrar/wrp', before).catch(() => {});
     } finally {
       submit.disabled = submit.classList.contains('registrar-registered');
       // The disabled button dropped the focus while the request ran.
@@ -4540,7 +4518,7 @@
 
   // A party that verifies can also issue. Its service gets the attestation
   // types, and the registrar issues the issuer registration certificate for
-  // the service. If the certificate fails, the registration is restored.
+  // the service.
   async function addIssuerService(submit) {
     const attestations = registrarAttestationList();
     if (attestations.length === 0) {
@@ -4552,9 +4530,8 @@
       showRegistrarError('Add at least one attestation.', field);
       return;
     }
-    const before = registrarTarget;
-    const identifier = before.identifier[0].identifier;
-    const updated = JSON.parse(JSON.stringify(before));
+    const identifier = registrarTarget.identifier[0].identifier;
+    const updated = JSON.parse(JSON.stringify(registrarTarget));
     updated.services = updated.services && updated.services.length > 0 ? updated.services : [{}];
     const entitlement = document.getElementById('registrar-entitlement').value;
     const index = registrarEditService
@@ -4567,13 +4544,10 @@
     if (registrarEditService) service.entitlements = withoutProviderEntitlements(service.entitlements);
     if (entitlement) service.entitlements = (service.entitlements || []).concat([entitlement]);
     submit.disabled = true;
-    let saved = null;
     try {
-      saved = (await registrarRequest('PUT', 'api/registrar/wrp', updated)).data;
-      const registration = await registrarRequest('POST', 'api/registrar/registration-certificates', {
-        identifier: identifier,
-        serviceIdentifier: saved.services[index].serviceIdentifier || '',
-        validity: registrarValue('registrar-registration-validity'),
+      const { relyingParty: saved, registration } = await registrarRequest('PUT', 'api/registrar/enrolments', {
+        relyingParty: updated,
+        registration: { provider: true, serviceIdentifier: service.serviceIdentifier || '', validity: registrarValue('registrar-registration-validity') },
       });
       registrarTarget = saved;
       document.getElementById('registrar-result-identifier').textContent = identifier;
@@ -4581,7 +4555,6 @@
       showRegistrationResult();
     } catch (e) {
       showRegistrarError(e.message);
-      if (saved) registrarRequest('PUT', 'api/registrar/wrp', before).catch(() => {});
     } finally {
       submit.disabled = submit.classList.contains('registrar-registered');
       if (!submit.disabled && document.activeElement === document.body) submit.focus();
@@ -4632,8 +4605,7 @@
   const catalogOverlay = document.getElementById('registrar-catalog-overlay');
   const catalogList = document.getElementById('registrar-catalog-list');
   const catalogSearch = document.getElementById('registrar-catalog-search');
-  // Only web URLs become links, so an entry can't smuggle in a script URL.
-  const catalogLink = (href, text, id) => /^https?:\/\//i.test(href || '')
+  const catalogLink = (href, text, id) => isWebURL(href)
     ? '<a href="' + escHtml(href) + '" target="_blank" rel="noopener" id="' + id + '">' + escHtml(text) + ' \u2197</a>'
     : '<span id="' + id + '">' + escHtml(text) + '</span>';
 
