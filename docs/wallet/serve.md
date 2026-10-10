@@ -145,6 +145,8 @@ Wallet and key attestations use a separate wallet provider key. Their `x5c` cont
 
 #### Your providers and lists
 
+To check the relying parties of another registrar, see [Use an external registrar](registrar.md#use-an-external-registrar).
+
 `eudi wallet trust` adds your own providers to the wallet's lists and external lists to the wallet's list of trusted lists:
 
 ```bash

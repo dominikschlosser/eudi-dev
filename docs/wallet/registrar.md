@@ -135,7 +135,7 @@ With `--arf` the wallet checks the access and registration certificates of every
 - **Access certificates** must chain to a CA on an `access-ca` list. The wallet's own list names the relying party access CA.
 - **Registration certificates** must chain to a CA on a `registrar` list. The wallet's own list names the registrar CA. The relying party access CA is not on the registrar list, because that CA signs every visitor's CSR. Otherwise anyone with an access certificate could sign their own registration certificate.
 
-Certificates from this registrar pass both checks. For the CAs of another registrar, use `wallet trust add-ca --list access-ca` and `--list registrar`, `--relying-party-ca` (both lists) or an external list. A registered credential without a claim list declares no attributes (ETSI TS 119 475 V1.2.1 Annex B.2.9), so requesting any claim counts as over-asking. TS05 registrars always list the claims.
+Certificates from this registrar pass both checks. For the certificates of another registrar, see [Use an external registrar](#use-an-external-registrar). A registered credential without a claim list declares no attributes (ETSI TS 119 475 V1.2.1 Annex B.2.9), so requesting any claim counts as over-asking. TS05 registrars always list the claims.
 
 The status list of the registration certificates must chain to a revocation service on a `registrar` list (ARF RPACANot_03b). If the wallet can't read the status, that is a finding. The wallet reads its own registrar's status list directly. It fetches other registrars' lists with its proxy and TLS settings.
 
@@ -143,7 +143,33 @@ The wallet does not check these:
 
 - **The service identifier.** ARF RPRC_17a also compares the service identifier, but ETSI TS 119 475 V1.2.1 has no claim for it. The access certificate has it as organizational unit.
 - **Access certificate revocation.** The registrar does not revoke access certificates. A deleted relying party keeps a valid access certificate until it expires.
-- **The register.** The wallet does not look up `registry_uri`. A verifier sends exactly one registration certificate with its request (ARF RPRC_19), and an issuer publishes its certificate in its metadata (RPRC_22). So no lookup is needed. A request with no registration certificate or with several gets an RPRC_19 finding.
+- **The register.** The wallet does not look up `registry_uri`. A verifier sends exactly one registration certificate with its request (ARF RPRC_19), and an issuer publishes its certificate in its metadata (RPRC_22). The ARF notes that this way no external requests are necessary to validate the relying party. A request with no registration certificate or with several gets an RPRC_19 finding.
+
+## Use an external registrar
+
+The wallet can check verifiers and issuers that another registrar registered. It needs that registrar's CAs, and it gets them the way a real wallet does. The TS05 registry API has no endpoint for them. A Member State notifies its access certificate authorities and its registrars to the Commission, which publishes them on lists of trusted entities (ETSI TS 119 602). The access certificate authorities are on a list of type `EUWRPACProvidersList` (Annex F), and the registrars on a list of type `EUWRPRCProvidersList` (Annex G). Each list also names the revocation service that signs the status lists (ARF RPACANot_03b, RPACANot_04, RPACANot_05 and RPACANot_05a). A certificate names its own status list, so status lists need no setup.
+
+Give the wallet those lists when you start it:
+
+```bash
+eudi wallet serve --arf --trust-list-ca lists-ca.pem --trusted-list https://lists.example/lotl
+```
+
+- `--trust-list-ca` is the CA of the list operator, which signs the lists. The wallet uses a list only if its signer chains to this CA or to the wallet CA (ARF PPNot_05, TLPub_05 and TLPub_07).
+- `--trusted-list` adds a list or a list of trusted lists. The wallet follows the pointers of a list of trusted lists and takes the anchors from each list according to its type.
+
+A running wallet adds lists with `eudi wallet trust add-list <url>` or `POST /api/trust/lists`. `--trust-list-ca` can only be set on `wallet serve`. `eudi wallet trust` and **Trust & certificates** in the UI show each list and whether the wallet could read it. The built-in registrar keeps working next to the external one.
+
+Another eudi-dev wallet can be the external registrar. Its list operator is its wallet CA, and its list of trusted lists points to its `access-ca` and `registrar` lists:
+
+```bash
+curl -s https://registrar.example/api/certificates/ca > registrar-wallet-ca.pem
+eudi wallet serve --arf --trust-list-ca registrar-wallet-ca.pem --trusted-list https://registrar.example/api/trustlists/lists
+```
+
+A verifier registered there now passes the ARF checks of this wallet. Without the lists the same request gets ARF RPA_04, RPRC_02a and RPRC_17 findings, because neither certificate nor the status list chains to a trusted CA.
+
+If you only have the CAs as files, put them on the lists directly with `eudi wallet trust add-ca --list access-ca` and `--list registrar`, or start the wallet with `--relying-party-ca` (both lists).
 
 ## The demo issuer and verifier
 
