@@ -22,7 +22,7 @@ examples/      Keycloak and web-wallet integration examples
 | `credtemplate` | Credential templates, predefined and user-supplied |
 | `credtype` | The EUDI credential type identifiers and which type extends which |
 | `dcql` | DCQL query parsing, evaluation, generation |
-| `demorp` | The demo issuer and verifier the wallet hosts |
+| `demorp` | Demo issuer and verifier hosted by the wallet |
 | `format` | Format detection, base64url, and the outbound fetch policy (ADR-0004) |
 | `httpsec` | Browser security headers and the cross-origin guard (ADR-0002) |
 | `imprint` | Operator-supplied legal notice page |

@@ -6,4 +6,4 @@ Key files use mode `0600` and directories use `0700`. Saving `wallet.json` write
 
 ## Consequences
 
-Anyone who can read the CA key can issue credentials accepted by verifiers that trust this CA. Use it only for testing. Encryption would change the store format and the `--wallet-dir` contract that CI setups and the Docker image depend on.
+Anyone who can read the CA key can issue credentials accepted by verifiers that trust this CA. Use it only for testing. Encryption would change the store format and the `--wallet-dir` contract. CI setups and the Docker image depend on that contract.

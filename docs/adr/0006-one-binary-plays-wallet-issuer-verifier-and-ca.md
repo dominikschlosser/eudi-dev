@@ -6,6 +6,6 @@ The verifier follows HAIP 1.0. It serves signed request objects by reference and
 
 ## Consequences
 
-The demo issuer and the demo verifier are registered with the wallet's registrar like any relying party. Their access certificates come from the relying party access CA. The demo verifier trusts the credential providers on the wallet's trusted lists, and the demo issuer the wallet providers ([ADR 0023](0023-trust-anchors-come-from-trusted-lists.md)). So a successful exchange between them and the wallet uses the same trust as any other party. Use an external issuer or verifier to test interoperability.
+The demo issuer and the demo verifier are registered with the wallet's registrar like any relying party. Their access certificates come from the relying party access CA. The demo verifier trusts the credential providers on the wallet's trusted lists, and the demo issuer trusts the wallet providers ([ADR 0023](0023-trust-anchors-come-from-trusted-lists.md)). So an exchange between the wallet and a demo service goes through the same trust checks as an exchange with any other party. Use an external issuer or verifier to test interoperability.
 
 The demo issuer and verifier keep their state in memory. Offers and verification requests expire after ten minutes, and each verification request accepts one response. Restarting clears that state. Wallet state uses the selected storage backend and survives restarts with files or Postgres.

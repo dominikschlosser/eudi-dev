@@ -17,16 +17,16 @@ The wrapper starts one wallet server and drives these plans through the official
 
 The HAIP issuer plan runs only VCI modules. The demo issuer supports PAR, PKCE S256, DPoP and attestation-based client authentication. The plan also appends FAPI2 server modules. These need a full OAuth authorization server, so the wrapper leaves them out.
 
-The wrapper excludes modules for features the demo services lack, because the official runner counts skips as failures.
+The wrapper excludes modules for features missing from the demo services, because the official runner counts skips as failures.
 
 Excluded issuer checks cover required key attestations and credential encryption. Batch checks run only in scenarios that supply a batch offer. Signed verifier scenarios exclude `request-uri-method-post` because the demo verifier serves requests through GET.
 
-The harness performs the steps the plans expect from a human tester:
+The harness performs the manual tester steps of the plans:
 
 - it pushes a fresh demo credential offer to the suite's exposed `credential_offer` endpoint whenever an issuer-initiated module waits for one (by value, since a `credential_offer_uri` must be https)
 - it signs in at the demo issuer's authorization page as the demo account (alice) and follows the redirect to the suite's callback
-- it creates a demo verifier request per verifier module and sends its query string to the suite's authorization endpoint (the step a wallet performs when it opens an `openid4vp://` link)
-- it uploads the screenshot placeholders the verifier plans require at the end
+- it creates a demo verifier request per verifier module and sends its query string to the suite's authorization endpoint (like a wallet opening an `openid4vp://` link)
+- it uploads the screenshot placeholders required by the verifier plans at the end
 
 Verifier modules end in `REVIEW` because the suite cannot observe the verifier's decision. The harness also checks the demo verifier's recorded result. Tampered presentations must be `failed` and valid presentations must be `verified`. A mismatch exits with code 3.
 
@@ -66,7 +66,7 @@ The [wallet runbook's suite and server overrides](conformance-run.md#environment
 
 This wrapper also accepts:
 
-- `OIDF_DEMO_BASE_URL`: the https origin the demo issuer and verifier advertise. Defaults to `https://localhost:<port+1>`
+- `OIDF_DEMO_BASE_URL`: the https origin advertised by the demo issuer and verifier. Defaults to `https://localhost:<port+1>`
 - `ONLY_SCENARIOS`: comma separated scenario slug substrings to run a subset
 
 `CONFORMANCE_MODE=hosted` needs a publicly reachable `OIDF_DEMO_BASE_URL` (a tunnel with its own TLS terminator), because the hosted suite fetches the demo endpoints itself. Local mode is the supported setup.

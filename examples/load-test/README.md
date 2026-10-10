@@ -38,7 +38,7 @@ curl -s -X POST localhost:8080/api/credentials --data-binary @credential.txt
 curl -s -X POST localhost:8080/api/issue -H 'Content-Type: application/json' -d '{"format":"sdjwt","template":"pid-sdjwt"}'
 ```
 
-The CLI drives it as a remote wallet:
+The CLI uses the ingress as a remote wallet:
 
 ```bash
 eudi wallet use http://localhost:8080

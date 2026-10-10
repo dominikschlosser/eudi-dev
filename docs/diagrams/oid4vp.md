@@ -1,6 +1,6 @@
 # OID4VP Flows
 
-This page shows the OID4VP presentation flows `eudi-dev` implements as a wallet.
+This page shows the OID4VP presentation flows implemented by the `eudi-dev` wallet.
 
 ## Flow Map
 
@@ -42,7 +42,7 @@ sequenceDiagram
 | `state` | Reflected in the authorization response when present. |
 | `response_uri` | Required for `direct_post` and `direct_post.jwt`. |
 | `redirect_uri` | Used for `fragment`. When absent, the wallet uses `response_uri`. |
-| `dcql_query` | The query the wallet matches stored credentials against. |
+| `dcql_query` | The query matched against the stored credentials. |
 | `request` or `request_uri` | A request object sent directly or by reference. |
 | `client_metadata` | Controls format negotiation. Mandatory for encrypted response modes, because `client_metadata.jwks` carries the verifier encryption key. |
 
@@ -84,7 +84,7 @@ sequenceDiagram
 | `response_mode=direct_post` | Wallet posts a form with plain `vp_token`, optional `id_token`, and `state`. |
 | `response_mode=direct_post.jwt` | Wallet requires a verifier encryption key in `client_metadata.jwks` and posts an encrypted response JWT. |
 | `response_mode=fragment` | Wallet builds a redirect URL using `redirect_uri`. |
-| `--auto-accept` | Skips the consent UI and submits one credential per credential query (the most recently issued one that matches it), or all matching ones when the query sets `multiple: true`. |
+| `--auto-accept` | Skips the consent UI and submits one credential per credential query (the most recently issued match), or all matching ones when the query sets `multiple: true`. |
 | `--preferred-format ...` | `dc+sd-jwt`, `mso_mdoc`, or `jwt_vc_json`. Prefers that format when more than one stored credential satisfies the same query. |
 | `--session-transcript ...` | `oid4vp` or `iso`. Selects how the mdoc session transcript is built. |
 
@@ -144,10 +144,10 @@ sequenceDiagram
 |-----------------|----------|
 | Browser API protocol `openid4vp-v1-unsigned` | Unsigned Browser API request branch. |
 | Browser API protocol `openid4vp-v1-signed` | Signed Browser API request branch. Request data can be a compact JWT or an object containing `request` or `request_uri`. |
-| Browser API protocol `openid4vp-v1-multisigned` | Multi-signed Browser API request branch. The wallet takes the first signature it can verify, or the first that parses. |
+| Browser API protocol `openid4vp-v1-multisigned` | Multi-signed Browser API request branch. The wallet takes the first verifiable signature, or else the first one that parses. |
 | `response_mode=dc_api` | Wallet returns plain JSON through the Browser API response envelope. |
 | `response_mode=dc_api.jwt` | Wallet encrypts the response and returns a `response` JWT in the Browser API envelope. |
-| Unsigned Browser API request | Carries no `client_id` (OpenID4VP Appendix A.2). The verifier is identified by the origin the platform reports. Any `client_id` or `expected_origins` in the request data is discarded. |
+| Unsigned Browser API request | Carries no `client_id` (OpenID4VP Appendix A.2). The verifier is identified by the origin reported by the platform. Any `client_id` or `expected_origins` in the request data is discarded. |
 
 ## Client Identifier Prefixes and Policy Switches
 

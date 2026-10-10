@@ -76,7 +76,7 @@ curl -X DELETE http://localhost:8085/api/credentials
 | `category`        | string  | Credential category: `pid`, `qeaa`, `pub-eaa`, `eaa` or `unlisted`. Empty (default) takes the category of the template or the catalogue entry, else `eaa` |
 | `trust`           | object  | Trust/registration metadata to persist with the credential type (same fields as the `issue` trust flags, e.g. `entitlements`, `trust_list_type`, `entity_name`) |
 | `display`         | object  | Card appearance: `name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image` (the `--display-*` flags). A public demo drops operator-supplied images |
-| `display_template`| string  | Template whose logo and background image the credential uses (for a form that flattened the template's claims into `claims`) |
+| `display_template`| string  | Template that supplies the logo and background image of the credential (for a form with the template's claims flattened into `claims`) |
 | `batch`           | int     | Issue this many copies with distinct holder keys. The wallet rotates between them (like `--batch`) |
 | `unbound`         | bool    | Issue a bearer credential without a holder key (like `--unbound`). By default the credential is bound to the wallet. Only a query with `require_cryptographic_holder_binding: false` matches an unbound credential. In strict mode an unbound mdoc matches no query |
 | `signing_key`     | string  | PEM or JWK private key that signs the credential instead of the wallet issuer key. Requires `signing_cert` (like `--key` with `--cert`). Refused in public demo mode |
@@ -119,7 +119,7 @@ The template endpoints use the same storage backend as the `templates` CLI comma
 |----------|-------------|
 | `GET /api/templates` | List all templates (predefined and user), including claims |
 | `GET /api/templates/{name}` | Get one template |
-| `PUT /api/templates/{name}` | Create or replace a user template. The body is a full template document, so this doubles as the import endpoint for shared templates. A `catalog` object also adds the template to the attestation catalogue (see [templates](../templates.md#attestation-catalogue)) |
+| `PUT /api/templates/{name}` | Create or replace a user template. The body is a full template document. This endpoint also imports shared templates. A `catalog` object also adds the template to the attestation catalogue (see [templates](../templates.md#attestation-catalogue)) |
 | `DELETE /api/templates/{name}` | Delete a user template. Deleting an override of a predefined template restores the predefined version |
 
 ```bash
@@ -176,7 +176,7 @@ These endpoints are available on both wallet ports.
 | `GET` | `/api/trustlists/{id}/history` | Sequence numbers and URLs of the saved instances of the list `{id}` |
 | `GET` | `/api/trustlists/{id}/history/{sequence}` | One saved instance of the list `{id}` |
 | `GET` | `/api/trustlists/lists` | The [list of trusted lists](serve.md#list-of-trusted-lists) |
-| `GET` | `/api/trust` | The providers and external lists you added to the trusted lists |
+| `GET` | `/api/trust` | Providers and external lists added to the trusted lists |
 | `POST` | `/api/trust/entities` | Put a provider on one of the lists: `list`, `name` and `certificates` (PEM) |
 | `DELETE` | `/api/trust/entities/{id}` | Take a provider off its list |
 | `POST` | `/api/trust/lists` | Put an external list on the list of trusted lists: `url` |
@@ -184,9 +184,11 @@ These endpoints are available on both wallet ports.
 
 Issuer metadata is JSON by default. An `Accept` header that ranks `application/jwt` above `application/json` selects metadata signed with the access certificate key. Its `issuer_info` holds the registrar dataset and the registration certificate of the [demo issuer](registrar.md#the-demo-issuer-and-verifier). If you revoke that certificate in the registrar, the next metadata carries a new one.
 
-Trusted lists contain service certificates and provider CAs. A separate list operator key signs them. History preserves each published JWT. Changed content or an expired instance advances the sequence number. See [trusted lists](serve.md#trusted-lists) for the list IDs, the providers and lists you add, and discovery.
+Trusted lists contain service certificates and provider CAs. A separate list operator key signs them. History preserves each published JWT. Changed content or an expired instance advances the sequence number. See [trusted lists](serve.md#trusted-lists) for the list IDs, added providers and lists, and discovery.
 
 ### Registrar
+
+*(new in 3.0.0)*
 
 These endpoints are available on both wallet ports. Anyone with access to the wallet can register, change and delete relying parties, as with credentials. All `GET` endpoints under `/api/registrar/wrp` and `PUT /api/registrar/wrp` answer with a JWT signed by the registrar (`application/jwt`). Its payload has `iss`, `iat` and `data`. Send `Accept: application/json` without `application/jwt` to get the payload unsigned. See [registrar](registrar.md#registrar-api). The [registrar API walkthrough](registrar-api.md) registers a verifier and an issuer with curl and uses their certificates.
 

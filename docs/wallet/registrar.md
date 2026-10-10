@@ -1,11 +1,13 @@
 # Registrar
 
+*(new in 3.0.0)*
+
 The wallet includes a relying party registrar. Each member state runs a registrar like this one (ARF Topic 27). You register a verifier or an issuer with it and get two certificates:
 
 - An **access certificate** (ETSI TS 119 411-8 V1.1.1). You send a certificate signing request and keep the private key. A verifier signs its request objects with that key and puts the certificate in `x5c`. An issuer signs its Credential Issuer Metadata with it (ARF ISSU_22 and ISSU_32).
 - A **registration certificate** (ETSI TS 119 475 V1.2.1, typ `rc-wrp+jwt`). A verifier gets one for each intended use. It lists which credentials and claims the verifier may request, and the purpose shown in the consent dialog. The verifier sends it in `verifier_info` (OpenID4VP 1.0 §5.1). An issuer gets one for its service (ARF RPRC_13). It lists which attestation types the issuer may issue, and the issuer publishes it in `issuer_info` (ETSI TS 119 472-3 V1.1.1 §4.2.3).
 
-Both certificates contain the same identifier (ARF Reg_32 and RPRC_07). The registrar API follows the TS05 v1.5 data model and registry API. The [demo issuer and the demo verifier](#the-demo-issuer-and-verifier) are in the register too. The [registrar API walkthrough](registrar-api.md) registers a verifier and an issuer with curl and uses their certificates against the wallet.
+Both certificates contain the same identifier (ARF Reg_32 and RPRC_07). The registrar API follows the TS05 v1.5 data model and registry API. The [demo issuer and the demo verifier](#the-demo-issuer-and-verifier) are in the register too. The [registrar API walkthrough](registrar-api.md) registers a verifier and an issuer with curl and then uses their certificates with the wallet.
 
 The registrar also keeps a [catalogue of attestations](#attestation-catalogue).
 
@@ -122,12 +124,12 @@ The access certificate has the policy `0.4.0.194118.1.2` (ETSI TS 119 411-8 §5.
 
 ## What the wallet checks
 
-The consent dialog shows the registered purpose and a link to the privacy policy (ARF RPA_10). API clients find them in `purposes` and `privacy_policies` of a pending request. The wallet shows them even without `--arf`. The registration certificate must have a valid signature, and it must belong to the access certificate of the signed request. An unsigned request shows none.
+The consent dialog shows the registered purpose and a link to the privacy policy (ARF RPA_10). API clients find them in `purposes` and `privacy_policies` of a pending request. The wallet shows them even without `--arf`. The registration certificate must have a valid signature, and it must belong to the access certificate of the signed request. For an unsigned request the dialog shows neither.
 
 With `--arf` the wallet checks the access and registration certificates of every verifier and issuer. It doesn't matter which registrar issued them (see [ARF checks for verifiers](presenting.md#arf-checks) and [for issuers](issuing.md#arf-checks)). It takes the anchors from two [trusted lists](serve.md#trusted-lists):
 
 - **Access certificates** must chain to a CA on an `access-ca` list. The wallet's own list names the relying party access CA.
-- **Registration certificates** must chain to a CA on a `registrar` list. The wallet's own list names the registrar CA. The relying party access CA is not on it, because it signs every visitor's CSR. Otherwise anyone with an access certificate could sign their own registration certificate.
+- **Registration certificates** must chain to a CA on a `registrar` list. The wallet's own list names the registrar CA. The relying party access CA is not on the registrar list, because that CA signs every visitor's CSR. Otherwise anyone with an access certificate could sign their own registration certificate.
 
 Certificates from this registrar pass both checks. For the CAs of another registrar, use `wallet trust add-ca --list access-ca` and `--list registrar`, `--relying-party-ca` (both lists) or an external list. A registered credential without a claim list declares no attributes (ETSI TS 119 475 V1.2.1 Annex B.2.9), so requesting any claim counts as over-asking. TS05 registrars always list the claims.
 
@@ -148,9 +150,9 @@ The demo issuer and the demo verifier are registered like any other relying part
 - **EUDI Dev Demo Issuer** is an issuer. It is registered for the credential types of its templates and of the issued-attestation registry, except unlisted ones. The [category](serve.md#credential-categories) of a type comes from the template or the catalogue entry, else it is an EAA. Its entitlements are those of the categories, such as `PID_Provider` for the PIDs and `Non_Q_EAA_Provider` for the demo ticket. It also has the intended use `identity-check`, which asks for `given_name` and `family_name` of the EUDI PID in both formats. The demo issuer sends that registration certificate when it asks for your PID during [interactive authorization](issuing.md#interactive-authorization). Because of this intended use it also has the `Service_Provider` entitlement (ARF RPRC_05 note).
 - **EUDI Dev Demo Verifier** is a verifier with one intended use, `demo-requests`. It registers the claims of every predefined template, so the demo requests ask only for registered claims.
 
-The wallet registers both when it starts, after a demo reset, when you save or delete a template and once an hour. It saves these changes. Their records follow the templates. A change you make to them is replaced at the next update.
+The wallet registers both when it starts, after a demo reset, when you save or delete a template and once an hour, and stores the result. Both registrations are derived from the templates. The next update overwrites any change you make to them.
 
-Each uses its current registration certificate. When there is none, or it expires within a day, the registrar issues one. **Issue new certificate** in the UI gives them a new one like any relying party. **Revoke** revokes the current certificate. A revoked certificate stays the current one, so the demo keeps sending it until **Issue new certificate** replaces it. On the public demo this applies to every visitor until the next reset.
+The demo issuer and the demo verifier each use their current registration certificate. If there is none, or the current one expires within a day, the registrar issues a new one. **Issue new certificate** in the UI issues a new one for them, like for any relying party. **Revoke** revokes the current certificate. A revoked certificate stays the current one, so the demo keeps sending it until **Issue new certificate** replaces it. On the public demo this applies to every visitor until the next reset.
 
 The demo issuer signs its metadata with its access certificate and publishes its registration certificate in `issuer_info`. On the demo verifier page you choose how the verifier identifies itself:
 
@@ -170,7 +172,7 @@ To add a user template, tick "Add the template to the attestation catalogue" whe
 
 You can add other attestation types and delete them again. An added type needs a unique name and at least one format with its `vct` or doctype. Without a rulebook URL it links a placeholder page at `<issuer URL>/rulebook`. The category defaults to `eaa` and the holder binding to `key`.
 
-Each entry has a category: `pid`, `qeaa`, `pub-eaa` or `eaa`. The wallet signs credentials of the type under the provider CA of that category, so they are on the category's [trusted list](serve.md#trusted-lists). Without trusted authorities of its own, the entry links that list. The level of security defaults to `iso_18045_high`, and to `iso_18045_basic` for `eaa`. Rulebooks and trusted lists are http or https URLs. A demo reset deletes the added types.
+Each entry has a category: `pid`, `qeaa`, `pub-eaa` or `eaa`. The wallet signs credentials of the type under the provider CA of that category, so they chain to the category's [trusted list](serve.md#trusted-lists). Without trusted authorities of its own, the entry links that list. The level of security defaults to `iso_18045_high`, and to `iso_18045_basic` for `eaa`. Rulebooks and trusted lists are http or https URLs. A demo reset deletes the added types.
 
 The holder binding is the TS11 `bindingType`. It says how the attestation is bound to its holder: `key` for a key in the holder's wallet, `claim` when it is linked to another credential of the holder (such as a PID), `biometric`, or `none`.
 
@@ -179,7 +181,7 @@ A trusted list is an `etsi_tl` entry with `isLOTE` set. TS11 §4.3.3 uses this f
 The wallet serves the schema behind each schema URI:
 
 - for `dc+sd-jwt`, SD-JWT VC Type Metadata (draft-ietf-oauth-sd-jwt-vc-19 §5.2) with the `vct`, the name and the claims
-- for `mso_mdoc`, the doctype with its namespaces and element identifiers. TS11 asks for the DocType format of ISO 23220-2 here, and eudi-dev has not checked this document against it.
+- for `mso_mdoc`, the doctype with its namespaces and element identifiers. TS11 asks for the DocType format of ISO 23220-2 here. eudi-dev has not checked the served document against that format.
 
 What each field changes:
 
@@ -253,7 +255,7 @@ eudi wallet catalog rm 3f1c3b0d-71ad-496b-9f94-68198503e761
 
 `access-cert` prints the PEM certificate and writes the client identifiers to stderr: `x509_hash` for the certificate and `x509_san_dns` for each `--dns` name (OpenID4VP 1.0 §5.9.3). In the certificate, the name is the common name (ETSI TS 119 411-8 GEN-6.1.1-04, ARF RPRC_06), the legal name is the organization and the service identifier is the organizational unit. It also contains the identifier as `organizationIdentifier`, the country, the support URL in the subject alternative name and the certificate policy `0.4.0.194118.1.2` (ETSI TS 119 411-8 §5.3). The key must be P-256, because HAIP 1.0 requires ES256 for request objects.
 
-`registration-cert` prints the `verifier_info` value for an intended use, or the `issuer_info` value for an issuer service. Both contain the certificate. Without `--intended-use` it certifies the only intended use, or the only issuer service. A relying party with both needs `--intended-use`, or `--service-id` with `--provider`. `--print certificate` prints the bare certificate instead, for example to pipe it into `eudi decode`. `--json` prints both.
+`registration-cert` prints the `verifier_info` value for an intended use, or the `issuer_info` value for an issuer service. Both contain the certificate. Without `--intended-use` it certifies the only intended use, or the only issuer service. A relying party with both needs `--intended-use`, or `--service-id` with `--provider`. `--print certificate` prints the bare certificate instead, for example to pipe it into `eudi decode`. `--json` prints the value and the bare certificate.
 
 `catalog` and `catalog list` list the catalogue, `catalog add` adds an attestation type and prints its schema URIs, and `catalog rm` deletes one you added.
 
@@ -269,7 +271,7 @@ eudi wallet catalog rm 3f1c3b0d-71ad-496b-9f94-68198503e761
 | `verifiers add` | `--purpose` | None | Purpose of the intended use (required) |
 | `verifiers add` | `--privacy-policy` | `<issuer URL>/privacy-policy` | Privacy policy URL of the intended use |
 | `issuers add` | `--attestation` | None | Attestation type as `format:type`, such as `dc+sd-jwt:urn:eudi:pid:1` (repeatable, required) |
-| `issuers add` | `--category` | The categories of the attestation types | Category whose provider entitlement the issuer gets: `pid`, `qeaa`, `pub-eaa` or `eaa` (repeatable) |
+| `issuers add` | `--category` | The categories of the attestation types | Category for the issuer's provider entitlement: `pid`, `qeaa`, `pub-eaa` or `eaa` (repeatable) |
 | `access-cert` | `--identifier` | None | Registered identifier (required) |
 | `access-cert` | `--service-id` | The first service | Service the certificate is for |
 | `access-cert` | `--csr` | None | PEM certificate signing request (file or `-` for stdin, required) |
@@ -292,4 +294,4 @@ eudi wallet catalog rm 3f1c3b0d-71ad-496b-9f94-68198503e761
 | `catalog add` | `--binding` | `key` | How the attestation is bound to its holder: `key` (a key in the wallet), `claim` (linked to another credential, such as a PID), `biometric` or `none` |
 | `catalog add` | `--rulebook` | `<issuer URL>/rulebook` | Rulebook URL |
 | `catalog add` | `--trusted-list` | The category's list on the wallet | URL of the trusted list of issuers for this type |
-| `catalog add` | `--issuer-ca` | None | PEM file with the CA of your issuer. The wallet puts it on its list of the category |
+| `catalog add` | `--issuer-ca` | None | PEM file with the CA of your issuer. The wallet adds it to the trusted list of the category |

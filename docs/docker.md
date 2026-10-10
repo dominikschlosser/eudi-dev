@@ -48,7 +48,7 @@ Pass `-e EUDI_DEV_STORAGE=...` (or `--storage` on the command) to select another
 | Value | State lives in |
 |-------|----------------|
 | `memory` | The process. Lost when the container stops (the image default) |
-| `file` | The wallet directory, on a volume mounted at `/home/app/.eudi-dev`. Set `EUDI_DEV_SEED=` as well, so a private CA persists |
+| `file` | The wallet directory, on a volume mounted at `/home/app/.eudi-dev`. Set `EUDI_DEV_SEED=` as well for a private persistent CA |
 | `auto` | Files when a state directory is mounted or configured, otherwise memory |
 | `postgres://user:pass@host:5432/db` | Rows in `eudi_dev_state`, with a sequence for write versions. Created on first use |
 
@@ -116,7 +116,7 @@ The [HTTP API reference](wallet/http-api.md) also lists certificate retrieval, p
 5. Your verifier validates the VP token's signing chain against the wallet's trusted list from `/api/trustlist`
 6. For EUDI issuer authorization checks, resolve provider entitlements and attestation types from the signed `/.well-known/openid-credential-issuer` metadata and `/api/registrar/wrp`
 
-Behind Docker port mappings or Testcontainers, resolve the relative `path` from `/api/trustlists` against the URL you used to reach the wallet. `advertised_url` is the wallet's configured issuer URL and can differ from that.
+Behind Docker port mappings or Testcontainers, resolve the relative `path` from `/api/trustlists` against the mapped wallet URL. `advertised_url` is the wallet's configured issuer URL and can differ from the mapped URL.
 
 ## Docker Compose example
 
@@ -196,7 +196,7 @@ docker run -p 8085:8085 -v ./my-templates:/templates ghcr.io/dominikschlosser/eu
   wallet serve --auto-accept --pid --port 8085 --templates-dir /templates
 ```
 
-You can also generate customized PIDs into a mounted data directory first. Mount the parent of `wallet/` so the shared CA persists with the credentials. Select the file backend and an empty seed so the persisted CA is private:
+You can also generate customized PIDs into a mounted data directory first. Mount the parent of `wallet/` to persist the shared CA with the credentials. Select the file backend and an empty seed for a private persisted CA:
 
 ```bash
 docker run --rm -v wallet-data:/home/app/.eudi-dev -e EUDI_DEV_STORAGE=file -e EUDI_DEV_SEED= ghcr.io/dominikschlosser/eudi-dev \
@@ -262,7 +262,7 @@ To trust every spawned wallet from one root, export the shared wallet CA:
 eudi wallet ca-cert --out wallet-ca-cert.pem
 ```
 
-The status list URI and issuer host are written into credentials at generation time. When the verifier runs inside Docker and the wallet on the host (or vice versa), use `--docker` (or `--base-url` for a custom URL) so the status list URL, signed issuer metadata, and registrar endpoints are reachable from both sides:
+The status list URI and issuer host are written into credentials at generation time. When the verifier runs inside Docker and the wallet on the host (or vice versa), use `--docker` (or `--base-url` for a custom URL). The status list URL, signed issuer metadata and registrar endpoints are then reachable from both sides:
 
 ```bash
 # Wallet on host, verifier in Docker

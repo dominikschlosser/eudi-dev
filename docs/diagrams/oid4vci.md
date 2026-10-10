@@ -1,6 +1,6 @@
 # OID4VCI Flows
 
-This page shows the OID4VCI flows `eudi-dev` implements as a wallet that receives a credential offer.
+This page shows the OID4VCI flows implemented by the `eudi-dev` wallet for a received credential offer.
 
 ## Flow Map
 
@@ -35,7 +35,7 @@ sequenceDiagram
 | `credential_offer` or `credential_offer_uri` | One of these starts the issuance flow. |
 | `credential_issuer` | Used to fetch `/.well-known/openid-credential-issuer` and resolve the token and credential endpoints. |
 | `credential_configuration_ids` | The first configuration ID resolves the format and, in the authorization code flow, the scope. |
-| Issuer metadata `nonce_endpoint` | Provides the challenge that the key proof signs (OpenID4VCI 1.0 §8.2). The wallet calls it whenever the metadata advertises it. |
+| Issuer metadata `nonce_endpoint` | Provides the challenge signed by the key proof (OpenID4VCI 1.0 §8.2). The wallet calls it whenever the metadata advertises it. |
 | `authorization_details[].credential_identifiers` | When present in the token response, the wallet sends `credential_identifier` at the credential endpoint instead of `credential_configuration_id`. |
 | Issuer metadata `credential_response_encryption` support | When advertised, the wallet requests encrypted credential responses and decrypts compact JWE responses. |
 
@@ -163,5 +163,5 @@ sequenceDiagram
 | `eudi wallet serve --vci-version 1.1` | Selects the feature level. At `1.0` the redirect flow runs. |
 | OAuth metadata `authorization_challenge_endpoint` | Publishing it switches an offer to this flow. |
 | `interaction_types_supported` | The wallet always advertises `urn:openid:dcp:ia:openid4vp_presentation`, and `urn:openid:dcp:ia:auth_via_web` only when a redirect URI is configured and the metadata includes an `authorization_endpoint`. |
-| `openid4vp_request` | The OpenID4VP request the presentation interaction answers, with response mode `ia_post` or `ia_post.jwt`. |
+| `openid4vp_request` | The OpenID4VP request answered by the presentation interaction, with response mode `ia_post` or `ia_post.jwt`. |
 | `auth_session` | Carries the authorization state across challenge requests and the browser redirect. |

@@ -15,7 +15,7 @@ Detects the URI type and dispatches to the matching flow:
 
 EUDI issuance uses `eu-eaa-offer://` under [ETSI TS 119 472-3 V1.1.1](https://www.etsi.org/deliver/etsi_ts/119400_119499/11947203/01.01.01_60/ts_11947203v010101p.pdf), requirement GEN-REQ-4.1-06. All three offer schemes accept `credential_offer` and `credential_offer_uri` parameters.
 
-In interactive mode (the default), OID4VP requests start a temporary consent UI server and open it in the browser. With `--auto-accept`, the wallet submits one credential per credential query (the most recently issued one that matches it), or all matching ones when the query sets `multiple: true`.
+In interactive mode (the default), OID4VP requests start a temporary consent UI server and open it in the browser. With `--auto-accept`, the wallet submits one credential per credential query (the most recently issued match), or all matching ones when the query sets `multiple: true`.
 
 When a verifier responds to a presentation with a `redirect_uri`, the wallet prints the URL and opens it in a browser (a same-device flow returns to the verifier's site). A scripted run, or a host without a desktop, only prints it. `--no-open` disables opening.
 
@@ -40,7 +40,7 @@ eudi wallet accept 'openid-credential-offer://...' --tx-code 123456
 | `--mode`                | `debug`  | Validation mode: `debug` or `strict`             |
 | `--session-transcript`  | `oid4vp` | mdoc session transcript mode: `oid4vp` or `iso`  |
 | `--tx-code`             | None     | Transaction code for OID4VCI pre-authorized code flow |
-| `--docker`              | `false`  | Serve the trust and status lists under `host.docker.internal` so a verifier in a container can reach them |
+| `--docker`              | `false`  | Serve the trust and status lists under `host.docker.internal` for verifiers in a container |
 | `--key-attestation-level` | Issuer requirements | Test claims for key storage and user authentication: issuer requirements (default), `none`, or a level such as `iso_18045_high`. A running wallet uses its own setting. See [key attestation claims](serve.md#key-attestation-claims) |
 | `--haip`                | `false`  | Check incoming presentations and credential offers against HAIP 1.0. `--mode` sets how violations are handled: strict refuses the flow, debug reports them and continues |
 | `--arf`                 | `false`  | Check the access and registration certificates of verifiers and issuers against the ARF (see [ARF checks](#arf-checks) and [issuers](issuing.md#arf-checks)). With `--mode strict` the wallet refuses the request or the offer on any finding |
@@ -106,7 +106,7 @@ curl 'http://localhost:8085/credential-offer?credential_offer=%7B...%7D&tx_code=
 
 `/credential-offer` accepts `credential_offer` or `credential_offer_uri`, plus an optional `tx_code` for the pre-authorized code flow.
 
-Browser navigations are GET requests that accept HTML, such as clicked links. After a presentation, the browser goes to the verifier's `redirect_uri`, or to the wallet UI if none was returned. The same applies after a refusal (a denied request or no matching credential), because the verifier can return a `redirect_uri` for an error response too (OpenID4VP 1.0 §8.2). After importing an offer, it goes to the wallet UI.
+Browser navigations are GET requests that accept HTML, such as clicked links. After a presentation, the browser goes to the verifier's `redirect_uri`, or to the wallet UI if none was returned. The same applies after a refusal (a denied request or no matching credential), because the verifier can return a `redirect_uri` for an error response too (OpenID4VP 1.0 §8.2). After an offer import, the browser goes to the wallet UI.
 
 Other callers, including curl and test harnesses, receive the same JSON responses as `POST /api/presentations` and `POST /api/offers`. Verifiers and issuers can use these wallet URLs to complete a browser flow without custom schemes. For example, `keycloak-extension-oid4vp` can set `walletScheme` to the wallet's `/authorize` URL.
 
@@ -157,6 +157,8 @@ Every request to a given wallet uses the same validation mode, HAIP, ARF and enc
 
 ## ARF checks
 
+*(new in 3.0.0)*
+
 `--arf` on `wallet serve`, `wallet accept` or `wallet scan` checks the relying party's access and registration certificates in a presentation request against the ARF. It checks issuers too (see [issuing](issuing.md#arf-checks)). `--demo` turns it on by default. The Conformance panel and `PUT /api/config/conformance` (`arf`) switch it at runtime.
 
 The wallet checks that:
@@ -176,7 +178,7 @@ The [registrar API walkthrough](registrar-api.md) shows both outcomes with real 
 
 The consent dialog shows the purposes and privacy policies of the registration certificates. Only certificates that belong to the access certificate of the signed request count. An unsigned request shows none.
 
-The wallet takes its anchors from [trusted lists](serve.md#trusted-lists) only. An access certificate must chain to a CA on an access certificate provider list (`access-ca`, ETSI TS 119 602 V1.1.1 Annex F). The wallet's own list names the relying party access CA of its [registrar](registrar.md). The demo issuer and the demo verifier get their access certificates from that CA too. A registration certificate and its status list must chain to a CA on a registration certificate provider list (`registrar`, Annex G). The wallet's own list names the registrar CA. The relying party access CA signs any visitor's CSR, so it is not on the `registrar` list.
+The wallet takes its trust anchors from [trusted lists](serve.md#trusted-lists) only. An access certificate must chain to a CA on an access certificate provider list (`access-ca`, ETSI TS 119 602 V1.1.1 Annex F). The wallet's own list names the relying party access CA of its [registrar](registrar.md). The demo issuer and the demo verifier get their access certificates from that CA too. A registration certificate and its status list must chain to a CA on a registration certificate provider list (`registrar`, Annex G). The wallet's own list names the registrar CA. The relying party access CA signs any visitor's CSR, so it is not on the `registrar` list.
 
-For the CAs of another ecosystem, such as a member state's sandbox, use `wallet trust add-ca --list access-ca` and `--list registrar`, or `--relying-party-ca`, which puts its CAs on both lists. An external list on the list of trusted lists works too. See [ADR 0023](../adr/0023-trust-anchors-come-from-trusted-lists.md).
+For the CAs of another ecosystem, such as a member state's sandbox, use `wallet trust add-ca --list access-ca` and `--list registrar`, or `--relying-party-ca`, which puts the CAs on both lists. An external list on the list of trusted lists works too. See [ADR 0023](../adr/0023-trust-anchors-come-from-trusted-lists.md).
 

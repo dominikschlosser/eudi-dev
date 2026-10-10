@@ -24,7 +24,7 @@ Demo mode returns `403` for shutdown, error injection, log clearing and changes 
 
 ### Outbound connections
 
-Visitor URLs are restricted to public network addresses. The wallet checks resolved addresses when connecting and rejects loopback, private, link local, CGNAT and unique local ranges, including cloud metadata endpoints. Its own advertised origins are exempt at their exact address and port so the bundled issuer and verifier can communicate with the wallet.
+Visitor URLs are restricted to public network addresses. The wallet checks resolved addresses when connecting and rejects loopback, private, link local, CGNAT and unique local ranges, including cloud metadata endpoints. The wallet's own advertised origins are exempt at their exact address and port. The bundled issuer and verifier connect to the wallet through these origins.
 
 ### Validation
 
@@ -63,9 +63,9 @@ Every wallet server includes an issuer at `/issuer` and a verifier at `/verifier
 
 The verifier signs requests delivered from `/verifier/request/{id}` with its access certificate, identifies itself with `x509_hash:` and receives encrypted `direct_post.jwt` responses. It is registered with the wallet's registrar for the credentials of the wallet's templates and sends its registration certificate with each request. On its page you can instead send a request without the registration certificate, or paste your own key, access certificate and `verifier_info`. Each request has its own encryption key and accepts one response. Offers and requests expire after ten minutes and are kept only in memory.
 
-The verifier page has a PID format toggle. By default, a PID request accepts either an SD-JWT VC or an mdoc, and the wallet presents one it holds. Select a format to test whether the wallet can present it. The ticket is always an SD-JWT VC.
+The verifier page has a PID format toggle. By default, a PID request accepts either an SD-JWT VC or an mdoc, and the wallet presents a matching credential. Select a format to test whether the wallet can present it. The ticket is always an SD-JWT VC.
 
-**Demo ticket + PID** asks for both in one request. **With the PID** offers the ticket together with the SD-JWT PID, or a PID alone. **Optional** asks for a PID and lets the wallet skip the ticket. Tick **multiple** to let the wallet send several credentials for each query, such as both PIDs a wallet holds.
+**Demo ticket + PID** asks for both in one request. **With the PID** offers the ticket together with the SD-JWT PID, or a PID alone. **Optional** asks for a PID and lets the wallet skip the ticket. Tick **multiple** to let the wallet send several credentials for each query, such as two stored PIDs.
 
 The issuer page has a status list toggle. When enabled, each ticket references a reserved index in the wallet's own status list. The wallet imports the ticket as revocable. After revocation, the demo verifier rejects the next presentation.
 
@@ -90,7 +90,7 @@ The consent dialog shows these choices.
 
 All four baseline credentials are protected. The UI, the API and the CLI refuse to delete or revoke them. Visitor credentials can be deleted. Removing baseline protection requires direct access to `wallet.json`.
 
-All visitors share credentials, registered relying parties, trusted lists and the activity log. Anyone can issue credentials, delete unprotected credentials, register, revoke and delete relying parties, and read the log. Anyone can also put providers and external lists on the wallet's [trusted lists](wallet/serve.md#trusted-lists). They then anchor the `--arf` checks for every visitor. The demo holds at most 20 added providers and 5 added lists. Use test data only. The UI lists ten credentials per page, and the periodic reset clears visitor data.
+All visitors share credentials, registered relying parties, trusted lists and the activity log. Anyone can issue credentials, delete unprotected credentials, register, revoke and delete relying parties, and read the log. Anyone can also put providers and external lists on the wallet's [trusted lists](wallet/serve.md#trusted-lists). These entries then anchor the `--arf` checks for every visitor. The demo holds at most 20 added providers and 5 added lists. Use test data only. The UI lists ten credentials per page, and the periodic reset clears visitor data.
 
 ## Rate limits
 
@@ -145,7 +145,7 @@ The hosted wallet returns the authorization URL to the caller:
 
 The flow waits for the issuer to redirect to `/callback`. The wallet then resumes issuance and returns the browser to the wallet UI.
 
-The callback is matched by `state` alone, so the sign-in can happen in any browser that can reach the wallet. This lets `eudi wallet accept` complete an authorization code offer against the hosted demo. The CLI opens the URL locally and polls `GET /api/offers/{offer_id}` until it reports `completed` or `failed`.
+The callback is matched by `state` alone, so the sign-in can happen in any browser with access to the wallet. This lets `eudi wallet accept` complete an authorization code offer against the hosted demo. The CLI opens the URL locally and polls `GET /api/offers/{offer_id}` until it reports `completed` or `failed`.
 
 By default, PAR and token requests both require a wallet attestation. The issuer verifies its signature and the possession proof, including `sub`, `aud`, `jti` and expiry. It accepts either a separate `OAuth-Client-Attestation-PoP` JWT or a DPoP proof signed by the attested key (`attest_jwt_client_auth_dpop`).
 
@@ -155,7 +155,7 @@ The access token is bound to the DPoP key. The credential request must prove pos
 
 The demo issuer trusts the providers on the wallet provider lists of the wallet's [list of trusted lists](wallet/serve.md#trusted-lists). That is the wallet's own `wallet-provider` list at `/api/trustlists/wallet-provider`, providers added with `wallet trust add-ca --list wallet-provider`, and external wallet provider lists. It also accepts attestations from other providers when their signature verifies against the included leaf certificate. The demo issuer can then test other wallets without trusting their provider.
 
-The ticket records the result in `wallet_attestation`: `trusted` for a chain reaching a trusted wallet provider, `untrusted` for another signer, or `none` when authentication was optional and omitted.
+The ticket records the result in `wallet_attestation`: `trusted` for a chain to a trusted wallet provider, `untrusted` for another signer, or `none` when authentication was optional and omitted.
 
 To test a wallet without attestation, use `--demo-issuer-client-auth optional`. The authorization server then also advertises and accepts `none`. It still verifies any attestation that is sent. The default is `required` (HAIP 1.0 §4.4.1).
 
@@ -255,7 +255,7 @@ STRICT_URL=https://strict.demo.example
 ./deploy.sh logs strict      # follow the strict wallet log
 ```
 
-[The conformance runbook](./conformance-run.md) describes the run against it.
+[The conformance runbook](./conformance-run.md) describes the conformance run against this host.
 
 ## Usage statistics
 
