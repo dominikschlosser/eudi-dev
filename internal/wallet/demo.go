@@ -340,12 +340,8 @@ func (s *Server) checkDemoTemplate(t credtemplate.Template) error {
 	if s.demo.fixedTemplates[name] {
 		return fmt.Errorf("%q is a predefined template, and the public demo can't change it. Save your version under another name", name)
 	}
-	if d := t.Display; d != nil {
-		for _, image := range []string{d.Logo, d.BackgroundImage} {
-			if image != "" && !strings.HasPrefix(image, "embedded:") {
-				return fmt.Errorf("the public demo doesn't accept template images. Remove the logo and background image or keep the ones of a predefined template")
-			}
-		}
+	if d := t.Display; d != nil && (!demoAllowsImage(d.Logo) || !demoAllowsImage(d.BackgroundImage)) {
+		return fmt.Errorf("the public demo doesn't accept template images. Remove the logo and background image or keep the ones of a predefined template")
 	}
 	templates, err := credtemplate.List(s.wallet.Templates)
 	if err != nil {
@@ -361,6 +357,13 @@ func (s *Server) checkDemoTemplate(t credtemplate.Template) error {
 		return fmt.Errorf("the public demo holds at most %d templates. Delete one first", maxDemoTemplates)
 	}
 	return nil
+}
+
+// demoAllowsImage reports whether a visitor may use the image. Visitors can't
+// upload images, so only the art of the bundled templates is allowed.
+func demoAllowsImage(ref string) bool {
+	ref = strings.TrimSpace(ref)
+	return ref == "" || strings.HasPrefix(ref, "embedded:")
 }
 
 // checkDemoTemplateDelete keeps visitors from deleting the operator's

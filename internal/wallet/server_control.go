@@ -165,8 +165,10 @@ func (s *Server) handleClearLog(w http.ResponseWriter, r *http.Request) {
 			s.log("  ERROR: clearing the stored log: %v", err)
 		}
 	}
-	s.wallet.ClearLog()
-	s.triggerSave()
+	s.saveMutation(func() bool {
+		s.wallet.ClearLog()
+		return true
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -146,14 +146,18 @@ const certificateCheckInterval = time.Hour
 
 func (s *Server) renewSigningCertificate(now time.Time) error {
 	s.renewIssuerTLSCertificateIfNeeded(now)
-	renewed, err := s.wallet.RefreshSigningCertificateIfExpiring(now)
+	var renewed bool
+	var err error
+	s.saveMutation(func() bool {
+		renewed, err = s.wallet.RefreshSigningCertificateIfExpiring(now)
+		return err == nil && renewed
+	})
 	if err != nil {
 		return fmt.Errorf("re-issuing the signing certificate: %w", err)
 	}
 	if renewed {
 		s.log("  Renewed:       signing certificate, now valid until %s",
 			s.wallet.SigningCertificateExpiry().Format(time.DateOnly))
-		s.persistWallet()
 	}
 	return nil
 }
@@ -291,7 +295,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	// its own, defined in §8.3.
 	s.wallet.notifyCredentialAccepted(metadata, credResp, pending.AccessToken, pending.AuthScheme, dpopKey, &nonce)
 
-	s.saveIssuedCredential(&IssuanceResult{Imported: imported})
+	s.saveIssuance(&IssuanceResult{Imported: imported})
 	s.wallet.NotifyStateChanged()
 	return DeferredAttempt{Collected: true, Credential: imported}
 }
@@ -334,15 +338,17 @@ func isRetryableDeferredError(err error) bool {
 
 func (s *Server) rescheduleDeferred(pending DeferredIssuance, interval time.Duration, lastErr string) DeferredAttempt {
 	next := time.Now().Add(interval)
-	s.wallet.UpdateDeferredIssuance(pending.ID, func(p *DeferredIssuance) {
-		p.Attempts++
-		p.NextAttemptAt = next
-		p.LastError = lastErr
-		if seconds := int(interval / time.Second); seconds >= 1 {
-			p.IntervalSeconds = seconds
-		}
+	s.saveMutation(func() bool {
+		s.wallet.UpdateDeferredIssuance(pending.ID, func(p *DeferredIssuance) {
+			p.Attempts++
+			p.NextAttemptAt = next
+			p.LastError = lastErr
+			if seconds := int(interval / time.Second); seconds >= 1 {
+				p.IntervalSeconds = seconds
+			}
+		})
+		return true
 	})
-	s.persistWallet()
 	return DeferredAttempt{
 		Pending:       true,
 		NextAttemptAt: next,
@@ -352,21 +358,22 @@ func (s *Server) rescheduleDeferred(pending DeferredIssuance, interval time.Dura
 }
 
 func (s *Server) abandonDeferred(pending DeferredIssuance, reason string) DeferredAttempt {
-	s.wallet.RemoveDeferredIssuance(pending.ID)
-	s.wallet.addProtocolLog("issuance", "issuance_deferred_abandoned",
-		fmt.Sprintf("Gave up on the deferred credential from %s: %s", pending.Issuer, reason), false, map[string]any{
-			"issuer":         pending.Issuer,
-			"transaction_id": pending.TransactionID,
-			"attempts":       pending.Attempts,
-			"reason":         reason,
-		})
+	s.saveMutation(func() bool {
+		s.wallet.RemoveDeferredIssuance(pending.ID)
+		s.wallet.addProtocolLog("issuance", "issuance_deferred_abandoned",
+			fmt.Sprintf("Gave up on the deferred credential from %s: %s", pending.Issuer, reason), false, map[string]any{
+				"issuer":         pending.Issuer,
+				"transaction_id": pending.TransactionID,
+				"attempts":       pending.Attempts,
+				"reason":         reason,
+			})
+		return true
+	})
 	s.log("  Deferred:      gave up on %s from %s (%s)", pending.TransactionID, pending.Issuer, reason)
 	s.wallet.NotifyError(WalletError{
 		Message: "Deferred credential was not issued",
 		Detail:  fmt.Sprintf("%s: %s", pending.Issuer, reason),
 	})
-	s.persistWallet()
-	s.wallet.NotifyStateChanged()
 	return DeferredAttempt{Abandoned: true, Reason: reason}
 }
 
@@ -406,26 +413,21 @@ func (s *Server) AbandonDeferredNow(id string) (DeferredIssuance, bool) {
 		if pending.ID != id {
 			continue
 		}
-		s.wallet.RemoveDeferredIssuance(pending.ID)
-		s.wallet.addProtocolLog("issuance", "issuance_deferred_abandoned",
-			fmt.Sprintf("Stopped collecting the deferred credential from %s", pending.Issuer), true, map[string]any{
-				"issuer":         pending.Issuer,
-				"transaction_id": pending.TransactionID,
-				"attempts":       pending.Attempts,
-				"reason":         "abandoned on request",
-			})
+		s.saveMutation(func() bool {
+			s.wallet.RemoveDeferredIssuance(pending.ID)
+			s.wallet.addProtocolLog("issuance", "issuance_deferred_abandoned",
+				fmt.Sprintf("Stopped collecting the deferred credential from %s", pending.Issuer), true, map[string]any{
+					"issuer":         pending.Issuer,
+					"transaction_id": pending.TransactionID,
+					"attempts":       pending.Attempts,
+					"reason":         "abandoned on request",
+				})
+			return true
+		})
 		s.log("  Deferred:      stopped collecting %s from %s", pending.TransactionID, pending.Issuer)
-		s.persistWallet()
-		s.wallet.NotifyStateChanged()
 		return pending, true
 	}
 	return DeferredIssuance{}, false
-}
-
-func (s *Server) persistWallet() {
-	if s.onSave != nil {
-		s.onSave()
-	}
 }
 
 func (s *Server) refreshDeferredAccessToken(pending DeferredIssuance, dpopKey *ecdsa.PrivateKey) (DeferredIssuance, error) {
@@ -465,13 +467,17 @@ func (s *Server) refreshDeferredAccessToken(pending DeferredIssuance, dpopKey *e
 		updated.AccessTokenExpiresAt = time.Now().Add(time.Duration(seconds) * time.Second)
 	}
 
-	s.wallet.UpdateDeferredIssuance(updated.ID, func(p *DeferredIssuance) {
-		p.AccessToken = updated.AccessToken
-		p.AuthScheme = updated.AuthScheme
-		p.RefreshToken = updated.RefreshToken
-		p.AccessTokenExpiresAt = updated.AccessTokenExpiresAt
+	// A rotated refresh token replaces the old one for good, so it is saved
+	// under the reload lock.
+	s.saveMutation(func() bool {
+		s.wallet.UpdateDeferredIssuance(updated.ID, func(p *DeferredIssuance) {
+			p.AccessToken = updated.AccessToken
+			p.AuthScheme = updated.AuthScheme
+			p.RefreshToken = updated.RefreshToken
+			p.AccessTokenExpiresAt = updated.AccessTokenExpiresAt
+		})
+		return true
 	})
-	s.persistWallet()
 	s.log("  Renewed:       access token for the deferred credential from %s", pending.Issuer)
 	return updated, nil
 }

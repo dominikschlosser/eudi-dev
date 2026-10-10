@@ -19,6 +19,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -461,26 +462,41 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	}
 
 	if saved != nil {
-		// A failed request leaves no credential behind.
-		var added registrar.CatalogAttestation
+		var entry *registrar.CatalogAttestation
 		if opts.Catalog != nil {
-			if added, err = w.Registrar().AddCatalogAttestation(catalogEntry); err != nil {
-				w.RemoveCredential(result.Credential.ID)
-				return nil, fmt.Errorf("adding the template to the catalogue: %w", err)
-			}
+			entry = &catalogEntry
 		}
-		path, err := credtemplate.Save(w.Templates, *saved)
+		path, err := w.SaveTemplate(*saved, entry)
 		if err != nil {
-			if opts.Catalog != nil {
-				_ = w.Registrar().DeleteCatalogAttestation(added.Schema.ID)
-			}
+			// A failed request leaves no credential behind.
 			w.RemoveCredential(result.Credential.ID)
-			return nil, fmt.Errorf("saving template: %w", err)
+			return nil, err
 		}
 		result.TemplatePath = path
 	}
 
 	return result, nil
+}
+
+// SaveTemplate stores a template and, if entry is set, its catalogue entry.
+// The entry is added first, because the catalogue can refuse it and a stored
+// template is hard to take back when it replaced another one.
+func (w *Wallet) SaveTemplate(tpl credtemplate.Template, entry *registrar.CatalogAttestation) (string, error) {
+	var added registrar.CatalogAttestation
+	if entry != nil {
+		var err error
+		if added, err = w.Registrar().AddCatalogAttestation(*entry); err != nil {
+			return "", fmt.Errorf("adding the template to the catalogue: %w", err)
+		}
+	}
+	path, err := credtemplate.Save(w.Templates, tpl)
+	if err != nil {
+		if entry != nil {
+			err = errors.Join(err, w.Registrar().DeleteCatalogAttestation(added.Schema.ID))
+		}
+		return "", fmt.Errorf("saving template: %w", err)
+	}
+	return path, nil
 }
 
 // CredentialCategory is the category of the template, or else of the

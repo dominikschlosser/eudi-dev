@@ -540,25 +540,20 @@ func (s *Server) saveMutation(mutate func() bool) {
 	}
 }
 
-// A concurrent reload may have dropped the newly issued credential. Restore and save
-// it while holding the reload lock.
-func (s *Server) saveIssuedCredential(result *IssuanceResult) {
-	if result != nil && result.Imported != nil {
-		s.storeSyncMu.Lock()
-		if _, ok := s.wallet.GetCredential(result.Imported.ID); !ok {
-			s.wallet.RestoreCredential(*result.Imported)
+// A concurrent reload may have dropped the newly issued credential. Restore and
+// save it while holding the reload lock.
+func (s *Server) saveIssuance(result *IssuanceResult) {
+	s.saveMutation(func() bool {
+		if result != nil && result.Imported != nil {
+			if _, ok := s.wallet.GetCredential(result.Imported.ID); !ok {
+				s.wallet.RestoreCredential(*result.Imported)
+			}
+			// A reload may also have removed the credential's local status
+			// entry. Adoption is idempotent.
+			s.wallet.adoptOwnStatusEntry(result.Imported)
 		}
-		// A reload may also have removed the credential's local status entry.
-		// Adoption is idempotent.
-		s.wallet.adoptOwnStatusEntry(result.Imported)
-		if s.onSave != nil {
-			s.onSave()
-		}
-		s.storeSyncMu.Unlock()
-		s.wallet.NotifyStateChanged()
-		return
-	}
-	s.triggerSave()
+		return true
+	})
 }
 
 // saveCredential restores the credential while holding the reload lock and

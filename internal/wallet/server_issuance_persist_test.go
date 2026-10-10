@@ -79,7 +79,7 @@ func TestSaveIssuedCredential_SurvivesConcurrentStoreReload(t *testing.T) {
 		t.Fatal("precondition failed: the reload should have dropped the credential")
 	}
 
-	srv.saveIssuedCredential(&IssuanceResult{CredentialID: issued.ID, Imported: &issued})
+	srv.saveIssuance(&IssuanceResult{CredentialID: issued.ID, Imported: &issued})
 
 	if _, ok := srv.wallet.GetCredential(issued.ID); !ok {
 		t.Fatal("the issued credential was lost: issuance reported success and stored nothing")
@@ -121,7 +121,7 @@ func TestSaveIssuedCredential_KeepsTheAdoptedStatusEntry(t *testing.T) {
 		t.Fatal("precondition failed: the reload should have wiped the status entry")
 	}
 
-	srv.saveIssuedCredential(&IssuanceResult{CredentialID: issued.ID, Imported: &issued})
+	srv.saveIssuance(&IssuanceResult{CredentialID: issued.ID, Imported: &issued})
 
 	entry, ok := srv.wallet.StatusEntryFor(issued.ID)
 	if !ok {
@@ -140,7 +140,7 @@ func TestSaveIssuedCredential_DoesNotDuplicate(t *testing.T) {
 	srv.wallet.RestoreCredential(issued)
 	before := len(srv.wallet.GetCredentials())
 
-	srv.saveIssuedCredential(&IssuanceResult{CredentialID: issued.ID, Imported: &issued})
+	srv.saveIssuance(&IssuanceResult{CredentialID: issued.ID, Imported: &issued})
 
 	if got := len(srv.wallet.GetCredentials()); got != before {
 		t.Fatalf("credential count changed from %d to %d", before, got)

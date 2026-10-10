@@ -137,8 +137,7 @@ func (s *Server) applyOfferOutcome(uri, owner string, result *IssuanceResult, er
 
 	if result.Pending {
 		s.log("  Deferred:      %s will be collected every %s", result.Issuer, result.RetryInterval)
-		// Persist the deferral on the wallet used by the poller.
-		s.persistWallet()
+		s.saveIssuance(result)
 		return
 	}
 
@@ -158,7 +157,7 @@ func (s *Server) applyOfferOutcome(uri, owner string, result *IssuanceResult, er
 		details[k] = v
 	}
 	s.wallet.AddLogDetails("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true, details)
-	s.saveIssuedCredential(result)
+	s.saveIssuance(result)
 }
 
 // Redirect browser navigations to the issuer. API callers receive the sign-in URL and

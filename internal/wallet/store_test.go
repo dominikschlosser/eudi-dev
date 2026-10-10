@@ -631,7 +631,7 @@ func TestStoreSavesDoNotLoseConcurrentWrites(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		cred := StoredCredential{ID: fmt.Sprintf("cred-%02d", i), Format: "dc+sd-jwt", Raw: "a.b.c"}
 		w.PutCredential(cred)
-		srv.saveIssuedCredential(&IssuanceResult{CredentialID: cred.ID, Imported: &cred})
+		srv.saveIssuance(&IssuanceResult{CredentialID: cred.ID, Imported: &cred})
 	}
 	close(stop)
 	wg.Wait()

@@ -266,11 +266,8 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.demo != nil && req.Display != nil &&
-		(strings.TrimSpace(req.Display.Logo) != "" || strings.TrimSpace(req.Display.BackgroundImage) != "") {
-		// Shared demos allow images from bundled templates and credential issuers.
-		// Visitors cannot supply images through this endpoint.
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "setting a logo or background image is disabled in public demo mode (a template's own art still applies)"})
+	if s.demo != nil && req.Display != nil && (!demoAllowsImage(req.Display.Logo) || !demoAllowsImage(req.Display.BackgroundImage)) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "the public demo only accepts the logo and background image of a predefined template"})
 		return
 	}
 
@@ -278,6 +275,9 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
+	}
+	if req.SaveAsTemplate != "" {
+		s.templatesChanged()
 	}
 	writeJSON(w, http.StatusCreated, withPublicImagePaths(r, summary))
 }

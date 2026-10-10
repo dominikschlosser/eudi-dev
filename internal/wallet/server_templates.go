@@ -85,41 +85,26 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 		return
 	}
-	var entry registrar.CatalogAttestation
+	var entry *registrar.CatalogAttestation
 	if req.Catalog != nil {
-		var err error
-		if entry, err = s.wallet.Registrar().TemplateCatalogEntry(tpl, *req.Catalog); err != nil {
-			registrar.WriteCatalogError(w, err)
-			return
-		}
-		tpl.Category = entry.Category
-	}
-	// The entry is added first, because the catalogue can refuse it and a
-	// stored template is hard to take back when it replaced another one.
-	var added registrar.CatalogAttestation
-	if req.Catalog != nil {
-		var err error
-		s.saveMutation(func() bool {
-			added, err = s.wallet.Registrar().AddCatalogAttestation(entry)
-			return err == nil
-		})
+		checked, err := s.wallet.Registrar().TemplateCatalogEntry(tpl, *req.Catalog)
 		if err != nil {
 			registrar.WriteCatalogError(w, err)
 			return
 		}
+		tpl.Category = checked.Category
+		entry = &checked
 	}
-	if _, err := credtemplate.Save(s.wallet.Templates, tpl); err != nil {
-		if req.Catalog != nil {
-			s.saveMutation(func() bool {
-				return s.wallet.Registrar().DeleteCatalogAttestation(added.Schema.ID) == nil
-			})
-		}
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	var err error
+	s.saveMutation(func() bool {
+		_, err = s.wallet.SaveTemplate(tpl, entry)
+		return err == nil
+	})
+	if err != nil {
+		registrar.WriteCatalogError(w, err)
 		return
 	}
-	if err := s.syncDemoRegistrations(); err != nil {
-		s.log("  WARNING: updating the demo registrations: %v", err)
-	}
+	s.templatesChanged()
 	saved, err := credtemplate.Load(tpl.Name, s.wallet.Templates)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -147,8 +132,13 @@ func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
+	s.templatesChanged()
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("name")})
+}
+
+// templatesChanged lets the demo registrations follow the templates.
+func (s *Server) templatesChanged() {
 	if err := s.syncDemoRegistrations(); err != nil {
 		s.log("  WARNING: updating the demo registrations: %v", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("name")})
 }

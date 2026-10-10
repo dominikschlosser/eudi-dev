@@ -399,14 +399,15 @@ func (s *Server) preparePresentation(authReq *AuthorizationRequestParams, matche
 	}
 
 	if ResponseTypeContains(authReq.ResponseType, "vp_token") || authReq.ResponseType == "" {
-		vpResult, err := s.wallet.CreateVPTokenMap(matches, params)
+		// A batch credential's use count changes, so it is saved under the
+		// reload lock.
+		var err error
+		s.saveMutation(func() bool {
+			prepared.VPResult, err = s.wallet.CreateVPTokenMap(matches, params)
+			return s.wallet.takeBatchStateDirty()
+		})
 		if err != nil {
 			return nil, fmt.Errorf("creating VP token map: %w", err)
-		}
-		prepared.VPResult = vpResult
-		// Persist the batch credential's updated use count.
-		if s.wallet.takeBatchStateDirty() {
-			s.persistWallet()
 		}
 	}
 
