@@ -107,7 +107,7 @@ func TestRefreshCredentialKeepsTheIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := imported.ID
-	w.rememberRenewal(id, "refresh-1", CredentialRenewal{
+	w.rememberRenewal(id, CredentialRenewal{RefreshToken: "refresh-1",
 		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
 		CredentialEndpoint: srv.URL + "/credential", ConfigurationID: "cfg",
 	})
@@ -177,10 +177,10 @@ func TestRenewExpiringCredentialsSweep(t *testing.T) {
 
 	unreachable := CredentialRenewal{
 		Issuer: "https://issuer.example", TokenEndpoint: "https://127.0.0.1:1/token",
-		CredentialEndpoint: "https://127.0.0.1:1/credential",
+		CredentialEndpoint: "https://127.0.0.1:1/credential", RefreshToken: "refresh-1",
 	}
-	w.rememberRenewal(fresh.Credential.ID, "refresh-1", unreachable)
-	w.rememberRenewal(expiring.Credential.ID, "refresh-1", unreachable)
+	w.rememberRenewal(fresh.Credential.ID, unreachable)
+	w.rememberRenewal(expiring.Credential.ID, unreachable)
 
 	server := NewServer(w, 0, nil)
 	now := time.Now()
@@ -238,7 +238,7 @@ func TestPresentingRenewsACredentialAboutToExpire(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := expiring.Credential.ID
-	w.rememberRenewal(id, "refresh-1", CredentialRenewal{
+	w.rememberRenewal(id, CredentialRenewal{RefreshToken: "refresh-1",
 		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token", CredentialEndpoint: srv.URL + "/credential",
 	})
 
@@ -310,12 +310,12 @@ func TestRefreshCredentialAuthenticatesTheClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+		w.rememberRenewal(imported.ID, CredentialRenewal{RefreshToken: "refresh-1",
 			Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
 			CredentialEndpoint: srv.URL + "/credential",
+			ClientID:           "https://wallet.example",
 			ClientAuth: &ClientAuthentication{
 				Method:            ClientAuthAttestation,
-				ClientID:          "https://wallet.example",
 				Audience:          srv.URL,
 				ChallengeEndpoint: srv.URL + "/challenge",
 			},
@@ -342,11 +342,12 @@ func TestRefreshCredentialAuthenticatesTheClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+		w.rememberRenewal(imported.ID, CredentialRenewal{RefreshToken: "refresh-1",
 			Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
 			CredentialEndpoint: srv.URL + "/credential",
+			ClientID:           "wallet-1",
 			ClientAuth: &ClientAuthentication{
-				Method: ClientAuthPrivateKeyJWT, ClientID: "wallet-1", Audience: srv.URL,
+				Method: ClientAuthPrivateKeyJWT, Audience: srv.URL,
 			},
 		})
 		if _, err := w.RefreshCredential(imported.ID); err != nil {
@@ -370,7 +371,7 @@ func TestRefreshCredentialAuthenticatesTheClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+		w.rememberRenewal(imported.ID, CredentialRenewal{RefreshToken: "refresh-1",
 			Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
 			CredentialEndpoint: srv.URL + "/credential",
 		})
@@ -386,7 +387,6 @@ func TestRefreshCredentialAuthenticatesTheClient(t *testing.T) {
 func TestResolveClientAuthentication(t *testing.T) {
 	w := generateTestWallet(t)
 	ctx := clientAuthContext{
-		clientID:      "https://wallet.example",
 		tokenEndpoint: "https://issuer.example/token",
 		oauthMeta: map[string]any{
 			"issuer":                                "https://issuer.example",
@@ -403,7 +403,7 @@ func TestResolveClientAuthentication(t *testing.T) {
 		t.Errorf("the attestation does not carry what rebuilding it needs: %+v", auth)
 	}
 
-	private := clientAuthContext{clientID: ctx.clientID, tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{
+	private := clientAuthContext{tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{
 		"issuer":                                "https://issuer.example",
 		"token_endpoint_auth_methods_supported": []any{"private_key_jwt"},
 	}}
@@ -412,7 +412,7 @@ func TestResolveClientAuthentication(t *testing.T) {
 		t.Fatalf("a private_key_jwt issuer resolved to %+v", auth)
 	}
 
-	plain := clientAuthContext{clientID: ctx.clientID, tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{}}
+	plain := clientAuthContext{tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{}}
 	if auth := w.resolveClientAuthentication("", plain); auth != nil {
 		t.Errorf("an issuer that asked for nothing resolved to %+v", auth)
 	}
@@ -437,7 +437,7 @@ func TestResolveClientAuthentication(t *testing.T) {
 
 	// An issuer that lists only "none" gets no client authentication, with a
 	// warning.
-	explicitNone := clientAuthContext{clientID: ctx.clientID, tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{
+	explicitNone := clientAuthContext{tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{
 		"token_endpoint_auth_methods_supported": []any{"none"},
 	}}
 	if auth := w.resolveClientAuthentication("", explicitNone); auth != nil {
@@ -475,7 +475,7 @@ func TestRefreshReportsWhatTheIssuerSaid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+	w.rememberRenewal(imported.ID, CredentialRenewal{RefreshToken: "refresh-1",
 		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
 		CredentialEndpoint: srv.URL + "/credential",
 	})
@@ -513,7 +513,7 @@ func TestRefreshReportsANonOAuthRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+	w.rememberRenewal(imported.ID, CredentialRenewal{RefreshToken: "refresh-1",
 		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
 		CredentialEndpoint: srv.URL + "/credential",
 	})
@@ -605,7 +605,7 @@ func TestRefreshCredentialNamesTheCredentialTheTokenResponseAllows(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+			w.rememberRenewal(imported.ID, CredentialRenewal{RefreshToken: "refresh-1",
 				Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
 				CredentialEndpoint: srv.URL + "/credential", ConfigurationID: "cfg",
 			})
@@ -659,7 +659,7 @@ func TestStrictARFRefusesARenewalFromAnUnregisteredIssuer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+	w.rememberRenewal(imported.ID, CredentialRenewal{RefreshToken: "refresh-1",
 		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
 		CredentialEndpoint: srv.URL + "/credential", ConfigurationID: "cfg",
 	})
@@ -693,7 +693,7 @@ func TestAFailedRenewalKeepsTheStatus(t *testing.T) {
 	if _, ok := w.SetCredentialStatus(id, 1); !ok {
 		t.Fatal("the credential has no status entry")
 	}
-	w.rememberRenewal(id, "refresh-1", CredentialRenewal{Issuer: srv.URL, TokenEndpoint: srv.URL + "/token", CredentialEndpoint: srv.URL + "/credential"})
+	w.rememberRenewal(id, CredentialRenewal{RefreshToken: "refresh-1", Issuer: srv.URL, TokenEndpoint: srv.URL + "/token", CredentialEndpoint: srv.URL + "/credential"})
 
 	if _, err := NewServer(w, 0, nil).RefreshCredential(id); err == nil {
 		t.Fatal("a refused renewal reported success")
@@ -728,7 +728,7 @@ func TestStrictARFRefusesARenewalBeforeTheTokenRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+	w.rememberRenewal(imported.ID, CredentialRenewal{RefreshToken: "refresh-1",
 		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
 		CredentialEndpoint: srv.URL + "/credential", ConfigurationID: "cfg",
 	})

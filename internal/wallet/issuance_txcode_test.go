@@ -136,7 +136,7 @@ func TestApproveRequest_CarriesTxCodeIntoIssuance(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				server.awaitOfferConsent(noopResponseWriter{}, consentReq, "test issuer", false, "")
+				server.awaitOfferConsent(noopResponseWriter{}, consentReq, "test issuer", false, OfferOptions{})
 			}()
 
 			consentReq.ResultCh <- ConsentResult{Approved: true, TxCode: tc.code}

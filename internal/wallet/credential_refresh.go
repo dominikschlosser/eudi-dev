@@ -17,7 +17,6 @@ package wallet
 import (
 	"crypto/ecdsa"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -35,120 +34,54 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	}
 	renewal := *cred.Renewal
 
-	var dpopKey *ecdsa.PrivateKey
-	if renewal.UseDPoP {
-		dpopKey = w.HolderKey
-	}
-
-	// The credential request needs the Nonce Endpoint (§8.2) and the
-	// issuer's encryption requirements. Both come from the Credential Issuer
-	// Metadata (§12.2.2).
-	metadata, signerChain, metadataErr := fetchIssuerMetadataDocument(w.HTTPClient(), renewal.Issuer, w.ARFChecks(), w.metadataPolicy(w.Mode(), nil))
-	if metadataErr != nil {
-		return nil, fmt.Errorf("fetching the issuer metadata of %s: %w", renewal.Issuer, metadataErr)
-	}
-	// A renewal requests a credential too, so the ARF checks apply. They run
-	// before the token request, so a refusal keeps the refresh token.
-	if findings := w.issuerARFCheck(metadata, signerChain, []string{renewal.ConfigurationID}); len(findings) > 0 {
-		if err := w.reportARFIssuanceFindings(renewal.Issuer, findings); err != nil {
-			return nil, err
-		}
-	}
-	w.reportCatalogueFindings(renewal.Issuer, w.catalogueFindings(metadata, []string{renewal.ConfigurationID}))
-
-	form := url.Values{}
-	form.Set("grant_type", "refresh_token")
-	form.Set("refresh_token", renewal.RefreshToken)
-	if renewal.ClientID != "" {
-		form.Set("client_id", renewal.ClientID)
-	}
-	// An issuer that required client authentication for the first token
-	// request requires it for the refresh too.
-	if err := applyClientAuthentication(form, renewal.ClientAuth, w.HolderKey); err != nil {
+	// A renewal requests a credential too, so the issuer checks apply. They
+	// run before the token request, so a refusal keeps the refresh token.
+	metadata, err := w.loadIssuerMetadata(renewal.Issuer, []string{renewal.ConfigurationID}, ignoreFindings)
+	if err != nil {
 		return nil, err
 	}
-	nonce := ""
-	tokenResp, err := postFormWithDPoP(w.HTTPClient(), renewal.TokenEndpoint, form, dpopKey, "", &nonce, w.attestorFor(renewal.ClientAuth))
+
+	grant, err := w.refreshAccessToken(renewal)
+	// The issuer may rotate the refresh token and retire the old one, so the
+	// wallet keeps the new one even when a later step fails.
+	if grant != nil && grant.refreshToken != "" {
+		renewal.RefreshToken = grant.refreshToken
+		w.rememberRenewal(cred.ID, renewal)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("renewing the access token: %w", err)
 	}
-	// The issuer may rotate the refresh token and retire the old one, so the
-	// wallet keeps the new one even when a later step fails.
-	if rotated, _ := tokenResp["refresh_token"].(string); rotated != "" {
-		renewal.RefreshToken = rotated
-		w.rememberRenewal(cred.ID, rotated, renewal)
-	}
-	accessToken, _ := tokenResp["access_token"].(string)
-	if accessToken == "" {
-		return nil, fmt.Errorf("the token response carried no access_token")
-	}
-	authScheme := accessTokenScheme(tokenResp, renewal.UseDPoP)
 
-	cNonce, err := w.issuanceChallenge(metadata, tokenResp, renewal.Issuer, &nonce)
-	if err != nil {
-		return nil, err
-	}
-	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.Mode(), metadata, w.HolderKey)
-	if err != nil {
-		return nil, err
-	}
-
+	nonce := ""
 	// A renewal replaces one credential, so it needs one proof key.
-	proofKeys := []*ecdsa.PrivateKey{w.HolderKey}
-
-	// OpenID4VCI §8.2 requires credential_identifier "when an Authorization
-	// Details of type openid_credential was returned from the Token Response",
-	// and credential_configuration_id otherwise.
-	credentialIdentifier, authorizedOther := resolveCredentialIdentifier(tokenResp, renewal.ConfigurationID)
-	w.reportAuthorizedConfiguration(renewal.Issuer, renewal.ConfigurationID, authorizedOther)
-	credentialConfigurationID := ""
-	if credentialIdentifier == "" {
-		credentialConfigurationID = renewal.ConfigurationID
-	}
-
-	attempt := credentialRequestAttempt{
-		metadata:                  metadata,
-		endpoint:                  renewal.CredentialEndpoint,
-		issuer:                    renewal.Issuer,
-		configID:                  renewal.ConfigurationID,
-		accessToken:               accessToken,
-		authScheme:                authScheme,
-		credentialIdentifier:      credentialIdentifier,
-		credentialConfigurationID: credentialConfigurationID,
-		responseEncryption:        responseEncryption,
-		dpopKey:                   dpopKey,
-		proofKeys:                 proofKeys,
-		// The key proof carries the original client ID as iss. It is empty for
-		// an anonymous flow.
-		clientID: renewal.ClientID,
-		nonce:    &nonce,
-	}
-	proofs, err := w.buildCredentialProofs(attempt, cNonce)
-	if err != nil {
-		return nil, fmt.Errorf("building the proof: %w", err)
-	}
-
-	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofs)
-	if err != nil {
-		return nil, fmt.Errorf("requesting the credential: %w", err)
-	}
-	raw, err := selectPrimaryCredential(credResp, proofKeys)
-	if err != nil {
-		return nil, fmt.Errorf("reading the renewed credential: %w", err)
-	}
-	if _, err := w.checkReceivedCredentials(credResp, renewal.Issuer); err != nil {
-		return nil, err
-	}
-
-	renewed, err := w.ReplaceCredential(id, raw, &renewal)
-	if err != nil {
-		return nil, err
-	}
-	w.AddLogDetails("issuance", fmt.Sprintf("Renewed credential %s from %s", renewed.ID, renewal.Issuer), true, map[string]any{
-		"credential_id": renewed.ID,
-		"issuer":        renewal.Issuer,
-		"format":        renewed.Format,
+	proofKeys := []*ecdsa.PrivateKey{w.HolderKeyPair()}
+	credResp, err := w.requestCredential(credentialRequest{
+		renewal:   renewal,
+		metadata:  metadata,
+		grant:     grant,
+		proofKeys: proofKeys,
+		nonce:     &nonce,
 	})
+	if err != nil {
+		return nil, err
+	}
+	renewed, _, err := w.storeIssuedCredential(credResp, credentialDelivery{
+		metadata:  metadata,
+		renewal:   renewal,
+		proofKeys: proofKeys,
+		replaceID: id,
+		access: resourceAccess{
+			accessToken: grant.accessToken,
+			authScheme:  grant.authScheme,
+			dpopKey:     w.dpopKeyForRenewal(renewal),
+			nonce:       &nonce,
+		},
+		logSummary: "Renewed credential",
+		report:     ignoreFindings,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return renewed, nil
 }
 

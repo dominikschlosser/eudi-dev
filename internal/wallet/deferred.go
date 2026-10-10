@@ -28,10 +28,12 @@ import (
 type DeferredIssuance struct {
 	ID               string `json:"id"`
 	TransactionID    string `json:"transaction_id"`
-	Issuer           string `json:"issuer"`
 	DeferredEndpoint string `json:"deferred_endpoint"`
-	ConfigurationID  string `json:"credential_configuration_id,omitempty"`
-	Format           string `json:"format,omitempty"`
+	// CredentialRenewal names the issuer, its endpoints, the configuration and
+	// the client of the issuance. Collection refreshes the access token with
+	// it, and the collected credential keeps it for renewal.
+	CredentialRenewal
+	Format string `json:"format,omitempty"`
 	// VCT and DocType identify what is being issued. They come from the
 	// issuer metadata, since an offer carries only configuration ids.
 	VCT     string `json:"vct,omitempty"`
@@ -41,25 +43,15 @@ type DeferredIssuance struct {
 	Display     *CredentialDisplay `json:"display,omitempty"`
 	AccessToken string             `json:"access_token"`
 	AuthScheme  string             `json:"auth_scheme,omitempty"`
-	// RefreshToken and AccessTokenExpiresAt let a long deferral get a new
-	// access token. The original token is short lived, and an issuer may ask
-	// the wallet to come back in an hour.
-	RefreshToken         string    `json:"refresh_token,omitempty"`
+	// AccessTokenExpiresAt tells when a long deferral needs a new access
+	// token. The original token is short lived, and an issuer may ask the
+	// wallet to come back in an hour.
 	AccessTokenExpiresAt time.Time `json:"access_token_expires_at,omitempty"`
-	// The refresh request goes to the original token endpoint with the same
-	// client ID.
-	TokenEndpoint string `json:"token_endpoint,omitempty"`
-	ClientID      string `json:"client_id,omitempty"`
-	// ClientAuth records how the issuance authenticated this client. A token
-	// refresh is a request to the same endpoint and needs the same
-	// authentication.
-	ClientAuth      *ClientAuthentication `json:"client_auth,omitempty"`
-	UseDPoP         bool                  `json:"use_dpop,omitempty"`
-	IntervalSeconds int                   `json:"interval_seconds,omitempty"`
-	CreatedAt       time.Time             `json:"created_at"`
-	NextAttemptAt   time.Time             `json:"next_attempt_at"`
-	Attempts        int                   `json:"attempts,omitempty"`
-	LastError       string                `json:"last_error,omitempty"`
+	IntervalSeconds      int       `json:"interval_seconds,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
+	NextAttemptAt        time.Time `json:"next_attempt_at"`
+	Attempts             int       `json:"attempts,omitempty"`
+	LastError            string    `json:"last_error,omitempty"`
 	// ProofKeyPEMs holds the binding keys from the credential request, holder
 	// key first. A batch request adds ephemeral keys that exist only here, and
 	// each credential is matched back to one of them.
@@ -80,45 +72,59 @@ func (p *DeferredIssuance) Expired(now time.Time) bool {
 
 const deferredIssuanceMaxAge = 24 * time.Hour
 
-func newDeferredIssuance(ctx deferredContext, transactionID string, interval time.Duration) (*DeferredIssuance, error) {
-	pems := make([]string, 0, len(ctx.proofKeys))
-	for _, key := range ctx.proofKeys {
+// deferredTransaction is a Credential Response that carries a transaction_id
+// (OID4VCI 1.0 §8.3) together with the issuance it answers.
+type deferredTransaction struct {
+	transactionID string
+	interval      time.Duration
+	renewal       CredentialRenewal
+	metadata      map[string]any
+	format        string
+	display       *CredentialDisplay
+	grant         *accessGrant
+	proofKeys     []*ecdsa.PrivateKey
+}
+
+// deferredInterval reads the interval of a deferred answer (OID4VCI 1.0 §8.3
+// and §9.2).
+func deferredInterval(resp map[string]any) time.Duration {
+	if seconds, ok := numericValue(resp["interval"]); ok && seconds >= 1 {
+		return time.Duration(seconds) * time.Second
+	}
+	return deferredPollInterval
+}
+
+func newDeferredIssuance(t deferredTransaction) (*DeferredIssuance, error) {
+	endpoint, _ := t.metadata["deferred_credential_endpoint"].(string)
+	if endpoint == "" {
+		return nil, fmt.Errorf("issuer deferred the credential but published no deferred_credential_endpoint")
+	}
+	pems := make([]string, 0, len(t.proofKeys))
+	for _, key := range t.proofKeys {
 		encoded, err := encodeECPrivateKeyPEM(key)
 		if err != nil {
 			return nil, fmt.Errorf("encoding proof key for the deferred credential: %w", err)
 		}
 		pems = append(pems, encoded)
 	}
-	seconds := int(interval / time.Second)
-	if seconds < 1 {
-		seconds = 1
-	}
-	vct, docType := credentialTypeForConfiguration(ctx.metadata, ctx.configID)
+	seconds := max(int(t.interval/time.Second), 1)
+	vct, docType := credentialTypeForConfiguration(t.metadata, t.renewal.ConfigurationID)
 	now := time.Now()
-	var accessTokenExpiry time.Time
-	if ctx.expiresIn > 0 {
-		accessTokenExpiry = now.Add(time.Duration(ctx.expiresIn) * time.Second)
-	}
 	return &DeferredIssuance{
 		ID:                   newCredentialID(),
-		TransactionID:        transactionID,
-		Issuer:               ctx.issuer,
-		DeferredEndpoint:     ctx.deferredEndpoint,
-		ConfigurationID:      ctx.configID,
-		Format:               ctx.format,
+		TransactionID:        t.transactionID,
+		DeferredEndpoint:     endpoint,
+		CredentialRenewal:    t.renewal,
+		Format:               t.format,
 		VCT:                  vct,
 		DocType:              docType,
-		AccessToken:          ctx.accessToken,
-		RefreshToken:         ctx.refreshToken,
-		TokenEndpoint:        ctx.tokenEndpoint,
-		ClientID:             ctx.clientID,
-		ClientAuth:           ctx.clientAuth,
-		AuthScheme:           ctx.authScheme,
-		UseDPoP:              ctx.dpopKey != nil,
+		Display:              t.display,
+		AccessToken:          t.grant.accessToken,
+		AuthScheme:           t.grant.authScheme,
+		AccessTokenExpiresAt: t.grant.expiresAt(now),
 		IntervalSeconds:      seconds,
 		CreatedAt:            now,
-		NextAttemptAt:        now.Add(interval),
-		AccessTokenExpiresAt: accessTokenExpiry,
+		NextAttemptAt:        now.Add(t.interval),
 		ProofKeyPEMs:         pems,
 	}, nil
 }

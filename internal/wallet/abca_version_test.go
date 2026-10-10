@@ -363,9 +363,9 @@ func TestClientAttestorChallengeUse(t *testing.T) {
 	defer func() { httpClient = oldClient }()
 
 	attestor := w.attestorFor(&ClientAuthentication{
-		Method: ClientAuthAttestation, ClientID: "c", Audience: "https://as.example",
+		Method: ClientAuthAttestation, Audience: "https://as.example",
 		ChallengeEndpoint: srv.URL,
-	})
+	}, "c")
 	header := http.Header{}
 	header.Set("OAuth-Client-Attestation-Challenge", "served-challenge")
 	attestor.observe(header)
@@ -433,8 +433,8 @@ func TestStoredABCADraftDrivesEmission(t *testing.T) {
 	w.IssuerURL = "https://wallet.example"
 
 	headers, err := createClientAttestationHeaders(w, &ClientAuthentication{
-		Method: ClientAuthAttestation, ClientID: "c", Audience: "https://as.example", ABCADraft: 7,
-	}, "")
+		Method: ClientAuthAttestation, Audience: "https://as.example", ABCADraft: 7,
+	}, "c", "")
 	if err != nil {
 		t.Fatalf("createClientAttestationHeaders: %v", err)
 	}

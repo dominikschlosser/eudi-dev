@@ -51,11 +51,20 @@ func storeTestBatch(t *testing.T, w *Wallet, keys []*ecdsa.PrivateKey) {
 			holderRaw = raw
 		}
 	}
-	primary, err := w.ImportCredential(holderRaw)
+	batch, err := w.sortBatch(map[string]any{"credentials": credEntries}, keys, ignoreFindings)
+	if err != nil {
+		t.Fatalf("sorting the batch: %v", err)
+	}
+	if batch.primary != holderRaw {
+		t.Fatal("the holder copy is not the primary")
+	}
+	primary, err := w.importPrimaryCredential(batch.primary, keys)
 	if err != nil {
 		t.Fatalf("importing the holder copy: %v", err)
 	}
-	w.storeBatchSiblings(primary, map[string]any{"credentials": credEntries}, keys, nil)
+	if _, err := w.storeBatchCopies(primary, batch.copies, nil); err != nil {
+		t.Fatalf("storing the batch copies: %v", err)
+	}
 }
 
 func batchTestQuery() map[string]any {

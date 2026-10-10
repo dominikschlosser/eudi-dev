@@ -306,8 +306,8 @@ func TestCreateClientAttestationHeaders(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://wallet.example"
 
-	auth := &ClientAuthentication{Method: ClientAuthAttestation, ClientID: "wallet-client", Audience: "https://issuer.example"}
-	headers, err := createClientAttestationHeaders(w, auth, "challenge-123")
+	auth := &ClientAuthentication{Method: ClientAuthAttestation, Audience: "https://issuer.example"}
+	headers, err := createClientAttestationHeaders(w, auth, "wallet-client", "challenge-123")
 	if err != nil {
 		t.Fatalf("createClientAttestationHeaders: %v", err)
 	}
@@ -361,12 +361,12 @@ func TestCreateClientAttestationHeaders_UniquePoPJTI(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://wallet.example"
 
-	auth := &ClientAuthentication{Method: ClientAuthAttestation, ClientID: "wallet-client", Audience: "https://issuer.example"}
-	first, err := createClientAttestationHeaders(w, auth, "challenge-123")
+	auth := &ClientAuthentication{Method: ClientAuthAttestation, Audience: "https://issuer.example"}
+	first, err := createClientAttestationHeaders(w, auth, "wallet-client", "challenge-123")
 	if err != nil {
 		t.Fatalf("first createClientAttestationHeaders: %v", err)
 	}
-	second, err := createClientAttestationHeaders(w, auth, "challenge-123")
+	second, err := createClientAttestationHeaders(w, auth, "wallet-client", "challenge-123")
 	if err != nil {
 		t.Fatalf("second createClientAttestationHeaders: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestDoDPoPRequest_RegeneratesAttestationHeadersOnRetry(t *testing.T) {
 	defer func() { httpClient = oldClient }()
 
 	nonce := ""
-	attestor := w.attestorFor(&ClientAuthentication{Method: ClientAuthAttestation, ClientID: "wallet-client", Audience: srv.URL})
+	attestor := w.attestorFor(&ClientAuthentication{Method: ClientAuthAttestation, Audience: srv.URL}, "wallet-client")
 	_, _, err := doDPoPRequest(http.MethodPost, srv.URL, "application/json", "", []byte(`{}`), "", "", w.HolderKey, &nonce, attestor)
 	if err != nil {
 		t.Fatalf("doDPoPRequest: %v", err)

@@ -118,7 +118,7 @@ func TestApproveRequestCompletesWhenTheIssuerServesTheOfferOnce(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		server.awaitOfferConsent(noopResponseWriter{}, consentReq, "test issuer", false, "")
+		server.awaitOfferConsent(noopResponseWriter{}, consentReq, "test issuer", false, OfferOptions{})
 	}()
 
 	consentReq.ResultCh <- ConsentResult{Approved: true}
@@ -238,13 +238,13 @@ func TestUnattendedIssuanceCarriesNoApprovedOffer(t *testing.T) {
 
 	server := NewServer(w, 0, nil)
 	rec := httptest.NewRecorder()
-	server.processOfferURI(rec, offerURI, "", "", false, true)
+	server.processOfferURI(rec, offerURI, OfferOptions{}, false, true)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("the first, unattended run failed: %d %s", rec.Code, rec.Body.String())
 	}
 
 	rec = httptest.NewRecorder()
-	server.processOfferURI(rec, offerURI, "", "", false, true)
+	server.processOfferURI(rec, offerURI, OfferOptions{}, false, true)
 	if rec.Code == http.StatusOK {
 		t.Fatalf("a spent offer was accepted without anyone approving it: %s", rec.Body.String())
 	}

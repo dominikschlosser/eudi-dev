@@ -15,7 +15,6 @@
 package wallet
 
 import (
-	"crypto/ecdsa"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -394,7 +393,7 @@ func TestIssuanceRemembersHowToRenew(t *testing.T) {
 
 	w.Credentials = append(w.Credentials, StoredCredential{ID: "cred-1", Format: "dc+sd-jwt", Raw: credRaw})
 
-	w.rememberRenewal("cred-1", "refresh-1", CredentialRenewal{
+	w.rememberRenewal("cred-1", CredentialRenewal{RefreshToken: "refresh-1",
 		Issuer: "https://issuer.example", TokenEndpoint: "https://issuer.example/token",
 		CredentialEndpoint: "https://issuer.example/credential", ConfigurationID: "cfg", UseDPoP: true,
 	})
@@ -409,7 +408,7 @@ func TestIssuanceRemembersHowToRenew(t *testing.T) {
 	// Without a refresh token no renewal settings are stored, so the credential
 	// does not look renewable.
 	w.Credentials = append(w.Credentials, StoredCredential{ID: "cred-2", Format: "dc+sd-jwt", Raw: credRaw})
-	w.rememberRenewal("cred-2", "", CredentialRenewal{
+	w.rememberRenewal("cred-2", CredentialRenewal{
 		Issuer: "https://issuer.example", TokenEndpoint: "https://issuer.example/token",
 		CredentialEndpoint: "https://issuer.example/credential",
 	})
@@ -490,18 +489,7 @@ func TestDeferredCredentialRequestIsEncryptedWhenTheIssuerRequiresIt(t *testing.
 	defer func() { httpClient = oldClient }()
 
 	server := NewServer(w, 0, func() {})
-	pending, err := newDeferredIssuance(deferredContext{
-		issuer:           srv.URL,
-		configID:         "test-config",
-		format:           "dc+sd-jwt",
-		deferredEndpoint: srv.URL + "/deferred",
-		accessToken:      "test-access-token",
-		authScheme:       "Bearer",
-		proofKeys:        []*ecdsa.PrivateKey{w.HolderKey},
-	}, "test-transaction", time.Second)
-	if err != nil {
-		t.Fatalf("newDeferredIssuance: %v", err)
-	}
+	pending := pendingFor(t, w, srv.URL+"/deferred", 1)
 	w.AddDeferredIssuance(pending)
 
 	attempt := server.attemptDeferredCollection(*pending)
@@ -530,10 +518,10 @@ func TestReloadKeepsUnpersistedDeferral(t *testing.T) {
 	srv.SetStore(store)
 
 	srv.wallet.AddDeferredIssuance(&DeferredIssuance{
-		ID:            "pending-1",
-		TransactionID: "tx-1",
-		Issuer:        "https://issuer.test.example",
-		NextAttemptAt: time.Now().Add(time.Minute),
+		ID:                "pending-1",
+		TransactionID:     "tx-1",
+		CredentialRenewal: CredentialRenewal{Issuer: "https://issuer.test.example"},
+		NextAttemptAt:     time.Now().Add(time.Minute),
 	})
 
 	if err := srv.reloadFromStore(); err != nil {
@@ -588,18 +576,8 @@ func TestDeferredCollectionRecoversAMissingDisplay(t *testing.T) {
 	defer func() { httpClient = oldClient }()
 
 	server := NewServer(w, 0, func() {})
-	pending, err := newDeferredIssuance(deferredContext{
-		issuer:           srv.URL,
-		configID:         "cfg",
-		format:           "dc+sd-jwt",
-		deferredEndpoint: srv.URL + "/deferred",
-		accessToken:      "test-access-token",
-		authScheme:       "Bearer",
-		proofKeys:        []*ecdsa.PrivateKey{w.HolderKey},
-	}, "tx", time.Second)
-	if err != nil {
-		t.Fatalf("newDeferredIssuance: %v", err)
-	}
+	pending := pendingFor(t, w, srv.URL+"/deferred", 1)
+	pending.ConfigurationID = "cfg"
 	if pending.Display != nil {
 		t.Fatal("precondition: the deferred record should carry no display")
 	}

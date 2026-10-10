@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strings"
 	"time"
 )
 
@@ -78,49 +79,102 @@ func createProofJWTs(keys []*ecdsa.PrivateKey, audience, clientID, cNonce string
 	return proofs, nil
 }
 
-// selectPrimaryCredential picks the credential to import as the primary copy
-// from a credential response. OID4VCI 1.0 does not tie the order of the
-// credentials array to the proofs in the request, so the binding key is read
-// from each credential.
+// sortedBatch is a credential response matched to the proof keys of its
+// request.
+type sortedBatch struct {
+	primary string
+	copies  []batchCopy
+}
+
+type batchCopy struct {
+	raw           string
+	bindingKeyPEM string
+}
+
+// sortBatch picks the primary credential of a response and the batch copies
+// stored beside it. OID4VCI 1.0 §8.3: "The number of elements in the
+// credentials array matches the number of keys that the Wallet has provided
+// via the proofs parameter of the Credential Request, unless the Issuer
+// decides to issue fewer Credentials. Each key provided by the Wallet is used
+// to bind to, at most, one Credential." The array is not ordered like the
+// proofs, so the binding key is read from each credential.
 //
-// An issuer may "issue fewer Credentials" than the keys sent and binds each
-// key to at most one Credential. A single credential is taken with whatever
-// proof key it is bound to. Among several, each is matched to a distinct proof
-// key. The holder-key copy is the primary, or else the first one.
-func selectPrimaryCredential(credResp map[string]any, keys []*ecdsa.PrivateKey) (string, error) {
+// A single credential is taken with whatever key it is bound to. Among
+// several, a copy that breaks the rule above or cannot be read is a server
+// deviation. Strict mode refuses the response. Debug mode warns and leaves the
+// copy out. The copy bound to the holder key is the primary, or else the
+// first one.
+func (w *Wallet) sortBatch(credResp map[string]any, keys []*ecdsa.PrivateKey, report func(...string)) (sortedBatch, error) {
 	creds := credentialStringsFromResponse(credResp)
 	if len(creds) == 0 {
-		return "", fmt.Errorf("no credential in response")
+		return sortedBatch{}, fmt.Errorf("no credential in response")
 	}
 	if len(creds) == 1 {
-		if len(keys) > 1 {
-			log.Printf("[VCI] Issuer returned one credential for %d keys, storing a single copy", len(keys))
-		}
-		return creds[0], nil
+		return sortedBatch{primary: creds[0]}, nil
 	}
 
-	holderCredential := ""
-	matched := make([]int, len(keys))
-	for _, raw := range creds {
-		keyIndex := proofKeyIndex(raw, keys)
-		if keyIndex < 0 {
-			return "", fmt.Errorf("credential response contains a credential that is not bound to any proof key")
+	var deviations []string
+	type boundCopy struct {
+		position int
+		raw      string
+		key      int
+	}
+	var bound []boundCopy
+	usedBy := make(map[int]int, len(keys))
+	for i, raw := range creds {
+		position := i + 1
+		key := proofKeyIndex(raw, keys)
+		if key < 0 {
+			deviations = append(deviations, fmt.Sprintf("OID4VCI 1.0 §8.3: credential %d of the response is bound to none of the proof keys of the request", position))
+			continue
 		}
-		matched[keyIndex]++
-		if keyIndex == 0 {
-			holderCredential = raw
+		if other, used := usedBy[key]; used {
+			deviations = append(deviations, fmt.Sprintf("OID4VCI 1.0 §8.3: credentials %d and %d of the response are bound to the same proof key, and each key binds at most one credential", other, position))
+			continue
+		}
+		usedBy[key] = position
+		bound = append(bound, boundCopy{position: position, raw: raw, key: key})
+	}
+
+	primary := -1
+	for i, c := range bound {
+		if c.key == 0 {
+			primary = i
 		}
 	}
-	for i, count := range matched {
-		if count > 1 {
-			return "", fmt.Errorf("credential response contains %d credentials bound to the same proof key (index %d)", count, i)
+	if primary < 0 && len(bound) > 0 {
+		primary = 0
+	}
+	batch := sortedBatch{}
+	for i, c := range bound {
+		if i == primary {
+			batch.primary = c.raw
+			continue
+		}
+		pem, err := encodeECPrivateKeyPEM(keys[c.key])
+		if err != nil {
+			return sortedBatch{}, fmt.Errorf("encoding the binding key of credential %d: %w", c.position, err)
+		}
+		if _, err := w.parseDetectedFormat(strings.TrimSpace(c.raw), "", pem); err != nil {
+			deviations = append(deviations, fmt.Sprintf("credential %d of the response cannot be read: %v", c.position, err))
+			continue
+		}
+		batch.copies = append(batch.copies, batchCopy{raw: c.raw, bindingKeyPEM: pem})
+	}
+
+	for _, deviation := range deviations {
+		if err := w.reportServerDeviation(deviation); err != nil {
+			return sortedBatch{}, err
 		}
 	}
-	log.Printf("[VCI] Matched %d batch credential(s) to distinct proof keys, importing one as the primary copy", len(creds))
-	if holderCredential != "" {
-		return holderCredential, nil
+	report(deviations...)
+	if batch.primary == "" {
+		return sortedBatch{}, fmt.Errorf("none of the %d credentials of the response is bound to a proof key of the request", len(creds))
 	}
-	return creds[0], nil
+	if len(batch.copies) > 0 {
+		log.Printf("[VCI] Matched %d batch credential(s) to distinct proof keys", len(batch.copies)+1)
+	}
+	return batch, nil
 }
 
 func proofKeyIndex(raw string, keys []*ecdsa.PrivateKey) int {
@@ -144,52 +198,36 @@ func primaryBindingKeyPEM(raw string, keys []*ecdsa.PrivateKey) string {
 	return ""
 }
 
-// storeBatchSiblings stores batch copies under one group, each with its own
-// binding key, for EUDI ARF method C (Annex 2 Topic 10, ISSU_51-54).
+// storeBatchCopies stores batch copies under one group with the primary,
+// each with its own binding key, for EUDI ARF method C (Annex 2 Topic 10,
+// ISSU_51-54).
 //
 // A presentation clone keeps only the primary copy. The credential sink has
-// already forwarded it to the real wallet without the batch group, so siblings
+// already forwarded it to the real wallet without the batch group, so copies
 // stored there would be disconnected from it.
-func (w *Wallet) storeBatchSiblings(primary *StoredCredential, credResp map[string]any, keys []*ecdsa.PrivateKey, display *CredentialDisplay) []*StoredCredential {
-	if primary == nil {
-		return nil
-	}
+func (w *Wallet) storeBatchCopies(primary *StoredCredential, copies []batchCopy, display *CredentialDisplay) ([]*StoredCredential, error) {
 	stored := []*StoredCredential{primary}
-	creds := credentialStringsFromResponse(credResp)
-	if len(creds) <= 1 || len(keys) <= 1 {
-		return stored
+	if len(copies) == 0 {
+		return stored, nil
 	}
 	if w.credentialSink != nil {
 		log.Printf("[VCI] Batch issued during a presentation is kept as its primary copy only")
-		return stored
+		return stored, nil
 	}
-	primaryIdx := proofKeyIndex(primary.Raw, keys)
 	group := newCredentialID()
 	w.setBatchFields(primary.ID, group, primary.BindingKeyPEM)
 	primary.BatchGroup = group
 
-	for _, raw := range creds {
-		idx := proofKeyIndex(raw, keys)
-		if idx < 0 || idx == primaryIdx {
-			continue
-		}
-		pem, err := encodeECPrivateKeyPEM(keys[idx])
+	for _, c := range copies {
+		copyCred, err := w.importBatchCopy(c.raw, group, c.bindingKeyPEM)
 		if err != nil {
-			log.Printf("[VCI] skipping a batch copy: encoding its binding key failed: %v", err)
-			continue
+			return stored, fmt.Errorf("storing a batch copy: %w", err)
 		}
-		copyCred, err := w.importBatchCopy(raw, group, pem)
-		if err != nil {
-			log.Printf("[VCI] skipping a batch copy: %v", err)
-			continue
-		}
-		if display != nil {
-			w.rememberDisplay(copyCred, display)
-		}
+		w.rememberDisplay(copyCred, display)
 		stored = append(stored, copyCred)
 	}
 	log.Printf("[VCI] Stored a batch of %d copies (group %s) for one-time-use presentation", len(stored), group)
-	return stored
+	return stored, nil
 }
 
 // collapseBatchMatches keeps one copy per batch so consent does not show

@@ -34,6 +34,9 @@ func deferredCollectionIssuer(t *testing.T, credRaw string, pendingRounds, inter
 	polls := 0
 
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if serveIssuerMetadata(rw, r) {
+			return
+		}
 		mu.Lock()
 		polls++
 		current := polls
@@ -68,21 +71,39 @@ func deferredCollectionIssuer(t *testing.T, credRaw string, pendingRounds, inter
 	}
 }
 
+// pendingFor records a deferred issuance by the issuer at the origin of
+// endpoint.
 func pendingFor(t *testing.T, w *Wallet, endpoint string, intervalSeconds int) *DeferredIssuance {
 	t.Helper()
-	pending, err := newDeferredIssuance(deferredContext{
-		issuer:           "https://issuer.example",
-		configID:         "test-config",
-		format:           "dc+sd-jwt",
-		deferredEndpoint: endpoint,
-		accessToken:      "test-access-token",
-		authScheme:       "Bearer",
-		proofKeys:        []*ecdsa.PrivateKey{w.HolderKey},
-	}, "test-transaction", time.Duration(intervalSeconds)*time.Second)
+	pending, err := newDeferredIssuance(deferredTransaction{
+		transactionID: "test-transaction",
+		interval:      time.Duration(intervalSeconds) * time.Second,
+		renewal:       CredentialRenewal{Issuer: derivedOrigin(endpoint), ConfigurationID: "test-config"},
+		metadata:      map[string]any{"deferred_credential_endpoint": endpoint},
+		format:        "dc+sd-jwt",
+		grant:         &accessGrant{accessToken: "test-access-token", authScheme: "Bearer"},
+		proofKeys:     []*ecdsa.PrivateKey{w.HolderKey},
+	})
 	if err != nil {
 		t.Fatalf("newDeferredIssuance: %v", err)
 	}
 	return pending
+}
+
+// serveIssuerMetadata answers a request for the Credential Issuer Metadata of
+// the test issuer that serves r.
+func serveIssuerMetadata(rw http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != "/.well-known/openid-credential-issuer" {
+		return false
+	}
+	issuer := "http://" + r.Host
+	rw.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(rw).Encode(map[string]any{
+		"credential_issuer":            issuer,
+		"credential_endpoint":          issuer + "/credential",
+		"deferred_credential_endpoint": issuer + "/deferred",
+	})
+	return true
 }
 
 func TestCollectDeferredNow_SkipsWhenCollectionInFlight(t *testing.T) {
@@ -251,6 +272,9 @@ func TestDeferredPoller_GivesUpOnFatalAnswers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := generateTestWallet(t)
 			srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+				if serveIssuerMetadata(rw, r) {
+					return
+				}
 				rw.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(rw).Encode(map[string]string{"error": tc.error})
 			}))
@@ -549,6 +573,9 @@ func TestDeferredCollectionRefreshesAnExpiredToken(t *testing.T) {
 	var refreshes, refusedWithOldToken int
 	var srvURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if serveIssuerMetadata(rw, r) {
+			return
+		}
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/token"):
 			body, _ := io.ReadAll(r.Body)
@@ -709,28 +736,40 @@ func TestFailingBackgroundTaskIsRetriedThenAbandoned(t *testing.T) {
 }
 
 // OpenID4VCI 1.0 §9.1 applies the encryption rules of the Credential Request
-// to the Deferred Credential Request. Strict mode needs the issuer metadata
-// for them, so without it the poller retries later instead of sending the
-// request.
-func TestStrictDeferredCollectionWaitsForUsableMetadata(t *testing.T) {
-	w := generateTestWallet(t)
-	w.ValidationMode = ValidationModeStrict
-	srv, polls := deferredCollectionIssuer(t, generateTestCredential(t, w), 0, 1)
-	defer srv.Close()
-	oldClient := httpClient
-	httpClient = srv.Client()
-	defer func() { httpClient = oldClient }()
+// to the Deferred Credential Request, and the issuer checks need the metadata
+// too. Without usable metadata the poller retries later in every mode instead
+// of sending the request.
+func TestDeferredCollectionWaitsForUsableMetadata(t *testing.T) {
+	for _, mode := range []ValidationMode{ValidationModeStrict, ValidationModeDebug} {
+		t.Run(string(mode), func(t *testing.T) {
+			w := generateTestWallet(t)
+			w.ValidationMode = mode
+			polls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/.well-known/openid-credential-issuer" {
+					rw.WriteHeader(http.StatusNotFound)
+					return
+				}
+				polls++
+				rw.WriteHeader(http.StatusAccepted)
+			}))
+			defer srv.Close()
+			oldClient := httpClient
+			httpClient = srv.Client()
+			defer func() { httpClient = oldClient }()
 
-	server := NewServer(w, 0, nil)
-	pending := pendingFor(t, w, srv.URL, 1)
-	pending.NextAttemptAt = time.Now().Add(-time.Second)
-	w.AddDeferredIssuance(pending)
+			server := NewServer(w, 0, nil)
+			pending := pendingFor(t, w, srv.URL+"/deferred", 1)
+			pending.NextAttemptAt = time.Now().Add(-time.Second)
+			w.AddDeferredIssuance(pending)
 
-	server.collectDueDeferredCredentials(time.Now())
-	if got := polls(); got != 0 {
-		t.Errorf("the wallet sent %d deferred requests without the issuer metadata", got)
-	}
-	if list := w.DeferredIssuanceList(); len(list) != 1 || list[0].Attempts != 1 {
-		t.Errorf("records %+v, want the issuance rescheduled", list)
+			server.collectDueDeferredCredentials(time.Now())
+			if polls != 0 {
+				t.Errorf("the wallet sent %d deferred requests without the issuer metadata", polls)
+			}
+			if list := w.DeferredIssuanceList(); len(list) != 1 || list[0].Attempts != 1 {
+				t.Errorf("records %+v, want the issuance rescheduled", list)
+			}
+		})
 	}
 }

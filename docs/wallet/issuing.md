@@ -4,6 +4,8 @@
 
 The wallet accepts a credential offer with [`wallet accept`](presenting.md#wallet-accept-uri), from the wallet UI, from a scanned QR, or at its `/credential-offer` URL.
 
+An offer can list several credential configurations. The wallet requests one of them. Pick it with `credential_configuration_id` in the body of `POST /api/offers` or `POST /api/requests/{id}/approve`. Without a choice the wallet requests the first.
+
 ## Sign-in during issuance
 
 An authorization code offer requires sign-in at the issuer. The wallet returns the authorization URL because a hosted server cannot open a browser itself. An open wallet tab receives the URL through the event stream and navigates to it.
@@ -35,6 +37,8 @@ The credential keeps its id. A rotated refresh token replaces the stored one. Cr
 
 Renewal uses `grant_type=refresh_token` at the original token endpoint, with the original client authentication method. The wallet stores the method, audience and challenge endpoint with the refresh token. It rebuilds authentication proofs and fetches a fresh attestation challenge for each request.
 
+A renewal runs the same steps as an issuance. The wallet checks the issuer and the token response, logs the import and sends the issuer its notification.
+
 The server checks for renewal every 30 seconds and renews credentials within a minute of expiry. Failed renewals wait ten minutes before retrying. The wallet also attempts renewal before presenting a credential that expires within a minute, including without a running server. If renewal fails, it presents the stored credential.
 
 ## Deferred issuance
@@ -44,6 +48,8 @@ An issuer that cannot issue the credential immediately responds to the credentia
 While the credential is not ready, the issuer responds with the `issuance_pending` error and an `interval` to wait ([OID4VCI 1.0 §9.3](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)). The wallet waits that interval. Some issuers instead return the `transaction_id` in a success response. The wallet accepts this too.
 
 The wallet records the transaction and returns immediately. `wallet serve` collects the credential in the background at the issuer's interval.
+
+Each collection reads the issuer metadata again and runs the issuer checks of an offer. Without usable metadata it tries again at the next interval. The collected credential keeps the refresh token and endpoints of its issuance, so it can be renewed.
 
 Accepting such an offer returns `HTTP 202` with the outcome:
 

@@ -34,7 +34,7 @@ sequenceDiagram
 |-----------------|--------------------------------|
 | `credential_offer` or `credential_offer_uri` | One of these starts the issuance flow. |
 | `credential_issuer` | Used to fetch `/.well-known/openid-credential-issuer` and resolve the token and credential endpoints. |
-| `credential_configuration_ids` | The first configuration ID resolves the format and, in the authorization code flow, the scope. |
+| `credential_configuration_ids` | The wallet requests one configuration. That is the one picked in the consent dialog or sent as `credential_configuration_id`, and otherwise the first. It resolves the format and, in the authorization code flow, the scope. |
 | Issuer metadata `nonce_endpoint` | Provides the challenge signed by the key proof (OpenID4VCI 1.0 §8.2). The wallet calls it whenever the metadata advertises it. |
 | `authorization_details[].credential_identifiers` | When present in the token response, the wallet sends `credential_identifier` at the credential endpoint instead of `credential_configuration_id`. |
 | Issuer metadata `credential_response_encryption` support | When advertised, the wallet requests encrypted credential responses and decrypts compact JWE responses. |
@@ -81,7 +81,7 @@ sequenceDiagram
 | `access_token` | Authorizes the credential endpoint call. |
 | `c_nonce` | Taken from the Nonce Endpoint. A `c_nonce` in the token response is a pre-1.0 parameter. Strict mode ignores it. Debug mode uses it when the issuer advertises no Nonce Endpoint, and reports the issuer as pre-1.0. When the issuer rejects the challenge with `invalid_nonce`, the wallet fetches a new one and retries once with rebuilt proofs (§8.3.1.2). |
 | `proofs` | One proof type, chosen from the configuration's `proof_types_supported`. Either `jwt` proofs (one per batch key, or a single holder-key proof carrying the key attestation when one is required) or the key attestation itself as the `attestation` proof (Appendix F.1 and F.3). |
-| `credential_identifier` vs `credential_configuration_id` | The wallet uses `credential_identifier` when the token response includes it. Otherwise the wallet uses the first `credential_configuration_id` from the offer. |
+| `credential_identifier` vs `credential_configuration_id` | The wallet uses `credential_identifier` when the token response includes it. Otherwise the wallet uses the chosen `credential_configuration_id`. |
 
 ## Authorization Code Flow
 
@@ -126,7 +126,7 @@ sequenceDiagram
 | OAuth metadata `pushed_authorization_request_endpoint` | Used when published (publishing it is a SHOULD in RFC 9126). Otherwise the request goes straight to the authorization endpoint. `--haip` requires PAR unless the server publishes an `authorization_challenge_endpoint`. |
 | OAuth metadata `authorization_endpoint` | Required for the browser redirect. |
 | OAuth metadata DPoP support | Optional. The wallet binds its tokens with DPoP when the metadata advertises it and uses bearer tokens otherwise. Under `--haip`, advertising DPoP without `ES256` is a violation. |
-| `credential_configuration_ids[0] -> scope` | The scope comes from the selected credential configuration and goes into PAR. |
+| `credential_configuration_ids` -> scope | The scope comes from the chosen credential configuration and goes into PAR. |
 | `grants.authorization_code.issuer_state` | Forwarded into the PAR request when present. |
 | `token_endpoint_auth_methods_supported` | The wallet supports `none`, `private_key_jwt`, `attest_jwt_client_auth` and `attest_jwt_client_auth_dpop`. `client_secret_*` methods are rejected, since the wallet holds no client secret. |
 | `transaction_id` + `deferred_credential_endpoint` | The wallet takes this branch after a deferred credential response. |

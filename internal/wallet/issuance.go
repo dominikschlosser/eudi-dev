@@ -125,6 +125,9 @@ type OfferOptions struct {
 	// URI, for example for a consent dialog. The flow uses it only when reading
 	// the URI again fails.
 	ResolvedOffer *oid4vc.CredentialOffer
+	// ConfigurationID is the entry of credential_configuration_ids the user
+	// or the API caller chose. Empty requests the first entry.
+	ConfigurationID string
 
 	// findings collects the debug findings of the flow for its result.
 	findings *[]string
@@ -254,22 +257,13 @@ func (w *Wallet) processCredentialOffer(offerURI string, opts OfferOptions) (_ *
 		}
 	}()
 
-	var signerChain []*x509.Certificate
-	preferSigned := w.ARFChecks()
-	metadata, err := w.fetchLoggedMetadata(metadataFetch{
-		event:         "issuer_metadata",
-		fetchLabel:    "issuer metadata",
-		responseLabel: "Issuer metadata",
-		wellKnown:     "openid-credential-issuer",
-		issuer:        offer.CredentialIssuer,
-		fetch: func(client *http.Client, issuer string, payloads ...*LogPayload) (map[string]any, error) {
-			metadata, chain, err := fetchIssuerMetadataDocument(client, issuer, preferSigned, w.metadataPolicy(w.Mode(), opts.addFindings), payloads...)
-			signerChain = chain
-			return metadata, err
-		},
-	})
+	configID, err := chooseOfferConfiguration(offer, opts.ConfigurationID)
 	if err != nil {
-		return nil, fmt.Errorf("fetching issuer metadata: %w", err)
+		return nil, err
+	}
+	metadata, err := w.loadIssuerMetadata(offer.CredentialIssuer, offer.CredentialConfigurationIDs, opts.addFindings)
+	if err != nil {
+		return nil, err
 	}
 
 	// A missing authorization server document is not fatal. The endpoints fall
@@ -310,16 +304,19 @@ func (w *Wallet) processCredentialOffer(offerURI string, opts OfferOptions) (_ *
 			opts.addFindings(violations...)
 		}
 	}
-	// The ARF has the wallet check the issuer before it requests a credential.
-	if findings := w.issuerARFCheck(metadata, signerChain, offer.CredentialConfigurationIDs); len(findings) > 0 {
-		if err := w.reportARFIssuanceFindings(offer.CredentialIssuer, findings); err != nil {
-			return nil, err
-		}
-		opts.addFindings(findings...)
+
+	session := issuanceSession{
+		metadata: metadata,
+		renewal: CredentialRenewal{
+			Issuer:             offer.CredentialIssuer,
+			TokenEndpoint:      tokenEndpoint,
+			CredentialEndpoint: credentialEndpoint,
+			ConfigurationID:    configID,
+			UseDPoP:            usesDPoP(oauthMeta),
+		},
+		nonces: &dpopNonceState{},
+		report: opts.addFindings,
 	}
-	catalogueFindings := w.catalogueFindings(metadata, offer.CredentialConfigurationIDs)
-	w.reportCatalogueFindings(offer.CredentialIssuer, catalogueFindings)
-	opts.addFindings(catalogueFindings...)
 
 	if offer.Grants.PreAuthorizedCode == "" {
 		if w.Mode() == ValidationModeStrict {
@@ -330,23 +327,19 @@ func (w *Wallet) processCredentialOffer(offerURI string, opts OfferOptions) (_ *
 				return nil, err
 			}
 		}
-		return w.processAuthorizationCodeOffer(offer, metadata, oauthMeta, tokenEndpoint, credentialEndpoint, opts)
+		return w.processAuthorizationCodeOffer(offer, session, oauthMeta, opts)
 	}
 
 	// An issuer may protect the pre-authorized token request with DPoP,
 	// attestation-based client authentication and key attestation. Its metadata
 	// says which of them apply.
-	nonces := &dpopNonceState{}
-	dpopKey := w.dpopKeyFor(oauthMeta)
-	// A pre-authorized offer carries no client_id, and the wallet is not
-	// registered with the issuer. The attestation identifies the wallet itself,
-	// so the wallet's own identifier is the subject.
-	attestationClientID := strings.TrimSpace(w.VCIClientID)
-	if attestationClientID == "" {
-		attestationClientID = strings.TrimSpace(w.BaseURL)
+	session.renewal.ClientAuth = w.resolveClientAuthentication("", clientAuthContext{oauthMeta: oauthMeta, tokenEndpoint: tokenEndpoint})
+	if session.renewal.ClientAuth != nil {
+		// A pre-authorized offer carries no client_id, and the wallet is not
+		// registered with the issuer. The attestation identifies the wallet
+		// itself, so the wallet's own identifier is the client.
+		session.renewal.ClientID = w.walletClientIdentifier()
 	}
-	authCtx := clientAuthContext{oauthMeta: oauthMeta, clientID: attestationClientID, tokenEndpoint: tokenEndpoint}
-	clientAuth := w.resolveClientAuthentication("", authCtx)
 
 	txCode := opts.TxCode
 	// §4.1.1 puts tx_code in the grant when the Authorization Server expects
@@ -355,190 +348,24 @@ func (w *Wallet) processCredentialOffer(offerURI string, opts OfferOptions) (_ *
 	if len(offer.Grants.TxCode) > 0 && strings.TrimSpace(txCode) == "" {
 		return nil, fmt.Errorf("this offer requires a transaction code, which the issuer delivers separately: supply it as tx_code on the call, or --tx-code on the command line%s", txCodeHintSuffix(offer.Grants.TxCode))
 	}
+	// OID4VCI 1.0 §6.1: "the client_id parameter is only needed when a form of
+	// Client Authentication that relies on this parameter is used."
 	tokenForm := url.Values{}
 	tokenForm.Set("grant_type", preAuthorizedCodeGrant)
 	tokenForm.Set("pre-authorized_code", offer.Grants.PreAuthorizedCode)
 	if txCode != "" {
 		tokenForm.Set("tx_code", txCode)
 	}
-	attestor := w.attestorFor(clientAuth)
-	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, map[string]any{
-		"direction":           "outbound",
-		"method":              "POST",
-		"url":                 tokenEndpoint,
-		"endpoint":            "token",
-		"grant_type":          preAuthorizedCodeGrant,
-		"pre-authorized_code": offer.Grants.PreAuthorizedCode,
-		"tx_code":             txCode,
-		"client_attestation":  attestor != nil,
-		"dpop":                dpopKey != nil,
-	}, &LogPayload{Label: "Request", Body: tokenForm.Encode()})
-	tokenPayload := &LogPayload{}
-	tokenResp, err := postFormWithDPoP(w.HTTPClient(), tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, attestor, tokenPayload)
-	if err != nil {
-		w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), false,
-			responseMapLogDetails(tokenEndpoint, "token", nil, err), tokenPayload)
-		return nil, fmt.Errorf("token exchange: %w", err)
-	}
-	w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), true, map[string]any{
-		"direction": "inbound",
-		"url":       tokenEndpoint,
-		"endpoint":  "token",
-		"response":  tokenResp,
-	}, tokenPayload)
+	return w.issueWithToken(session, tokenForm)
+}
 
-	accessToken, _ := tokenResp["access_token"].(string)
-	if accessToken == "" {
-		// RFC 6749 §5.1 makes access_token REQUIRED.
-		return nil, fmt.Errorf("the token response carried no access_token")
+// walletClientIdentifier is the client identifier the wallet attests for
+// itself: the configured OID4VCI client_id, or else its base URL.
+func (w *Wallet) walletClientIdentifier() string {
+	if id := strings.TrimSpace(w.VCIClientID); id != "" {
+		return id
 	}
-	if err := w.checkTokenType(tokenResp, dpopKey != nil); err != nil {
-		return nil, err
-	}
-	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
-	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
-
-	cNonce, err := w.issuanceChallenge(metadata, tokenResp, offer.CredentialIssuer, &nonces.resource)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("[VCI] Token endpoint: %s", tokenEndpoint)
-	log.Printf("[VCI] Credential endpoint: %s", credentialEndpoint)
-	log.Printf("[VCI] c_nonce: %q", cNonce)
-	if tokenJSON, err := json.MarshalIndent(tokenResp, "", "  "); err == nil {
-		log.Printf("[VCI] Token response:\n%s", tokenJSON)
-	}
-
-	configID := ""
-	if len(offer.CredentialConfigurationIDs) > 0 {
-		configID = offer.CredentialConfigurationIDs[0]
-	}
-	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
-	if err != nil {
-		return nil, fmt.Errorf("preparing proof keys: %w", err)
-	}
-
-	credFormat := ""
-	if configID != "" {
-		credFormat = resolveCredentialFormat(metadata, configID)
-	}
-	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.Mode(), metadata, w.HolderKey)
-	if err != nil {
-		return nil, err
-	}
-
-	credentialIdentifier, authorizedOther := resolveCredentialIdentifier(tokenResp, configID)
-	w.reportAuthorizedConfiguration(offer.CredentialIssuer, configID, authorizedOther)
-	credentialConfigurationID := ""
-	if credentialIdentifier == "" && len(offer.CredentialConfigurationIDs) > 0 {
-		credentialConfigurationID = offer.CredentialConfigurationIDs[0]
-	}
-
-	// In a pre-authorized flow the key proof carries iss only when the wallet
-	// authenticated as a client with its attestation. An anonymous token is
-	// bound to no client, so iss is left out.
-	proofClientID := ""
-	if clientAuth != nil {
-		proofClientID = clientAuth.ClientID
-	}
-	attempt := credentialRequestAttempt{
-		metadata:                  metadata,
-		endpoint:                  credentialEndpoint,
-		issuer:                    offer.CredentialIssuer,
-		configID:                  configID,
-		accessToken:               accessToken,
-		authScheme:                authScheme,
-		credentialIdentifier:      credentialIdentifier,
-		credentialConfigurationID: credentialConfigurationID,
-		responseEncryption:        responseEncryption,
-		dpopKey:                   dpopKey,
-		proofKeys:                 proofKeys,
-		clientID:                  proofClientID,
-		nonce:                     &nonces.resource,
-	}
-	proofs, err := w.buildCredentialProofs(attempt, cNonce)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("[VCI] Proof (%s): %s", proofs.Type, proofs.Values[0])
-
-	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofs)
-	if err != nil {
-		return nil, fmt.Errorf("requesting credential: %w", err)
-	}
-
-	if credJSON, err := json.MarshalIndent(credResp, "", "  "); err == nil {
-		log.Printf("[VCI] Credential response:\n%s", credJSON)
-	}
-
-	credResp, pending, err := w.resolveDeferredCredential(credResp, deferredContext{
-		metadata:      metadata,
-		tokenEndpoint: tokenEndpoint,
-		clientID:      "",
-		clientAuth:    clientAuth,
-		refreshToken:  refreshToken,
-		expiresIn:     expiresIn,
-		issuer:        offer.CredentialIssuer,
-		configID:      configID,
-		format:        credFormat,
-		accessToken:   accessToken,
-		authScheme:    authScheme,
-		dpopKey:       dpopKey,
-		proofKeys:     proofKeys,
-		nonce:         &nonces.resource,
-	})
-	if err != nil {
-		return nil, err
-	}
-	display := w.resolveCredentialDisplay(metadata, configID)
-	if pending != nil {
-		pending.Display = display
-		return w.recordDeferredIssuance(pending), nil
-	}
-
-	credential, err := selectPrimaryCredential(credResp, proofKeys)
-	if err != nil {
-		return nil, err
-	}
-
-	received, err := w.checkReceivedCredentials(credResp, offer.CredentialIssuer)
-	if err != nil {
-		return nil, err
-	}
-	opts.addFindings(received...)
-	imported, err := w.importPrimaryCredential(credential, proofKeys)
-	if err != nil {
-		return nil, fmt.Errorf("importing received credential: %w", err)
-	}
-	importDetails := credentialImportLogDetails(imported, credential)
-	w.rememberRenewal(imported.ID, refreshToken, CredentialRenewal{
-		Issuer:             offer.CredentialIssuer,
-		TokenEndpoint:      tokenEndpoint,
-		CredentialEndpoint: credentialEndpoint,
-		ConfigurationID:    configID,
-		UseDPoP:            dpopKey != nil,
-		ClientAuth:         clientAuth,
-	})
-	w.rememberDisplay(imported, display)
-	stored := w.storeBatchSiblings(imported, credResp, proofKeys, display)
-	w.logCredentialImport(imported, offer.CredentialIssuer, importDetails, stored)
-
-	w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource)
-
-	if credFormat == "" {
-		credFormat = imported.Format
-	}
-
-	verificationStatus, verificationDetail := verifyImportedJWTMetadataSignature(credential, w.HTTPClient())
-	return &IssuanceResult{
-		CredentialID:       imported.ID,
-		Format:             credFormat,
-		Issuer:             offer.CredentialIssuer,
-		VerificationStatus: verificationStatus,
-		VerificationDetail: verificationDetail,
-		Imported:           imported,
-	}, nil
+	return strings.TrimSpace(w.BaseURL)
 }
 
 func verifyImportedJWTMetadataSignature(raw string, clients ...*http.Client) (string, string) {

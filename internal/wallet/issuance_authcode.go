@@ -41,14 +41,7 @@ type dpopNonceState struct {
 	resource    string
 }
 
-func (w *Wallet) processAuthorizationCodeOffer(
-	offer *oid4vc.CredentialOffer,
-	metadata map[string]any,
-	oauthMeta map[string]any,
-	tokenEndpoint string,
-	credentialEndpoint string,
-	opts OfferOptions,
-) (*IssuanceResult, error) {
+func (w *Wallet) processAuthorizationCodeOffer(offer *oid4vc.CredentialOffer, session issuanceSession, oauthMeta map[string]any, opts OfferOptions) (*IssuanceResult, error) {
 	if w == nil {
 		return nil, fmt.Errorf("wallet is nil")
 	}
@@ -90,13 +83,10 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		// client secret.
 		return nil, fmt.Errorf("unsupported token endpoint auth method %q", clientAuthMethod)
 	}
-	dpopKey := w.dpopKeyFor(oauthMeta)
+	dpopKey := w.dpopKeyForRenewal(session.renewal)
 
-	configID := ""
-	if len(offer.CredentialConfigurationIDs) > 0 {
-		configID = offer.CredentialConfigurationIDs[0]
-	}
-	scope := resolveCredentialScope(metadata, configID)
+	configID := session.renewal.ConfigurationID
+	scope := resolveCredentialScope(session.metadata, configID)
 	if scope == "" {
 		return nil, fmt.Errorf("credential configuration %q did not expose a scope for authorization_code flow", configID)
 	}
@@ -104,7 +94,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	state := randomBase64URL(18)
 	codeVerifier := randomBase64URL(32)
 	codeChallenge := codeChallengeS256(codeVerifier)
-	nonces := &dpopNonceState{}
+	nonces := session.nonces
 	parForm := url.Values{}
 	parForm.Set("response_type", "code")
 	parForm.Set("client_id", clientID)
@@ -116,11 +106,13 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if offer.Grants.IssuerState != "" {
 		parForm.Set("issuer_state", offer.Grants.IssuerState)
 	}
-	authCtx := clientAuthContext{oauthMeta: oauthMeta, clientID: clientID, tokenEndpoint: tokenEndpoint}
+	authCtx := clientAuthContext{oauthMeta: oauthMeta, tokenEndpoint: session.renewal.TokenEndpoint}
 	clientAuth := w.resolveClientAuthentication(clientAuthMethod, authCtx)
-	if err := applyClientAuthentication(parForm, clientAuth, w.HolderKey); err != nil {
+	if err := applyClientAuthentication(parForm, clientAuth, clientID, w.HolderKey); err != nil {
 		return nil, err
 	}
+	session.renewal.ClientID = clientID
+	session.renewal.ClientAuth = clientAuth
 
 	setup := authorizationCodeSetup{
 		clientID:              clientID,
@@ -140,17 +132,8 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		owner:                 opts.Owner,
 	}
 	issuance := authorizationCodeIssuance{
-		offer:              offer,
-		metadata:           metadata,
-		tokenEndpoint:      tokenEndpoint,
-		credentialEndpoint: credentialEndpoint,
-		clientID:           clientID,
-		codeVerifier:       codeVerifier,
-		clientAuth:         clientAuth,
-		dpopKey:            dpopKey,
-		nonces:             nonces,
-		configID:           configID,
-		findings:           opts.findings,
+		session:      session,
+		codeVerifier: codeVerifier,
 	}
 
 	// Without PAR, requestURI stays empty and the parameters go in the query
@@ -185,7 +168,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if requestURI == "" && parEndpoint != "" {
 		w.addProtocolLog("issuance", "par_request", fmt.Sprintf("Request PAR from %s", parEndpoint), true, formRequestLogDetails(parEndpoint, "par", parForm), &LogPayload{Label: "Request", Body: parForm.Encode()})
 		parPayload := &LogPayload{}
-		parResp, err := postFormWithDPoP(w.HTTPClient(), parEndpoint, parForm, dpopKey, "", &nonces.authzServer, w.attestorFor(clientAuth), parPayload)
+		parResp, err := postFormWithDPoP(w.HTTPClient(), parEndpoint, parForm, dpopKey, "", &nonces.authzServer, w.attestorFor(clientAuth, clientID), parPayload)
 		w.addProtocolLog("issuance", "par_response", fmt.Sprintf("PAR response from %s", parEndpoint), err == nil, responseMapLogDetails(parEndpoint, "par", parResp, err), parPayload)
 		if err != nil {
 			return nil, fmt.Errorf("PAR request: %w", err)
@@ -258,194 +241,26 @@ type authorizationCodeSetup struct {
 	owner string
 }
 
-// authorizationCodeIssuance holds what the token and credential requests need,
-// whichever flow produced the code.
+// authorizationCodeIssuance holds what the token request needs, whichever
+// flow produced the code.
 type authorizationCodeIssuance struct {
-	offer              *oid4vc.CredentialOffer
-	metadata           map[string]any
-	tokenEndpoint      string
-	credentialEndpoint string
-	clientID           string
+	session issuanceSession
 	// redirectURI is empty when the flow that produced the code had none. The
 	// token request then omits it (RFC 6749 §4.1.3).
 	redirectURI  string
 	codeVerifier string
-	clientAuth   *ClientAuthentication
-	dpopKey      *ecdsa.PrivateKey
-	nonces       *dpopNonceState
-	configID     string
-	// findings collects the debug findings of the flow for its result.
-	findings *[]string
 }
 
 func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance, code string) (*IssuanceResult, error) {
-	offer := ctx.offer
-	metadata := ctx.metadata
-	tokenEndpoint := ctx.tokenEndpoint
-	credentialEndpoint := ctx.credentialEndpoint
-	clientID := ctx.clientID
-	clientAuth := ctx.clientAuth
-	dpopKey := ctx.dpopKey
-	nonces := ctx.nonces
-	configID := ctx.configID
-
 	tokenForm := url.Values{}
 	tokenForm.Set("grant_type", "authorization_code")
 	tokenForm.Set("code", code)
-	tokenForm.Set("client_id", clientID)
+	tokenForm.Set("client_id", ctx.session.renewal.ClientID)
 	if ctx.redirectURI != "" {
 		tokenForm.Set("redirect_uri", ctx.redirectURI)
 	}
 	tokenForm.Set("code_verifier", ctx.codeVerifier)
-	if err := applyClientAuthentication(tokenForm, clientAuth, w.HolderKey); err != nil {
-		return nil, err
-	}
-
-	attestor := w.attestorFor(clientAuth)
-	tokenDetails := formRequestLogDetails(tokenEndpoint, "token", tokenForm)
-	tokenDetails["client_attestation"] = attestor != nil
-	tokenDetails["dpop"] = dpopKey != nil
-	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, tokenDetails, &LogPayload{Label: "Request", Body: tokenForm.Encode()})
-	tokenPayload := &LogPayload{}
-	tokenResp, err := postFormWithDPoP(w.HTTPClient(), tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, attestor, tokenPayload)
-	w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), err == nil, responseMapLogDetails(tokenEndpoint, "token", tokenResp, err), tokenPayload)
-	if err != nil {
-		return nil, fmt.Errorf("token exchange: %w", err)
-	}
-
-	accessToken, _ := tokenResp["access_token"].(string)
-	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
-	if accessToken == "" {
-		return nil, fmt.Errorf("token response missing access_token")
-	}
-	if err := w.checkTokenType(tokenResp, dpopKey != nil); err != nil {
-		return nil, err
-	}
-	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
-
-	cNonce, err := w.issuanceChallenge(metadata, tokenResp, offer.CredentialIssuer, &nonces.resource)
-	if err != nil {
-		return nil, err
-	}
-
-	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
-	if err != nil {
-		return nil, fmt.Errorf("preparing proof keys: %w", err)
-	}
-
-	credentialIdentifier, authorizedOther := resolveCredentialIdentifier(tokenResp, configID)
-	w.reportAuthorizedConfiguration(offer.CredentialIssuer, configID, authorizedOther)
-	credentialConfigurationID := ""
-	if credentialIdentifier == "" && len(offer.CredentialConfigurationIDs) > 0 {
-		credentialConfigurationID = offer.CredentialConfigurationIDs[0]
-	}
-	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.Mode(), metadata, w.HolderKey)
-	if err != nil {
-		return nil, err
-	}
-
-	attempt := credentialRequestAttempt{
-		metadata:                  metadata,
-		endpoint:                  credentialEndpoint,
-		issuer:                    offer.CredentialIssuer,
-		configID:                  configID,
-		accessToken:               accessToken,
-		authScheme:                authScheme,
-		credentialIdentifier:      credentialIdentifier,
-		credentialConfigurationID: credentialConfigurationID,
-		responseEncryption:        responseEncryption,
-		dpopKey:                   dpopKey,
-		proofKeys:                 proofKeys,
-		// The authorization code flow always identifies the client. The key
-		// proof carries it as iss for issuers that bind the token to the
-		// client.
-		clientID: clientID,
-		nonce:    &nonces.resource,
-	}
-	proofs, err := w.buildCredentialProofs(attempt, cNonce)
-	if err != nil {
-		return nil, err
-	}
-
-	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofs)
-	if err != nil {
-		return nil, fmt.Errorf("requesting credential: %w", err)
-	}
-
-	credResp, pending, err := w.resolveDeferredCredential(credResp, deferredContext{
-		metadata:      metadata,
-		tokenEndpoint: tokenEndpoint,
-		clientID:      clientID,
-		clientAuth:    clientAuth,
-		refreshToken:  refreshToken,
-		expiresIn:     expiresIn,
-		issuer:        offer.CredentialIssuer,
-		configID:      configID,
-		format:        resolveCredentialFormat(metadata, credentialConfigurationID),
-		accessToken:   accessToken,
-		authScheme:    authScheme,
-		dpopKey:       dpopKey,
-		proofKeys:     proofKeys,
-		nonce:         &nonces.resource,
-	})
-	if err != nil {
-		return nil, err
-	}
-	display := w.resolveCredentialDisplay(metadata, configID)
-	if pending != nil {
-		pending.Display = display
-		return w.recordDeferredIssuance(pending), nil
-	}
-
-	credential, err := selectPrimaryCredential(credResp, proofKeys)
-	if err != nil {
-		return nil, err
-	}
-
-	received, err := w.checkReceivedCredentials(credResp, offer.CredentialIssuer)
-	if err != nil {
-		return nil, err
-	}
-	if ctx.findings != nil {
-		*ctx.findings = append(*ctx.findings, received...)
-	}
-	imported, err := w.importPrimaryCredential(credential, proofKeys)
-	if err != nil {
-		return nil, fmt.Errorf("importing received credential: %w", err)
-	}
-	importDetails := credentialImportLogDetails(imported, credential)
-	w.rememberRenewal(imported.ID, refreshToken, CredentialRenewal{
-		Issuer:             offer.CredentialIssuer,
-		TokenEndpoint:      tokenEndpoint,
-		CredentialEndpoint: credentialEndpoint,
-		ConfigurationID:    configID,
-		ClientID:           clientID,
-		UseDPoP:            dpopKey != nil,
-		ClientAuth:         clientAuth,
-	})
-	w.rememberDisplay(imported, display)
-	stored := w.storeBatchSiblings(imported, credResp, proofKeys, display)
-	w.logCredentialImport(imported, offer.CredentialIssuer, importDetails, stored)
-
-	w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource)
-
-	credFormat := resolveCredentialFormat(metadata, credentialConfigurationID)
-	if credFormat == "" {
-		credFormat = imported.Format
-	}
-	verificationStatus, verificationDetail := verifyImportedJWTMetadataSignature(credential, w.HTTPClient())
-	result := &IssuanceResult{
-		CredentialID:       imported.ID,
-		Format:             credFormat,
-		Issuer:             offer.CredentialIssuer,
-		VerificationStatus: verificationStatus,
-		VerificationDetail: verificationDetail,
-		Imported:           imported,
-	}
-	if ctx.findings != nil {
-		result.Findings = *ctx.findings
-	}
-	return result, nil
+	return w.issueWithToken(ctx.session, tokenForm)
 }
 
 // unauthenticatedClientMethod is the IANA registered token endpoint auth method
@@ -593,7 +408,6 @@ func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 // tokenEndpoint is the audience when the metadata has no issuer.
 type clientAuthContext struct {
 	oauthMeta     map[string]any
-	clientID      string
 	tokenEndpoint string
 }
 
@@ -604,7 +418,6 @@ func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContex
 	if method == ClientAuthPrivateKeyJWT {
 		return &ClientAuthentication{
 			Method:   ClientAuthPrivateKeyJWT,
-			ClientID: ctx.clientID,
 			Audience: oauthIssuer(ctx.oauthMeta, ctx.tokenEndpoint),
 		}
 	}
@@ -632,7 +445,6 @@ func (w *Wallet) attestationClientAuth(ctx clientAuthContext) *ClientAuthenticat
 	challengeEndpoint, _ := ctx.oauthMeta["challenge_endpoint"].(string)
 	auth := &ClientAuthentication{
 		Method:            ClientAuthAttestation,
-		ClientID:          ctx.clientID,
 		Audience:          oauthIssuer(ctx.oauthMeta, ctx.tokenEndpoint),
 		ChallengeEndpoint: challengeEndpoint,
 		ABCADraft:         w.VCIFeatureVersion().ABCADraft(),
@@ -675,27 +487,17 @@ func usesCombinedPoP(oauthMeta map[string]any) bool {
 
 // usesDPoP reports whether requests to this authorization server carry a DPoP
 // proof. They do when it advertises DPoP (RFC 9449 §5.1) or demands the
-// combined possession proof (draft-10 §5.2).
+// combined possession proof (draft-10 §5.2). RFC 9449 makes the metadata
+// optional, so the wallet treats a server without it as issuing bearer tokens.
 func usesDPoP(oauthMeta map[string]any) bool {
 	return supportsDPoP(oauthMeta) || usesCombinedPoP(oauthMeta)
 }
 
-// dpopKeyFor returns the DPoP signing key for this authorization server. It is
-// nil when the server uses neither DPoP nor the combined possession proof. RFC
-// 9449 makes the metadata optional, so the wallet treats a server without it as
-// issuing bearer tokens.
-func (w *Wallet) dpopKeyFor(oauthMeta map[string]any) *ecdsa.PrivateKey {
-	if usesDPoP(oauthMeta) {
-		return w.HolderKey
-	}
-	return nil
-}
-
-func (w *Wallet) attestorFor(auth *ClientAuthentication) *clientAttestor {
+func (w *Wallet) attestorFor(auth *ClientAuthentication, clientID string) *clientAttestor {
 	if auth == nil || auth.Method != ClientAuthAttestation {
 		return nil
 	}
-	return &clientAttestor{wallet: w, auth: auth}
+	return &clientAttestor{wallet: w, auth: auth, clientID: clientID}
 }
 
 // clientAttestor adds the wallet attestation to requests and tracks the
@@ -705,6 +507,8 @@ func (w *Wallet) attestorFor(auth *ClientAuthentication) *clientAttestor {
 type clientAttestor struct {
 	wallet *Wallet
 	auth   *ClientAuthentication
+	// clientID is the subject of the attestation.
+	clientID string
 	// challenge comes from the server and goes into the next PoP.
 	challenge string
 }
@@ -720,7 +524,7 @@ func (a *clientAttestor) headers() (map[string]string, error) {
 			return nil, err
 		}
 	}
-	headers, err := createClientAttestationHeaders(a.wallet, a.auth, challenge)
+	headers, err := createClientAttestationHeaders(a.wallet, a.auth, a.clientID, challenge)
 	if err != nil {
 		return nil, fmt.Errorf("creating client attestation headers: %w", err)
 	}
@@ -780,11 +584,11 @@ func (a *clientAttestor) retryAfterRefusal(body []byte) bool {
 }
 
 // private_key_jwt uses form fields. Attestation authentication uses headers.
-func applyClientAuthentication(form url.Values, auth *ClientAuthentication, holderKey *ecdsa.PrivateKey) error {
+func applyClientAuthentication(form url.Values, auth *ClientAuthentication, clientID string, holderKey *ecdsa.PrivateKey) error {
 	if auth == nil || auth.Method != ClientAuthPrivateKeyJWT {
 		return nil
 	}
-	assertion, err := createClientAssertionJWT(holderKey, auth.ClientID, auth.Audience)
+	assertion, err := createClientAssertionJWT(holderKey, clientID, auth.Audience)
 	if err != nil {
 		return fmt.Errorf("creating client assertion: %w", err)
 	}
@@ -797,7 +601,7 @@ func applyClientAuthentication(form url.Values, auth *ClientAuthentication, hold
 // mode, the PoP for the attested key. Both carry the claims of every supported
 // draft (the draft-07 shape). Every draft allows extra claims in these JWTs
 // (§5.1 and §5.2 rule 1), so one shape verifies under all of them.
-func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, challenge string) (map[string]string, error) {
+func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, clientID, challenge string) (map[string]string, error) {
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
 		return nil, fmt.Errorf("wallet issuer signing material is not configured")
 	}
@@ -818,7 +622,7 @@ func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, chall
 		clientAttestationHeader["kid"] = kid
 	}
 	clientAttestationPayload := map[string]any{
-		"sub": auth.ClientID,
+		"sub": clientID,
 		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(5 * time.Minute).Unix(),
 		"cnf": map[string]any{"jwk": holderJWK},
@@ -848,7 +652,7 @@ func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, chall
 		"jti": randomBase64URL(18),
 		// Draft-07 §5.2 requires iss and defines nbf. Later drafts allow extra
 		// claims (§5.2 rule 1).
-		"iss": auth.ClientID,
+		"iss": clientID,
 		"nbf": time.Now().Unix(),
 		"exp": time.Now().Add(5 * time.Minute).Unix(),
 	}
@@ -1360,51 +1164,6 @@ func isInvalidNonceError(err error) bool {
 	return errors.As(err, &credErr) && credErr.code == "invalid_nonce"
 }
 
-// deferredContext holds the request settings for collecting a deferred
-// credential after the issuance flow ends.
-type deferredContext struct {
-	metadata         map[string]any
-	tokenEndpoint    string
-	clientID         string
-	clientAuth       *ClientAuthentication
-	refreshToken     string
-	expiresIn        int
-	issuer           string
-	configID         string
-	format           string
-	deferredEndpoint string
-	accessToken      string
-	authScheme       string
-	dpopKey          *ecdsa.PrivateKey
-	proofKeys        []*ecdsa.PrivateKey
-	nonce            *string
-}
-
-// resolveDeferredCredential returns a completed response unchanged. A
-// transaction_id response becomes a DeferredIssuance for background collection.
-func (w *Wallet) resolveDeferredCredential(credResp map[string]any, ctx deferredContext) (map[string]any, *DeferredIssuance, error) {
-	txID, _ := credResp["transaction_id"].(string)
-	if txID == "" {
-		return credResp, nil, nil
-	}
-	ctx.deferredEndpoint, _ = ctx.metadata["deferred_credential_endpoint"].(string)
-	if ctx.deferredEndpoint == "" {
-		return nil, nil, fmt.Errorf("issuer deferred the credential but published no deferred_credential_endpoint")
-	}
-
-	// The poller collects the credential, so the caller (a consent dialog, a
-	// CLI run) does not wait out the issuer's interval.
-	interval := deferredPollInterval
-	if seconds, ok := numericValue(credResp["interval"]); ok && seconds >= 1 {
-		interval = time.Duration(seconds) * time.Second
-	}
-	pending, err := newDeferredIssuance(ctx, txID, interval)
-	if err != nil {
-		return nil, nil, err
-	}
-	return nil, pending, nil
-}
-
 const deferredPollInterval = 5 * time.Second
 
 // stillPendingError reports a valid transaction that is not issued yet.
@@ -1486,12 +1245,8 @@ func (w *Wallet) deferredCredentialAttempt(mode ValidationMode, metadata map[str
 // still pending and how long to wait. OpenID4VCI 1.0 §9.2 answers that case
 // with a 202 carrying interval and transaction_id.
 func deferredIssuancePending(out map[string]any) (bool, time.Duration) {
-	interval := deferredPollInterval
-	if seconds, ok := numericValue(out["interval"]); ok && seconds >= 1 {
-		interval = time.Duration(seconds) * time.Second
-	}
 	if txID, _ := out["transaction_id"].(string); txID != "" && len(credentialStringsFromResponse(out)) == 0 {
-		return true, interval
+		return true, deferredInterval(out)
 	}
 	return false, 0
 }

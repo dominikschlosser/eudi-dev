@@ -43,5 +43,5 @@ func (s *Server) handleCredentialOfferEndpoint(w http.ResponseWriter, r *http.Re
 	if browser && session == "" {
 		session = newBrowserSession(w, r, s.browserSecure(r))
 	}
-	s.processOfferURI(w, "openid-credential-offer://?"+oid4vc.EncodeURIQuery(offerParams), query.Get("tx_code"), session, browser, false)
+	s.processOfferURI(w, "openid-credential-offer://?"+oid4vc.EncodeURIQuery(offerParams), OfferOptions{TxCode: query.Get("tx_code"), Owner: session}, browser, false)
 }

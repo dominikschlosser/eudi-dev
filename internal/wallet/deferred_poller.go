@@ -15,10 +15,8 @@
 package wallet
 
 import (
-	"crypto/ecdsa"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 )
@@ -202,14 +200,10 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	if err != nil {
 		return s.abandonDeferred(pending, fmt.Sprintf("its proof keys could not be read back: %v", err))
 	}
-	var dpopKey *ecdsa.PrivateKey
-	if pending.UseDPoP {
-		dpopKey = s.wallet.HolderKeyPair()
-	}
 
 	// Collection can outlast the original access token.
 	if pending.AccessTokenExpired(time.Now()) && pending.CanRefresh() {
-		refreshed, err := s.refreshDeferredAccessToken(pending, dpopKey)
+		refreshed, err := s.refreshDeferredAccessToken(pending)
 		if err != nil {
 			return s.abandonDeferred(pending, fmt.Sprintf("its access token expired and could not be renewed: %v", err))
 		}
@@ -217,44 +211,44 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	}
 
 	// §9.1 applies the encryption rules of the Credential Request to the
-	// Deferred Credential Request. The original flow is gone by now, so the
-	// metadata is fetched again. Strict mode retries later when it can't use
-	// the metadata. Debug mode sends the request unencrypted and says so.
-	//
+	// Deferred Credential Request, and the issuer checks apply as for any
+	// credential request. The original flow is gone by now, so the metadata
+	// is fetched again. Collection waits for metadata it can use.
+	metadata, signerChain, err := s.wallet.readIssuerMetadata(pending.Issuer, ignoreFindings)
+	if err != nil {
+		return s.rescheduleDeferred(pending, pending.Interval(), fmt.Sprintf("the issuer metadata can't be used: %v", err))
+	}
+	if err := s.wallet.checkIssuer(pending.Issuer, metadata, signerChain, []string{pending.ConfigurationID}, ignoreFindings); err != nil {
+		return s.abandonDeferred(pending, err.Error())
+	}
 	// The validation mode is read once. This runs on the poller goroutine and
 	// can race a PUT /api/config/conformance.
 	mode := s.wallet.Mode()
-	metadata, metadataErr := fetchIssuerMetadata(s.wallet.HTTPClient(), pending.Issuer, s.wallet.metadataPolicy(mode, nil))
-	if metadataErr != nil {
-		if mode == ValidationModeStrict {
-			return s.rescheduleDeferred(pending, pending.Interval(), fmt.Sprintf("the issuer metadata can't be used: %v", metadataErr))
-		}
-		s.wallet.addProtocolWarning("issuance", "deferred_metadata_unavailable", fmt.Sprintf("The issuer metadata of %s can't be used, so the deferred credential request goes unencrypted: %v", pending.Issuer, metadataErr), map[string]any{"issuer": pending.Issuer})
-		metadata = nil
-	}
-	responseEncryption, err := buildCredentialResponseEncryptionRequest(mode, metadata, s.wallet.HolderKeyPair())
+	holderKey := s.wallet.HolderKeyPair()
+	responseEncryption, err := buildCredentialResponseEncryptionRequest(mode, metadata, holderKey)
 	if err != nil {
 		return s.rescheduleDeferred(pending, pending.Interval(), err.Error())
 	}
 
 	// Each call sends one request without waiting. The poller schedules retries.
 	nonce := ""
+	dpopKey := s.wallet.dpopKeyForRenewal(pending.CredentialRenewal)
 	credResp, err := s.wallet.deferredCredentialAttempt(
 		mode, metadata,
 		pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
-		pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKeyPair(), &nonce)
+		pending.TransactionID, responseEncryption, dpopKey, holderKey, &nonce)
 
 	// An issuer that refuses the authorization may have expired the token
 	// earlier than it said. The wallet renews the token and retries once.
 	if err != nil && isAuthorizationRejected(err) && pending.CanRefresh() {
-		refreshed, refreshErr := s.refreshDeferredAccessToken(pending, dpopKey)
+		refreshed, refreshErr := s.refreshDeferredAccessToken(pending)
 		if refreshErr == nil {
 			pending = refreshed
 			nonce = ""
 			credResp, err = s.wallet.deferredCredentialAttempt(
 				mode, metadata,
 				pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
-				pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKeyPair(), &nonce)
+				pending.TransactionID, responseEncryption, dpopKey, holderKey, &nonce)
 		}
 	}
 
@@ -262,38 +256,34 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 		return s.handleDeferredAttemptError(pending, err)
 	}
 
-	credential, err := selectPrimaryCredential(credResp, proofKeys)
-	if err != nil {
-		return s.abandonDeferred(pending, fmt.Sprintf("the issuer answered without a usable credential: %v", err))
-	}
-	if _, err := s.wallet.checkReceivedCredentials(credResp, pending.Issuer); err != nil {
-		return s.abandonDeferred(pending, err.Error())
-	}
-	imported, err := s.wallet.importPrimaryCredential(credential, proofKeys)
-	if err != nil {
-		return s.abandonDeferred(pending, fmt.Sprintf("the credential could not be imported: %v", err))
-	}
 	// The record carries the display resolved at offer time. When that was
 	// empty, the display comes from the metadata fetched for this collection.
 	display := pending.Display
-	if display == nil && metadata != nil {
+	if display == nil {
 		display = s.wallet.resolveCredentialDisplay(metadata, pending.ConfigurationID)
 	}
-	s.wallet.rememberDisplay(imported, display)
-	stored := s.wallet.storeBatchSiblings(imported, credResp, proofKeys, display)
-
-	s.wallet.RemoveDeferredIssuance(pending.ID)
-	details := credentialImportLogDetails(imported, credential)
-	details["issuer"] = pending.Issuer
-	details["transaction_id"] = pending.TransactionID
-	details["deferred"] = true
-	s.wallet.addProtocolLog("issuance", "credential_imported",
-		fmt.Sprintf("Collected deferred credential %s from %s", imported.ID, pending.Issuer), true, details, credentialImportLogPayload(stored))
-	s.log("  Collected:     deferred %s credential from %s", imported.Format, pending.Issuer)
-
 	// §9.2 lets the Deferred Credential Response carry a notification_id of
 	// its own, defined in §8.3.
-	s.wallet.notifyCredentialAccepted(metadata, credResp, pending.AccessToken, pending.AuthScheme, dpopKey, &nonce)
+	imported, _, err := s.wallet.storeIssuedCredential(credResp, credentialDelivery{
+		metadata:  metadata,
+		renewal:   pending.CredentialRenewal,
+		display:   display,
+		proofKeys: proofKeys,
+		access: resourceAccess{
+			accessToken: pending.AccessToken,
+			authScheme:  pending.AuthScheme,
+			dpopKey:     dpopKey,
+			nonce:       &nonce,
+		},
+		logSummary: "Collected deferred credential",
+		logDetails: map[string]any{"transaction_id": pending.TransactionID, "deferred": true},
+		report:     ignoreFindings,
+	})
+	if err != nil {
+		return s.abandonDeferred(pending, err.Error())
+	}
+	s.wallet.RemoveDeferredIssuance(pending.ID)
+	s.log("  Collected:     deferred %s credential from %s", imported.Format, pending.Issuer)
 
 	s.saveIssuance(&IssuanceResult{Imported: imported})
 	s.wallet.NotifyStateChanged()
@@ -430,45 +420,23 @@ func (s *Server) AbandonDeferredNow(id string) (DeferredIssuance, bool) {
 	return DeferredIssuance{}, false
 }
 
-func (s *Server) refreshDeferredAccessToken(pending DeferredIssuance, dpopKey *ecdsa.PrivateKey) (DeferredIssuance, error) {
-	form := url.Values{}
-	form.Set("grant_type", "refresh_token")
-	form.Set("refresh_token", pending.RefreshToken)
-	if pending.ClientID != "" {
-		form.Set("client_id", pending.ClientID)
-	}
-	// The issuer that required client authentication for the first token
-	// requires it for this one too.
-	if err := applyClientAuthentication(form, pending.ClientAuth, s.wallet.HolderKeyPair()); err != nil {
+// refreshDeferredAccessToken renews the access token of a deferred issuance.
+// A rotated refresh token replaces the old one for good, so it is saved under
+// the reload lock even when the answer fails a check.
+func (s *Server) refreshDeferredAccessToken(pending DeferredIssuance) (DeferredIssuance, error) {
+	grant, err := s.wallet.refreshAccessToken(pending.CredentialRenewal)
+	if grant == nil {
 		return pending, err
 	}
-
-	nonce := ""
-	resp, err := postFormWithDPoP(s.wallet.HTTPClient(), pending.TokenEndpoint, form, dpopKey, "", &nonce, s.wallet.attestorFor(pending.ClientAuth))
-	if err != nil {
-		return pending, err
-	}
-	accessToken, _ := resp["access_token"].(string)
-	if accessToken == "" {
-		return pending, fmt.Errorf("the token response carried no access_token")
-	}
-
 	updated := pending
-	updated.AccessToken = accessToken
-	if scheme := accessTokenScheme(resp, pending.UseDPoP); scheme != "" {
-		updated.AuthScheme = scheme
+	if grant.refreshToken != "" {
+		updated.RefreshToken = grant.refreshToken
 	}
-	// An issuer may rotate the refresh token, and reusing a rotated one fails.
-	if rotated, _ := resp["refresh_token"].(string); rotated != "" {
-		updated.RefreshToken = rotated
+	if err == nil {
+		updated.AccessToken = grant.accessToken
+		updated.AuthScheme = grant.authScheme
+		updated.AccessTokenExpiresAt = grant.expiresAt(time.Now())
 	}
-	updated.AccessTokenExpiresAt = time.Time{}
-	if seconds, ok := resp["expires_in"].(float64); ok && seconds > 0 {
-		updated.AccessTokenExpiresAt = time.Now().Add(time.Duration(seconds) * time.Second)
-	}
-
-	// A rotated refresh token replaces the old one for good, so it is saved
-	// under the reload lock.
 	s.saveMutation(func() bool {
 		s.wallet.UpdateDeferredIssuance(updated.ID, func(p *DeferredIssuance) {
 			p.AccessToken = updated.AccessToken
@@ -478,6 +446,9 @@ func (s *Server) refreshDeferredAccessToken(pending DeferredIssuance, dpopKey *e
 		})
 		return true
 	})
+	if err != nil {
+		return updated, err
+	}
 	s.log("  Renewed:       access token for the deferred credential from %s", pending.Issuer)
 	return updated, nil
 }

@@ -352,8 +352,7 @@ const (
 // ClientAuthentication preserves the method and metadata needed for later token requests,
 // including refresh.
 type ClientAuthentication struct {
-	Method   string `json:"method"`
-	ClientID string `json:"client_id,omitempty"`
+	Method string `json:"method"`
 	// The authorization server identifier used as the proof or assertion audience.
 	Audience string `json:"audience,omitempty"`
 	// Fetch a new challenge for each request because a stored challenge may expire.
@@ -503,6 +502,9 @@ type ConsentResult struct {
 	// Entered in the consent dialog after the offer declares that a transaction code
 	// is required.
 	TxCode string
+	// ConfigurationID is the credential configuration picked from an offer
+	// that lists several.
+	ConfigurationID string
 }
 
 type SubmissionResult struct {

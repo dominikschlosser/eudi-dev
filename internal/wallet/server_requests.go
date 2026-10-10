@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -168,6 +169,9 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		SelectedClaims map[string][]string `json:"selected_claims"`
 		TxCode         string              `json:"tx_code"`
+		// ConfigurationID picks one of the credential configurations an
+		// issuance offer lists.
+		ConfigurationID string `json:"credential_configuration_id"`
 		// References the credential options selected in the dialog.
 		Picks      map[string]consentPick `json:"picks"`
 		SetChoices []int                  `json:"set_choices"`
@@ -198,6 +202,10 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "request not found"})
 			return
 		}
+		if body.ConfigurationID != "" && !slices.Contains(pending.OfferConfigs, body.ConfigurationID) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("the offer does not list credential configuration %q", body.ConfigurationID)})
+			return
+		}
 		if err := ValidateConsentSelection(pending.CredentialOptions, picks, body.SetChoices, body.ClaimSets); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -223,6 +231,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 		Owner:           requestOwner(r),
 		SelectedClaims:  body.SelectedClaims,
 		TxCode:          strings.TrimSpace(body.TxCode),
+		ConfigurationID: body.ConfigurationID,
 		Picks:           picks,
 		SetChoices:      body.SetChoices,
 		ClaimSetChoices: body.ClaimSets,

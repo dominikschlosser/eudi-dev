@@ -391,11 +391,10 @@ func (c *StoredCredential) Rehydrate() error {
 }
 
 // Store renewal context only when the issuer supplies a refresh token.
-func (w *Wallet) rememberRenewal(credentialID, refreshToken string, renewal CredentialRenewal) {
-	if w == nil || refreshToken == "" || renewal.CredentialEndpoint == "" || renewal.TokenEndpoint == "" {
+func (w *Wallet) rememberRenewal(credentialID string, renewal CredentialRenewal) {
+	if w == nil || renewal.RefreshToken == "" || renewal.CredentialEndpoint == "" || renewal.TokenEndpoint == "" {
 		return
 	}
-	renewal.RefreshToken = refreshToken
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -405,11 +404,6 @@ func (w *Wallet) rememberRenewal(credentialID, refreshToken string, renewal Cred
 			return
 		}
 	}
-}
-
-func (w *Wallet) logCredentialImport(imported *StoredCredential, issuer string, details map[string]any, credentials []*StoredCredential) {
-	details["issuer"] = issuer
-	w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, details, credentialImportLogPayload(credentials))
 }
 
 func jwtIssuedAt(payload map[string]any) time.Time {

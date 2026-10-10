@@ -225,6 +225,8 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 		URI         string `json:"uri"`
 		TxCode      string `json:"tx_code,omitempty"`
 		Interactive bool   `json:"interactive,omitempty"`
+		// ConfigurationID picks one of the offer's credential_configuration_ids.
+		ConfigurationID string `json:"credential_configuration_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -238,26 +240,31 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 	if body.Interactive {
 		s.noteStaleClient(r)
 	}
-	s.processOfferURI(w, body.URI, body.TxCode, requestOwner(r), false, !body.Interactive)
+	s.processOfferURI(w, body.URI, OfferOptions{
+		TxCode:          body.TxCode,
+		Owner:           requestOwner(r),
+		ConfigurationID: body.ConfigurationID,
+	}, false, !body.Interactive)
 }
 
 // Browser submissions return to the wallet UI after import. API submissions provide
 // consent and run without a dialog.
-func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode, session string, browserRedirect, apiInitiated bool) {
+func (s *Server) processOfferURI(w http.ResponseWriter, uri string, opts OfferOptions, browserRedirect, apiInitiated bool) {
 	s.log("Received credential offer")
 	uriDisplay := format.Truncate(uri, 120)
 	s.log("  URI: %s", uriDisplay)
 	offerDetails := map[string]any{"offer_uri": uri}
-	addStringDetail(offerDetails, "tx_code", txCode)
+	addStringDetail(offerDetails, "tx_code", opts.TxCode)
+	addStringDetail(offerDetails, "credential_configuration_id", opts.ConfigurationID)
 	s.wallet.AddLogDetails("issuance", "Received credential offer", true, offerDetails)
 
 	if !s.wallet.AutoAccept && !apiInitiated {
-		consentReq, issuerDisplay, err := s.wallet.prepareIssuanceConsentRequest(uri, session)
+		consentReq, issuerDisplay, err := s.wallet.prepareIssuanceConsentRequest(uri, opts.Owner)
 		if err != nil {
 			s.log("  ERROR: %v", err)
 			s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
 			s.wallet.NotifyError(WalletError{
-				Owner:   session,
+				Owner:   opts.Owner,
 				Message: "The wallet refused the credential offer",
 				Detail:  err.Error(),
 			})
@@ -276,19 +283,20 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode, session str
 		if browserRedirect {
 			// Redirect browser navigations to the wallet UI immediately. Import in the
 			// background after consent.
-			go s.awaitOfferConsent(noopResponseWriter{}, consentReq, issuerDisplay, false, txCode)
+			go s.awaitOfferConsent(noopResponseWriter{}, consentReq, issuerDisplay, false, opts)
 			redirectBrowser(w, "/?request="+consentReq.ID)
 			return
 		}
-		s.awaitOfferConsent(w, consentReq, issuerDisplay, false, txCode)
+		s.awaitOfferConsent(w, consentReq, issuerDisplay, false, opts)
 		return
 	}
 
-	s.processOfferDirectly(w, uri, txCode, session, browserRedirect, apiInitiated)
+	opts.PresentationConsented = apiInitiated
+	s.processOfferDirectly(w, uri, opts, browserRedirect)
 }
 
 // The submission channel also delivers the outcome to the approve API.
-func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentRequest, issuerDisplay string, browserRedirect bool, txCode string) {
+func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentRequest, issuerDisplay string, browserRedirect bool, opts OfferOptions) {
 	handle := func(consent ConsentResult) {
 		if !consent.Approved {
 			s.log("  Consent:       denied")
@@ -306,13 +314,20 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 		// The offer declares whether a transaction code is required. A code entered in
 		// the consent dialog replaces the code from the request.
 		if consent.TxCode != "" {
-			txCode = consent.TxCode
+			opts.TxCode = consent.TxCode
 		}
+		// The configuration picked in the dialog replaces the one from the
+		// request.
+		if consent.ConfigurationID != "" {
+			opts.ConfigurationID = consent.ConfigurationID
+		}
+		opts.ResolvedOffer = consentReq.ResolvedOffer
+		opts.Owner = approvingOwner(consentReq.Owner, consent.Owner)
 		// Show consent for any presentation requested by the issuer during this
 		// interactive flow.
 		result, pending, err := s.runOffer(consentReq.OfferURI, map[string]any{
-			"credential_requested": consentReq.OfferConfigs,
-		}, OfferOptions{TxCode: txCode, ResolvedOffer: consentReq.ResolvedOffer, Owner: approvingOwner(consentReq.Owner, consent.Owner)})
+			"credential_requested": requestedConfigurations(consentReq.OfferConfigs, opts.ConfigurationID),
+		}, opts)
 		if err != nil {
 			consentReq.SubmissionCh <- SubmissionResult{Error: err.Error(), StatusCode: http.StatusBadRequest}
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -353,8 +368,8 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 	handle(consent)
 }
 
-func (s *Server) processOfferDirectly(w http.ResponseWriter, uri, txCode, session string, browserRedirect, apiInitiated bool) {
-	result, pending, err := s.runOffer(uri, nil, OfferOptions{PresentationConsented: apiInitiated, TxCode: txCode, Owner: session})
+func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, opts OfferOptions, browserRedirect bool) {
+	result, pending, err := s.runOffer(uri, nil, opts)
 	if err != nil {
 		if !s.wallet.AutoAccept {
 			s.triggerUIRequest("")
@@ -383,6 +398,19 @@ func (s *Server) processOfferDirectly(w http.ResponseWriter, uri, txCode, sessio
 		writeJSON(w, http.StatusOK, result)
 	}
 }
+
+// requestedConfigurations is the configuration the issuance requests, as the
+// activity log shows it. Without a choice it is the first offered one.
+func requestedConfigurations(offered []string, chosen string) []string {
+	if chosen != "" {
+		return []string{chosen}
+	}
+	if len(offered) > 0 {
+		return offered[:1]
+	}
+	return nil
+}
+
 func (w *Wallet) prepareIssuanceConsentRequest(raw, owner string) (*ConsentRequest, string, error) {
 	trimmed := strings.TrimSpace(raw)
 	req := &ConsentRequest{

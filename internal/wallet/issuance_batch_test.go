@@ -19,11 +19,20 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
+
+// primaryOf returns the primary credential a debug-mode wallet picks from a
+// response.
+func primaryOf(t *testing.T, resp map[string]any, keys []*ecdsa.PrivateKey) (string, error) {
+	t.Helper()
+	batch, err := generateTestWallet(t).sortBatch(resp, keys, ignoreFindings)
+	return batch.primary, err
+}
 
 func testKey(t *testing.T) *ecdsa.PrivateKey {
 	t.Helper()
@@ -130,16 +139,20 @@ func TestSelectPrimaryCredentialReversedOrder(t *testing.T) {
 			map[string]any{"credential": holderCred},
 		},
 	}
-	got, err := selectPrimaryCredential(resp, []*ecdsa.PrivateKey{holder, ephemeral})
+	got, err := primaryOf(t, resp, []*ecdsa.PrivateKey{holder, ephemeral})
 	if err != nil {
-		t.Fatalf("selectPrimaryCredential: %v", err)
+		t.Fatalf("sortBatch: %v", err)
 	}
 	if got != holderCred {
 		t.Fatal("expected the holder-key-bound credential to be selected")
 	}
 }
 
-func TestSelectPrimaryCredentialUnknownKey(t *testing.T) {
+// OID4VCI 1.0 §8.3 binds each credential of a batch to a proof key of the
+// request. Strict mode refuses a response with a copy bound to another key.
+func TestSortBatchStrictRefusesACopyBoundToAnUnknownKey(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
 	holder := testKey(t)
 	stranger := testKey(t)
 	resp := map[string]any{
@@ -148,9 +161,77 @@ func TestSelectPrimaryCredentialUnknownKey(t *testing.T) {
 			map[string]any{"credential": fakeSDJWT(t, &holder.PublicKey)},
 		},
 	}
-	_, err := selectPrimaryCredential(resp, []*ecdsa.PrivateKey{holder, testKey(t)})
-	if err == nil {
+	if _, err := w.sortBatch(resp, []*ecdsa.PrivateKey{holder, testKey(t)}, ignoreFindings); err == nil {
 		t.Fatal("expected error for credential bound to an unknown key")
+	}
+}
+
+// Debug mode leaves a rejected copy out of the batch, and warns about it and
+// reports it as a finding.
+func TestSortBatchDebugWarnsAboutRejectedCopies(t *testing.T) {
+	holder, eph := testKey(t), testKey(t)
+	holderCred := fakeSDJWT(t, &holder.PublicKey)
+	ephCred := fakeSDJWT(t, &eph.PublicKey)
+	for name, rejected := range map[string]string{
+		"bound to an unknown key":           fakeSDJWT(t, &testKey(t).PublicKey),
+		"bound to a key another copy holds": fakeSDJWT(t, &eph.PublicKey),
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := generateTestWallet(t)
+			resp := map[string]any{"credentials": []any{
+				map[string]any{"credential": holderCred},
+				map[string]any{"credential": ephCred},
+				map[string]any{"credential": rejected},
+			}}
+			var findings []string
+			batch, err := w.sortBatch(resp, []*ecdsa.PrivateKey{holder, eph, testKey(t)}, func(f ...string) { findings = append(findings, f...) })
+			if err != nil {
+				t.Fatalf("sortBatch: %v", err)
+			}
+			if batch.primary != holderCred {
+				t.Error("the holder copy is not the primary")
+			}
+			if len(batch.copies) != 1 || batch.copies[0].raw != ephCred {
+				t.Errorf("copies = %d, want only the copy bound to its own key", len(batch.copies))
+			}
+			if len(findings) != 1 || !strings.Contains(findings[0], "3 of the response") {
+				t.Errorf("findings = %v, want one naming credential 3", findings)
+			}
+			if findLogEntry(w.GetLog(), "server_deviation") == nil {
+				t.Error("the rejected copy left no warning in the activity log")
+			}
+		})
+	}
+}
+
+// A copy that the wallet cannot read is rejected like one bound to the wrong
+// key.
+func TestSortBatchRejectsAnUnreadableCopy(t *testing.T) {
+	holder, eph := testKey(t), testKey(t)
+	// The header is not base64url, so the credential cannot be parsed. Its
+	// payload still names the proof key.
+	bound := fakeSDJWT(t, &eph.PublicKey)
+	unreadable := "!!!" + bound[strings.Index(bound, "."):]
+	resp := map[string]any{"credentials": []any{
+		map[string]any{"credential": fakeSDJWT(t, &holder.PublicKey)},
+		map[string]any{"credential": unreadable},
+	}}
+	keys := []*ecdsa.PrivateKey{holder, eph}
+
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	if _, err := w.sortBatch(resp, keys, ignoreFindings); err == nil {
+		t.Fatal("strict mode stored a batch with a copy it cannot read")
+	}
+
+	w = generateTestWallet(t)
+	var findings []string
+	batch, err := w.sortBatch(resp, keys, func(f ...string) { findings = append(findings, f...) })
+	if err != nil {
+		t.Fatalf("sortBatch: %v", err)
+	}
+	if len(batch.copies) != 0 || len(findings) != 1 {
+		t.Errorf("copies = %d, findings = %v, want the unreadable copy left out and reported", len(batch.copies), findings)
 	}
 }
 
@@ -158,9 +239,9 @@ func TestSelectPrimaryCredentialSingle(t *testing.T) {
 	holder := testKey(t)
 	cred := fakeSDJWT(t, &holder.PublicKey)
 	resp := map[string]any{"credentials": []any{map[string]any{"credential": cred}}}
-	got, err := selectPrimaryCredential(resp, []*ecdsa.PrivateKey{holder})
+	got, err := primaryOf(t, resp, []*ecdsa.PrivateKey{holder})
 	if err != nil {
-		t.Fatalf("selectPrimaryCredential: %v", err)
+		t.Fatalf("sortBatch: %v", err)
 	}
 	if got != cred {
 		t.Fatal("expected the single credential to be selected")
@@ -176,7 +257,7 @@ func TestSelectPrimaryCredentialSingleNotHolderBound(t *testing.T) {
 	cred := fakeSDJWT(t, &ephemeral.PublicKey)
 	resp := map[string]any{"credentials": []any{map[string]any{"credential": cred}}}
 	keys := []*ecdsa.PrivateKey{holder, ephemeral, testKey(t)}
-	got, err := selectPrimaryCredential(resp, keys)
+	got, err := primaryOf(t, resp, keys)
 	if err != nil {
 		t.Fatalf("a single credential should be imported even when it is not holder-bound: %v", err)
 	}
@@ -196,8 +277,9 @@ func TestSingleCredentialBoundToEphemeralKeyIsPresentable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("importing: %v", err)
 	}
-	resp := map[string]any{"credentials": []any{map[string]any{"credential": cred}}}
-	w.storeBatchSiblings(imported, resp, keys, nil)
+	if _, err := w.storeBatchCopies(imported, nil, nil); err != nil {
+		t.Fatalf("storing: %v", err)
+	}
 
 	stored, ok := w.GetCredential(imported.ID)
 	if !ok {
@@ -278,7 +360,7 @@ func TestSelectPrimaryCredentialFewerThanAdvertisedNoneHolderBound(t *testing.T)
 		map[string]any{"credential": second},
 	}}
 	keys := []*ecdsa.PrivateKey{holder, eph1, eph2, testKey(t), testKey(t)}
-	got, err := selectPrimaryCredential(resp, keys)
+	got, err := primaryOf(t, resp, keys)
 	if err != nil {
 		t.Fatalf("a partial batch bound to ephemeral keys should be accepted: %v", err)
 	}
@@ -296,15 +378,17 @@ func TestPartialBatchNoneHolderBoundIsStoredAndPresentable(t *testing.T) {
 		map[string]any{"credential": fakeSDJWT(t, &eph1.PublicKey)},
 		map[string]any{"credential": fakeSDJWT(t, &eph2.PublicKey)},
 	}}
-	primaryRaw, err := selectPrimaryCredential(resp, keys)
+	sorted, err := w.sortBatch(resp, keys, ignoreFindings)
 	if err != nil {
-		t.Fatalf("selectPrimaryCredential: %v", err)
+		t.Fatalf("sortBatch: %v", err)
 	}
-	imported, err := w.importPrimaryCredential(primaryRaw, keys)
+	imported, err := w.importPrimaryCredential(sorted.primary, keys)
 	if err != nil {
 		t.Fatalf("importing the primary: %v", err)
 	}
-	w.storeBatchSiblings(imported, resp, keys, nil)
+	if _, err := w.storeBatchCopies(imported, sorted.copies, nil); err != nil {
+		t.Fatalf("storing the copies: %v", err)
+	}
 
 	var batch []StoredCredential
 	for _, c := range w.GetCredentials() {
@@ -329,15 +413,17 @@ func TestPartialBatchNoneHolderBoundIsStoredAndPresentable(t *testing.T) {
 	}
 }
 
-// Two credentials bound to the same proof key are rejected.
-func TestSelectPrimaryCredentialRejectsDuplicateKey(t *testing.T) {
+// Strict mode refuses two credentials bound to the same proof key.
+func TestSortBatchStrictRefusesDuplicateKey(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
 	holder := testKey(t)
 	eph := testKey(t)
 	resp := map[string]any{"credentials": []any{
 		map[string]any{"credential": fakeSDJWT(t, &eph.PublicKey)},
 		map[string]any{"credential": fakeSDJWT(t, &eph.PublicKey)},
 	}}
-	if _, err := selectPrimaryCredential(resp, []*ecdsa.PrivateKey{holder, eph}); err == nil {
+	if _, err := w.sortBatch(resp, []*ecdsa.PrivateKey{holder, eph}, ignoreFindings); err == nil {
 		t.Fatal("expected an error for two credentials bound to the same proof key")
 	}
 }
