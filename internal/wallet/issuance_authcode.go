@@ -1864,13 +1864,14 @@ func (w *Wallet) validateAuthorizationCodeResponse(values url.Values, expectedSt
 		}
 	}
 
-	expectedIssuer = normalizeIssuerURL(expectedIssuer)
-	issuer := normalizeIssuerURL(values.Get("iss"))
+	// RFC 9207 §2.4: "This comparison MUST use simple string comparison as
+	// defined in Section 6.2.1 of [RFC3986]."
+	issuer := values.Get("iss")
 	switch {
 	case issuer == "" && issRequired:
 		return w.reportServerDeviation("the authorization response omitted iss, which RFC 9207 requires when the authorization server advertises authorization_response_iss_parameter_supported")
-	case issuer != "" && expectedIssuer != "" && issuer != expectedIssuer:
-		return w.reportServerDeviation(fmt.Sprintf("the authorization response iss %q does not match the expected issuer %q", values.Get("iss"), expectedIssuer))
+	case issuer != "" && expectedIssuer != "" && !sameIdentifier(issuer, expectedIssuer):
+		return w.reportServerDeviation(fmt.Sprintf("the authorization response iss %q does not match the expected issuer %q", issuer, expectedIssuer))
 	}
 	return nil
 }

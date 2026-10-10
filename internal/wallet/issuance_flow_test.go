@@ -1079,6 +1079,9 @@ func TestValidateAuthorizationCodeResponse_StrictRefusesDeviations(t *testing.T)
 		{"missing state", url.Values{"code": {"c"}, "iss": {"https://issuer.example"}}, "expected-state", "https://issuer.example", true, "state"},
 		{"state mismatch", url.Values{"code": {"c"}, "state": {"other"}, "iss": {"https://issuer.example"}}, "expected-state", "https://issuer.example", true, "state"},
 		{"iss mismatch", url.Values{"code": {"c"}, "state": {"expected-state"}, "iss": {"https://other.example"}}, "expected-state", "https://issuer.example", true, "iss"},
+		// RFC 9207 §2.4 compares by simple string comparison, so a trailing
+		// slash makes a different issuer.
+		{"iss differs by a trailing slash", url.Values{"code": {"c"}, "state": {"expected-state"}, "iss": {"https://issuer.example/"}}, "expected-state", "https://issuer.example", true, "iss"},
 		{"missing iss when advertised", url.Values{"code": {"c"}, "state": {"expected-state"}}, "expected-state", "https://issuer.example", true, "iss"},
 		{"missing iss when not advertised is fine", url.Values{"code": {"c"}, "state": {"expected-state"}}, "expected-state", "https://issuer.example", false, ""},
 	}

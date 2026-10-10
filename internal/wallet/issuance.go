@@ -747,7 +747,7 @@ func parseIssuerMetadataDocument(body []byte, contentType, issuer string, policy
 // normalization), the data contained in the response MUST NOT be used."
 func checkCredentialIssuerIdentifier(metadata map[string]any, issuer string) error {
 	declared, _ := metadata["credential_issuer"].(string)
-	if declared == issuer {
+	if sameIdentifier(declared, issuer) {
 		return nil
 	}
 	if declared == "" {
@@ -1077,24 +1077,26 @@ func (w *Wallet) fallbackAuthorizationServer(metadata map[string]any, authServer
 	return "", nil, false
 }
 
+// validateAuthorizationServerIssuer applies RFC 8414 §3.3: "The "issuer" value
+// returned MUST be identical to the authorization server's issuer identifier
+// value into which the well-known URI string was inserted to create the URL
+// used to retrieve the metadata."
 func validateAuthorizationServerIssuer(authServer string, oauthMeta map[string]any) error {
-	expected := normalizeIssuerURL(authServer)
 	issuer, _ := oauthMeta["issuer"].(string)
-	actual := normalizeIssuerURL(issuer)
-	if expected == "" {
-		return fmt.Errorf("authorization server issuer cannot be validated without authorization server URL")
-	}
-	if actual == "" {
+	if issuer == "" {
 		return fmt.Errorf("authorization server metadata missing issuer")
 	}
-	if actual != expected {
+	if !sameIdentifier(issuer, authServer) {
 		return fmt.Errorf("authorization server issuer %q did not match authorization server %q", issuer, authServer)
 	}
 	return nil
 }
 
-func normalizeIssuerURL(raw string) string {
-	return strings.TrimRight(strings.TrimSpace(raw), "/")
+// sameIdentifier compares issuer identifiers by simple string comparison (RFC
+// 3986 §6.2.1). RFC 8414 §3.3, RFC 9207 §2.4 and OID4VCI 1.0 §12.2.4 each
+// require it for the identifier they define.
+func sameIdentifier(a, b string) bool {
+	return a == b
 }
 
 // resolveTokenEndpoint resolves the token endpoint. token_endpoint is an
