@@ -259,24 +259,6 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
         <div class="cert-links" id="trust-list-links"></div>
       </div>
 
-      <div class="trust-section" id="trust-added-section">
-        <div class="trust-section-title">Your providers and lists</div>
-        <p class="trust-section-hint">Put the CA of your issuer or registrar on a list, or add an external list. The <a id="trust-lists-of-lists-link" href="api/trustlists/lists">list of trusted lists</a> points to all of them.</p>
-        <ul class="trust-added" id="trust-added-entities"></ul>
-        <div class="trust-add-form">
-          <select id="trust-entity-list" class="form-input" aria-label="List"></select>
-          <input type="text" id="trust-entity-name" class="form-input" placeholder="Provider name (optional)" aria-label="Provider name">
-          <textarea id="trust-entity-ca" class="form-input form-textarea" placeholder="CA certificate (PEM)" aria-label="CA certificate"></textarea>
-          <button type="button" class="btn btn-sm" id="trust-entity-add">Add CA</button>
-        </div>
-        <ul class="trust-added" id="trust-added-lists"></ul>
-        <div class="trust-add-form">
-          <input type="url" id="trust-list-url" class="form-input" placeholder="https://example.com/trusted-list" aria-label="Trusted list URL">
-          <button type="button" class="btn btn-sm" id="trust-list-add">Add list</button>
-        </div>
-        <div class="form-error" id="trust-error" role="alert"></div>
-      </div>
-
       <div class="trust-section">
         <div class="trust-section-title">Certificates &amp; keys</div>
         <dl class="trust-items">
@@ -323,6 +305,24 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
             <span class="trust-item-hint">Wallet HTTPS certificate for certificate pinning.</span>
           </dd>
         </dl>
+      </div>
+
+      <div class="trust-section" id="trust-added-section">
+        <div class="trust-section-title">Your providers and lists</div>
+        <p class="trust-section-hint">Put the CA of your issuer or registrar on a list, or add an external list. For an external list, first add the CA of its operator on <code>trusted-list-ca</code>. The <a id="trust-lists-of-lists-link" href="api/trustlists/lists">list of trusted lists</a> points to all of them.</p>
+        <ul class="trust-added" id="trust-added-entities"></ul>
+        <div class="trust-add-form">
+          <select id="trust-entity-list" class="form-input" aria-label="List"></select>
+          <input type="text" id="trust-entity-name" class="form-input" placeholder="Provider name (optional)" aria-label="Provider name">
+          <textarea id="trust-entity-ca" class="form-input form-textarea" placeholder="CA certificate (PEM)" aria-label="CA certificate"></textarea>
+          <button type="button" class="btn btn-sm" id="trust-entity-add">Add CA</button>
+        </div>
+        <ul class="trust-added" id="trust-added-lists"></ul>
+        <div class="trust-add-form">
+          <input type="url" id="trust-list-url" class="form-input" placeholder="https://example.com/trusted-list" aria-label="Trusted list URL">
+          <button type="button" class="btn btn-sm" id="trust-list-add">Add list</button>
+        </div>
+        <div class="form-error" id="trust-error" role="alert"></div>
       </div>
 
       <div class="consent-buttons">
