@@ -2950,6 +2950,31 @@
     });
   }
 
+  // The news of a public demo opens once per version of its content. A
+  // consent link opens no news, so it can't cover the request.
+  const newsOverlay = document.getElementById('news-overlay');
+  async function showNews(id) {
+    const link = document.getElementById('news-link');
+    const open = async () => {
+      const resp = await fetch('api/news');
+      if (!resp.ok) return;
+      document.getElementById('news-content').innerHTML = (await resp.json()).html;
+      newsOverlay.classList.add('active');
+      try { localStorage.setItem('news-seen', id); } catch (e) { /* Storage may be unavailable in private browsing. */ }
+    };
+    link.hidden = false;
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      open();
+    });
+    let seen = '';
+    try { seen = localStorage.getItem('news-seen') || ''; } catch (e) { /* Storage may be unavailable in private browsing. */ }
+    if (seen !== id && !openedForRequest && !actingOwner) open();
+  }
+  document.getElementById('news-close').addEventListener('click', () => {
+    newsOverlay.classList.remove('active');
+  });
+
   let demoMode = false;
   // Wait for configuration before deciding to open consent automatically. Demo mode uses
   // different ownership rules.
@@ -2969,6 +2994,9 @@
       }
       if (config.imprint) {
         document.getElementById('imprint-link').hidden = false;
+      }
+      if (config.news_id) {
+        showNews(config.news_id);
       }
       if (config.tls_listener === false) {
         // An external TLS terminator does not use the wallet's TLS certificate, so hide

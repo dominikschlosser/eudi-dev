@@ -273,6 +273,7 @@ curl -X PUT http://localhost:8085/api/config/preferred-format \
 | Method | Path                           | Body                    | Description                    |
 |--------|--------------------------------|-------------------------|--------------------------------|
 | `GET`  | `/api/config`                  | None                    | Full instance introspection document (see [Introspection](#introspection)) |
+| `GET`  | `/api/news`                    | None                    | The news of a public demo as `{"id", "html"}`, 404 without `--news-file`. `/api/config` names its `news_id` |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "dc+sd-jwt"}`  | Prefer SD-JWT when multiple match |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "mso_mdoc"}`   | Prefer mdoc when multiple match   |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "jwt_vc_json"}` | Prefer JWT VC when multiple match |

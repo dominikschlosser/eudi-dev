@@ -66,11 +66,14 @@ services:
       - --status-list
       - --imprint-file
       - /config/imprint.html
+      - --news-file
+      - /config/news/news.html
     volumes:
       # The shared CA lives one level above the wallet directory and must
       # survive restarts, so the parent directory is mounted.
       - wallet-data:/home/app/.eudi-dev
       - ./imprint.html:/config/imprint.html:ro
+      - ./news:/config/news:ro
 
   # The preview host runs the newest release, betas included, with its own URL
   # and data volume.

@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/news"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/publicpath"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
@@ -80,6 +81,7 @@ type Server struct {
 	tlsMu       sync.RWMutex
 	version     string
 	imprintHTML []byte
+	news        *news.News
 	// ShutdownFunc runs after POST /api/shutdown has responded. The serve command
 	// sets it to deregister the instance and exit. When nil the process exits
 	// directly.
@@ -246,6 +248,8 @@ func (s *Server) setupRoutes() {
 
 	// Returns 404 until SetImprint supplies a legal notice.
 	s.routeFunc("GET /imprint", s.handleImprint)
+	// Returns 404 until SetNews supplies the news of a public demo.
+	s.routeFunc("GET /api/news", s.handleNews)
 	s.routeFunc("GET /.well-known/security.txt", handleSecurityTxt)
 
 	// Embedded files have no modification time, so http.FileServer cannot provide

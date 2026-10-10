@@ -24,6 +24,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/v3/internal/news"
 )
 
 // Hash the running executable once at startup. Comparing it with the file on disk
@@ -48,6 +50,26 @@ var processBuildID = sync.OnceValue(func() string {
 // SetImprint advertises the configured page to the UI through the config endpoint.
 func (s *Server) SetImprint(page []byte) {
 	s.imprintHTML = page
+}
+
+// SetNews makes the news of a public demo available to the UI.
+func (s *Server) SetNews(n *news.News) {
+	s.news = n
+}
+
+func (s *Server) newsID() string {
+	if s.news == nil {
+		return ""
+	}
+	return s.news.ID
+}
+
+func (s *Server) handleNews(w http.ResponseWriter, r *http.Request) {
+	if s.news == nil {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.news)
 }
 
 func (s *Server) handleImprint(w http.ResponseWriter, r *http.Request) {
@@ -166,6 +188,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"seeded_keys":           seeded,
 		"version":               s.version,
 		"imprint":               len(s.imprintHTML) > 0,
+		"news_id":               s.newsID(),
 		"base_url":              s.wallet.BaseURL,
 		"issuer_url":            s.wallet.IssuerURL,
 		"status_list_url":       s.wallet.StatusListURL(),
