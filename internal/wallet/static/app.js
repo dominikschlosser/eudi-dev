@@ -1073,6 +1073,15 @@
   }
   const issueCatalog = catalogFields('issue');
   linkCategoryLevel('issue');
+  // The catalogue takes a template, so issuing offers it only with a
+  // template name. The template editor always offers it.
+  function syncIssueCatalog() {
+    const show = issueForm.classList.contains('template-mode') ||
+      document.getElementById('issue-save-template').value.trim() !== '';
+    document.querySelectorAll('.issue-catalog-part').forEach((el) => { el.hidden = !show; });
+    if (!show) issueCatalog.reset();
+  }
+  document.getElementById('issue-save-template').addEventListener('input', syncIssueCatalog);
 
   // Reset other fields when the format changes because their values may not apply.
   function resetIssueFields() {
@@ -1084,6 +1093,7 @@
     document.getElementById('issue-binding').value = 'bound';
     document.getElementById('issue-save-template').value = '';
     issueCatalog.reset();
+    syncIssueCatalog();
     document.getElementById('issue-status-list').value = 'auto';
     document.getElementById('issue-status-list-uri').value = '';
     document.getElementById('issue-status-list-uri').hidden = true;
@@ -1314,6 +1324,7 @@
     templateEditor = editor;
     const on = editor !== null;
     issueForm.classList.toggle('template-mode', on);
+    syncIssueCatalog();
     templateEditorHead.hidden = !on;
     document.getElementById('issue-title').textContent = on ? (editor.source ? 'Edit template' : 'New template') : 'Issue Credential';
     document.getElementById('issue-hint').textContent = on
@@ -1523,7 +1534,6 @@
     templatesOverlay.classList.add('active');
     renderTemplatesList();
   }
-  document.getElementById('templates-btn').addEventListener('click', openTemplates);
   document.getElementById('templates-link').addEventListener('click', (event) => {
     event.preventDefault();
     openTemplates();

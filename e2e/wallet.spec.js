@@ -797,7 +797,7 @@ test.describe("Credential Issuing via UI", () => {
   }) => {
     await page.goto(WALLET_URL);
 
-    await page.locator("#templates-btn").click();
+    await page.locator("#templates-link").click();
     await expect(page.locator("#templates-overlay")).toHaveClass(/active/);
     await expect(
       page.locator(".template-row-name", { hasText: "german-pid-sdjwt" })
@@ -868,7 +868,7 @@ test.describe("Credential Issuing via UI", () => {
     await page.locator(`#delete-${issued.id}`).click();
     await expect(page.locator(`#credential-${issued.id}`)).toHaveCount(0);
 
-    await page.locator("#templates-btn").click();
+    await page.locator("#templates-link").click();
     const templateRow = page
       .locator(".template-row")
       .filter({ hasText: "e2e-employee" });
@@ -886,7 +886,10 @@ test.describe("Credential Issuing via UI", () => {
     await page.locator("#issue-vct").fill("urn:example:e2e-saved");
     await page.locator("#issue-claim-key-0").fill("member_id");
     await page.locator("#issue-claim-value-0").fill("M-1");
+    // The catalogue takes a template, so it appears with the template name.
+    await expect(page.locator("#issue-catalog")).toBeHidden();
     await page.locator("#issue-save-template").fill("e2e-saved-template");
+    await expect(page.locator("#issue-catalog")).toBeVisible();
 
     await page.locator("#issue-submit").click();
     await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);

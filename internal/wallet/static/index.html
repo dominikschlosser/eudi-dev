@@ -63,7 +63,6 @@
         <button class="btn btn-primary" id="process-btn">Process</button>
         <button class="btn" id="import-btn">Import Credential</button>
         <button class="btn" id="issue-btn">Issue Credential</button>
-        <button class="btn" id="templates-btn">Templates</button>
       </div>
       <div class="actions-hint">
         No offer at hand? <a href="issuer/">Get one from the demo issuer</a>
@@ -701,8 +700,8 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
           <label class="form-label issue-only" for="issue-save-template">Save as template</label>
           <input type="text" id="issue-save-template" class="form-input issue-only" placeholder="Template name (optional)">
 
-          <label class="form-label" for="issue-catalog">Catalogue</label>
-          <label class="conf-toggle"><input type="checkbox" id="issue-catalog"> Add the template to the attestation catalogue</label>
+          <label class="form-label issue-catalog-part" for="issue-catalog" hidden>Catalogue</label>
+          <label class="conf-toggle issue-catalog-part" hidden><input type="checkbox" id="issue-catalog"> Add the template to the attestation catalogue</label>
           <div class="catalog-fields form-grid" id="issue-catalog-fields" hidden>
             <label class="form-label" for="issue-catalog-name">Attestation name</label>
             <input type="text" id="issue-catalog-name" class="form-input" placeholder="Name in the catalogue">

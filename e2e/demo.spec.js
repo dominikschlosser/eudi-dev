@@ -1277,7 +1277,7 @@ test.describe("Demo mode hardening", () => {
 
   test("the UI hides what demo mode does not offer", async ({ page }) => {
     await page.goto(BASE);
-    await expect(page.locator("#templates-btn")).toBeVisible();
+    await expect(page.locator("#templates-link")).toBeVisible();
     await expect(page.locator("#tls-cert-pem-link")).toBeHidden();
     await expect(page.locator("#clear-log-btn")).toBeHidden();
     await expect(page.locator("#decoder-link")).toBeVisible();
@@ -1294,7 +1294,7 @@ test.describe("Demo mode hardening", () => {
     // Unique names keep a retry clear of the entries of an earlier attempt.
     const id = "e2e-visitor-" + Date.now();
     await page.goto(BASE);
-    await page.locator("#templates-btn").click();
+    await page.locator("#templates-link").click();
     await expect(page.locator("#template-delete-pid-sdjwt")).toHaveCount(0);
     await page.locator("#template-new").click();
     await page.locator("#template-editor-name").fill(id);
