@@ -331,6 +331,18 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
     </div>
   </div>
 
+  <div class="consent-overlay" id="registrar-cert-overlay">
+    <div class="consent-dialog registrar-dialog" role="dialog" aria-modal="true" aria-labelledby="registrar-cert-title" id="registrar-cert-dialog">
+      <div class="consent-title" id="registrar-cert-title" tabindex="-1">Registration certificate</div>
+      <p class="dialog-hint" id="registrar-cert-party"></p>
+      <div class="registrar-cert-body" id="registrar-cert-body"></div>
+      <div class="form-error" id="registrar-cert-error" role="alert"></div>
+      <div class="consent-buttons">
+        <button type="button" class="btn" id="registrar-cert-close">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div class="consent-overlay" id="registrar-parties-overlay">
     <div class="consent-dialog registrar-dialog" role="dialog" aria-modal="true" aria-labelledby="registrar-parties-title" id="registrar-parties-dialog">
       <div class="consent-title" id="registrar-parties-title" tabindex="-1">Relying parties</div>
@@ -360,6 +372,7 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
   <div class="consent-overlay" id="registrar-overlay">
     <div class="consent-dialog registrar-dialog" role="dialog" aria-modal="true" aria-labelledby="registrar-title" id="registrar-dialog">
       <div class="consent-title" id="registrar-title" tabindex="-1">Register a verifier</div>
+      <p class="dialog-hint" id="registrar-target-hint" hidden></p>
       <form id="registrar-form">
         <div class="form-grid">
           <div class="registrar-section" id="registrar-party-section">
@@ -487,6 +500,7 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
       <div class="consent-title" id="registrar-catalog-title" tabindex="-1">Attestation catalogue</div>
       <p class="dialog-hint" id="registrar-catalog-hint">Each entry describes an attestation type: its formats and schemas, its rulebook and the trusted list of its issuers. When you register a verifier or an issuer, the type fields suggest these entries.</p>
       <input type="search" id="registrar-catalog-search" class="form-input registrar-search" placeholder="Search attestations" aria-label="Search attestations" autocomplete="off">
+      <div class="catalog-filters" id="registrar-catalog-filters" role="group" aria-label="Filter attestations"></div>
       <div class="registrar-party-list" id="registrar-catalog-list"></div>
       <div class="empty-state" id="registrar-catalog-empty" hidden></div>
 

@@ -1003,6 +1003,54 @@ header h1 {
   align-items: center;
 }
 
+.catalog-badge {
+  background: color-mix(in srgb, var(--text-dim) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-dim) 55%, transparent);
+  color: var(--text);
+}
+
+.catalog-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+
+.catalog-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalog-filter-label {
+  min-width: 120px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.filter-chip {
+  padding: 2px 10px;
+  border: 1px solid color-mix(in srgb, var(--text-dim) 45%, transparent);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.filter-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.catalog-filter-clear {
+  align-self: flex-start;
+}
+
 .status-none {
   background: color-mix(in srgb, var(--text-dim) 16%, transparent);
   color: var(--text-dim);
@@ -2161,6 +2209,64 @@ header h1 {
   border-top: 1px dashed var(--border);
 }
 
+.registrar-use-kind {
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.registrar-cert-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 2px 10px;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.registrar-cert-line .registrar-use-kind {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.registrar-cert-line .status-badge {
+  margin-left: 0;
+}
+
+.registrar-cert-title {
+  min-width: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* The dialog title names the certificate type. */
+.registrar-cert-body .registrar-use {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.registrar-cert-body .registrar-use-kind {
+  display: none;
+}
+
+.registrar-section-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.registrar-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .registrar-use-head {
   display: flex;
   flex-wrap: wrap;
@@ -2226,10 +2332,6 @@ header h1 {
 .registrar-credential-claims {
   margin: 2px 0 6px 14px;
   line-height: 1.5;
-}
-
-.registrar-credentials-more {
-  font-size: 11px;
 }
 
 .registrar-use-credentials a {

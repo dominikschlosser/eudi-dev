@@ -157,3 +157,30 @@ func TestTheAPICapsTheCertificatesOfARelyingParty(t *testing.T) {
 		t.Errorf("%d %s, want the per-party cap", rec.Code, rec.Body)
 	}
 }
+
+// The list shows the verifier_info of a stored certificate, so a relying party
+// can copy it again later.
+func TestTheStatusListShowsTheVerifierInfoOfAStoredCertificate(t *testing.T) {
+	reg := generateTestWallet(t)
+	rp := registerTestRelyingParty(t, reg)
+	h := &Server{Registrar: func() *Registrar { return reg.Registrar }, Mutate: func(change func() bool) { change() }}
+	body, _ := json.Marshal(RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier})
+	rec := httptest.NewRecorder()
+	h.Routes()["POST /api/registrar/registration-certificates"](rec, httptest.NewRequest(http.MethodPost, "/api/registrar/registration-certificates", bytes.NewReader(body)))
+	var issued RegistrationCertificateResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &issued); err != nil || issued.VerifierInfo == "" {
+		t.Fatalf("issue = %d %s", rec.Code, rec.Body)
+	}
+
+	rec = httptest.NewRecorder()
+	h.Routes()["GET /api/registrar/registration-certificates"](rec, httptest.NewRequest(http.MethodGet, "/api/registrar/registration-certificates", nil))
+	var listed []struct {
+		VerifierInfo string `json:"verifierInfo"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil || len(listed) != 1 {
+		t.Fatalf("list = %s", rec.Body)
+	}
+	if listed[0].VerifierInfo != issued.VerifierInfo {
+		t.Errorf("verifierInfo = %s, want %s", listed[0].VerifierInfo, issued.VerifierInfo)
+	}
+}

@@ -205,7 +205,7 @@ These endpoints are available on both wallet ports. Anyone with access to the wa
 | `DELETE` | `/api/registrar/wrp/{identifier}` | Delete a registration |
 | `POST` | `/api/registrar/access-certificates` | Issue an access certificate for a CSR of a registered relying party |
 | `POST` | `/api/registrar/registration-certificates` | Issue a registration certificate for a registered intended use (answers `verifierInfo`) or an issuer service (answers `issuerInfo`). Answers `409` if the registration changed in the meantime |
-| `GET` | `/api/registrar/registration-certificates` | Status list entries of the issued registration certificates |
+| `GET` | `/api/registrar/registration-certificates` | Status list entries of the issued registration certificates. A current certificate comes with its `verifierInfo` or `issuerInfo` value |
 | `POST` | `/api/registrar/registration-certificates/status` | Revoke or activate registration certificates |
 | `GET` | `/api/registrar/status-list` | Status list of the registration certificates |
 | `GET` | `/api/catalog/schemas` | Catalogue of attestations (EC TS11 v1.0), signed and paged |

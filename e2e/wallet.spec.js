@@ -2131,7 +2131,7 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-menu-toggle").click();
     await page.locator("#registrar-parties-link").click();
     await expect(page.locator(card + "-role-verifier")).toBeVisible();
-    await expect(page.locator(use + "-purpose")).toHaveText("Listed purpose");
+    await expect(page.locator(use + "-summary-title")).toHaveText("Listed purpose");
 
     // The demo issuer is an issuer in the register.
     const provider = await page.evaluate(async () => {
@@ -2143,6 +2143,11 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-party-" + provider.replace(/[^A-Za-z0-9_-]/g, "_") + "-role-issuer")).toBeVisible();
     await page.locator("#registrar-filter-verifiers").check();
 
+    // The list shows one line for each certificate. Details opens the rest.
+    await expect(page.locator(use + "-summary-status")).toHaveText("No certificate");
+    await page.locator(use + "-details").click();
+    await expect(page.locator("#registrar-cert-title")).toHaveText("Verifier registration certificate");
+    await expect(page.locator(use + "-purpose")).toHaveText("Listed purpose");
     await expect(page.locator(use + "-status")).toHaveText("No certificate");
     await expect(page.locator(use + "-revoke")).toHaveCount(0);
     await expect(page.locator(use + "-issue")).toHaveText("Issue certificate");
@@ -2156,6 +2161,9 @@ test.describe("Registrar", () => {
     await page.locator(use + "-revoke").click();
     await expect(page.locator(use + "-status")).toHaveText("Active");
     await expect(page.locator(use + "-revoke")).toHaveText("Revoke");
+    await page.locator("#registrar-cert-close").click();
+    await expect(page.locator(use + "-details")).toBeFocused();
+    await expect(page.locator(use + "-summary-status")).toHaveText("Active");
 
     await page.locator(card + "-delete").click();
     await expect(page.locator(card)).toHaveCount(0);
@@ -2184,6 +2192,7 @@ test.describe("Registrar", () => {
 
     await page.locator("#registrar-menu-toggle").click();
     await page.locator("#registrar-parties-link").click();
+    await page.locator(use + "-details").click();
     await expect(page.locator(use + "-status")).toHaveText("Revoked");
     await expect(page.locator(use + "-revoke")).toHaveCount(0);
     await expect(page.locator(use + "-issue")).toHaveText("Issue new certificate");
@@ -2204,21 +2213,22 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-parties-link").click();
 
     await page.locator("#registrar-search").fill("EUDI Dev Demo Issuer");
+    await page.locator(issuer + "-details").click();
     await expect(page.locator(issuer + "-status")).toHaveText("Active");
     await page.locator(issuer + "-issue").click();
     await expect(page.locator(issuer + "-issuer-info")).toHaveValue(/registration_cert/);
 
+    await page.locator("#registrar-cert-close").click();
     await page.locator("#registrar-search").fill("EUDI Dev Demo Verifier");
+    await page.locator(verifier + "-details").click();
     await expect(page.locator(verifier + "-status")).toHaveText("Active");
-    // A long credential list shows three credentials and a "more" button. Each
+    // The details show every credential and the current verifier_info. Each
     // credential opens its claims.
-    const credentials = page.locator(verifier + "-credentials > li:not([hidden])");
-    await expect(credentials).toHaveCount(4);
+    await expect(page.locator(verifier + "-credentials > li")).toHaveCount(9);
+    await expect(page.locator(verifier + "-verifier-info")).toHaveValue(/registration_cert/);
     await expect(page.locator(verifier + "-credential-0-claims")).toBeHidden();
     await page.locator(verifier + "-credential-0 summary").click();
     await expect(page.locator(verifier + "-credential-0-claims")).toContainText("given_name");
-    await page.locator(verifier + "-credentials-more").click();
-    await expect(page.locator(verifier + "-credentials-more")).toHaveCount(0);
     await page.locator(verifier + "-issue").click();
     await expect(page.locator(verifier + "-verifier-info")).toHaveValue(/registration_cert/);
     await expect(page.locator(verifier + "-status")).toHaveText("Active");
@@ -2283,8 +2293,8 @@ test.describe("Registrar", () => {
 
     await page.locator("#registrar-close").click();
     await expect(page.locator("#registrar-parties-overlay")).toBeVisible();
-    await expect(page.locator(card + " .registrar-use")).toHaveCount(2);
-    await expect(page.locator(card + ' .registrar-use[data-status="active"] .registrar-use-purpose')).toHaveText("Second purpose");
+    await expect(page.locator(card + " .registrar-cert-line")).toHaveCount(2);
+    await expect(page.locator(card + " .registrar-cert-title").nth(1)).toHaveText("Second purpose");
   });
 
   test("the registrar submenu works at phone width", async ({ page }) => {
@@ -2354,6 +2364,8 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-parties-link").click();
     await page.locator("#registrar-filter-issuers").check();
     await expect(page.locator(card + "-role-issuer")).toBeVisible();
+    await expect(page.locator(service + "-summary-title")).toHaveText("QEAA provider");
+    await page.locator(service + "-details").click();
     await expect(page.locator(service + "-entitlement")).toHaveText("QEAA provider");
     await expect(page.locator(service + "-attestation-0 .registrar-credential-type")).toHaveText("org.example.diploma.1");
     await expect(page.locator(service + "-attestation-0 .registrar-credential-meta")).toHaveText("mso_mdoc");
@@ -2366,9 +2378,51 @@ test.describe("Registrar", () => {
     await expect(page.locator(service + "-status")).toHaveText("Revoked");
     await page.locator(service + "-revoke").click();
     await expect(page.locator(service + "-status")).toHaveText("Active");
+    await page.locator("#registrar-cert-close").click();
 
     await page.locator(card + "-delete").click();
     await expect(page.locator(card)).toHaveCount(0);
+  });
+
+  test("a verifier adds an issuer registration certificate and issues as well", async ({ page }) => {
+    const { body } = await jsonPost(`${WALLET_URL}/api/registrar/wrp`, {
+      tradeName: "Ticket Shop",
+      services: [{ intendedUses: [{
+        purpose: [{ lang: "en", content: "Ticket check" }],
+        credentials: [{ format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["given_name"] }] }],
+      }] }],
+    });
+    const identifier = body.identifier[0].identifier;
+    const card = "#registrar-party-" + identifier;
+
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await expect(page.locator(card + "-add-issuer")).toHaveText("+ Add issuer registration certificate");
+    await page.locator(card + "-add-issuer").click();
+    await expect(page.locator("#registrar-title")).toHaveText("Add an issuer registration certificate to Ticket Shop");
+    await expect(page.locator("#registrar-target-hint")).toContainText("can issue the attestation types below");
+    await expect(page.locator("#registrar-purpose")).toBeHidden();
+    await expect(page.locator("#registrar-name")).toBeHidden();
+    await page.locator("#registrar-attestation-1-type").fill("urn:example:ticket:1");
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-submit")).toHaveText("✓ Added");
+    const issuerInfo = JSON.parse(await page.locator("#registrar-issuer-info").inputValue());
+    expect(issuerInfo.map((e) => e.format)).toEqual(["registrar_dataset", "registration_cert"]);
+
+    await page.locator("#registrar-close").click();
+    await expect(page.locator(card + "-role-issuer")).toBeVisible();
+    await expect(page.locator(card + "-role-verifier")).toBeVisible();
+    await expect(page.locator(card + "-service-default-summary-kind")).toHaveText("Issuer registration certificate");
+    await expect(page.locator(card + "-service-default-summary-status")).toHaveText("Active");
+    await expect(page.locator(card + "-add-issuer")).toHaveCount(0);
+
+    // The registrar keeps the certificate, so the details show it later too.
+    await page.reload();
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await page.locator(card + "-service-default-details").click();
+    await expect(page.locator(card + "-service-default-issuer-info")).toHaveValue(/registrar_dataset.*registration_cert/);
   });
 
   test("an issuer adds an intended use to ask for a PID before it issues", async ({ page }) => {
@@ -2386,8 +2440,14 @@ test.describe("Registrar", () => {
     await page.goto(WALLET_URL);
     await page.locator("#registrar-menu-toggle").click();
     await page.locator("#registrar-parties-link").click();
+    await expect(page.locator(card + "-service-diplomas-summary-kind")).toHaveText("Issuer registration certificate");
+    await expect(page.locator(card + "-requests-hint")).toContainText("for example a PID before issuing");
+    await expect(page.locator(card + "-add-use")).toHaveText("+ Add verifier registration certificate");
     await page.locator(card + "-add-use").click();
-    await expect(page.locator("#registrar-title")).toContainText("Checking University");
+    await expect(page.locator("#registrar-title")).toHaveText("Add a verifier registration certificate to Checking University");
+    await expect(page.locator("#registrar-target-hint")).toContainText("request credentials from a wallet");
+    await expect(page.locator("#registrar-purpose")).toHaveValue("Identity check before issuance");
+    await expect(page.locator("#registrar-credential-1-claims, #registrar-credentials [data-field=\"claims\"]").first()).toHaveValue("given_name, family_name");
     await page.locator("#registrar-purpose").fill("Checks who you are before a diploma is issued");
     await page.locator("#registrar-submit").click();
     await expect(page.locator("#registrar-submit")).toHaveText("✓ Added");
@@ -2396,13 +2456,39 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-close").click();
     await expect(page.locator(card + "-role-issuer")).toBeVisible();
     await expect(page.locator(card + "-role-verifier")).toBeVisible();
-    await expect(page.locator(card + ' [id^="' + card.slice(1) + '-use-"][id$="-purpose"]')).toHaveText("Checks who you are before a diploma is issued");
+    await expect(page.locator(card + "-requests-hint")).toHaveCount(0);
+    await expect(page.locator(card + ' [id^="' + card.slice(1) + '-use-"][id$="-summary-kind"]')).toHaveText("Verifier registration certificate");
+    await expect(page.locator(card + ' [id^="' + card.slice(1) + '-use-"][id$="-summary-title"]')).toHaveText("Checks who you are before a diploma is issued");
     // One registration holds both roles (CIR (EU) 2025/848 Annex I).
     const signed = await (await fetch(`${WALLET_URL}/api/registrar/wrp/${identifier}`)).text();
     const stored = JSON.parse(Buffer.from(signed.split(".")[1], "base64url").toString()).data;
     expect(stored.services).toHaveLength(1);
     expect(stored.services[0].providesAttestations).toEqual([{ format: "dc+sd-jwt", type: "urn:example:diploma:1" }]);
     expect(stored.services[0].entitlements).toContain("https://uri.etsi.org/19475/Entitlement/Service_Provider");
+  });
+
+  test("the attestation catalogue filters by category and security level", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-catalog-link").click();
+    const names = page.locator("#registrar-catalog-list .registrar-party-name");
+    await expect(names.filter({ hasText: "Demo Event Ticket" })).toHaveCount(1);
+
+    await page.locator("#registrar-catalog-filter-category-pid").click();
+    await expect(page.locator("#registrar-catalog-filter-category-pid")).toHaveAttribute("aria-pressed", "true");
+    await expect(names.filter({ hasText: "EUDI PID" })).toHaveCount(1);
+    await expect(names.filter({ hasText: "Demo Event Ticket" })).toHaveCount(0);
+
+    // Values of one group add up. Groups narrow each other down.
+    await page.locator("#registrar-catalog-filter-category-eaa").click();
+    await expect(names.filter({ hasText: "Demo Event Ticket" })).toHaveCount(1);
+    await page.locator("#registrar-catalog-filter-los-iso_18045_high").click();
+    await expect(names.filter({ hasText: "EUDI PID" })).toHaveCount(1);
+    await expect(names.filter({ hasText: "Demo Event Ticket" })).toHaveCount(0);
+
+    await page.locator("#registrar-catalog-filter-clear").click();
+    await expect(names.filter({ hasText: "Demo Event Ticket" })).toHaveCount(1);
+    await expect(page.locator("#registrar-catalog-filter-clear")).toHaveCount(0);
   });
 
   test("the attestation catalogue lists the PID types and adds an attestation", async ({ page }) => {
@@ -2417,7 +2503,7 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-catalog-link").click();
     await expect(page.locator("#registrar-catalog-overlay")).toBeVisible();
     const pid = page.locator(".registrar-party", { hasText: "EUDI PID" }).first();
-    await expect(pid.locator("[id$='-template']")).toHaveText("Template");
+    await expect(pid.locator("[id$='-template']")).toHaveText("From a template");
     await expect(pid.locator("[id$='-formats']")).toContainText("dc+sd-jwt: urn:eudi:pid:1");
     await expect(pid.locator("[id$='-trust']")).toHaveAttribute("href", /\/api\/trustlists\/pid$/);
     await expect(pid.locator("button")).toHaveCount(0);
@@ -2433,7 +2519,7 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-catalog-overlay")).toBeVisible();
     const card = page.locator(".registrar-party", { hasText: "Library card" });
     await expect(card.locator("[id$='-los']")).toHaveText("Security level: Moderate");
-    await expect(card.locator("[id$='-category']")).toHaveText("EAA");
+    await expect(card.locator("[id$='-category']")).toHaveText("Category: EAA");
     await expect(card.locator("[id$='-trust']")).toHaveAttribute("href", /\/api\/trustlists\/eaa$/);
 
     // The schema link serves SD-JWT VC Type Metadata with the claims.
