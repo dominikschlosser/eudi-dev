@@ -8,7 +8,7 @@ Each example should be self-contained in its own subfolder and include:
 
 - a short `README.md`
 - any compose files, scripts, or fixtures needed to run it
-- the exact versions or assumptions the scenario was tested against
+- the exact versions or assumptions used to test the scenario
 
 Examples use fixed ports, demo identities and static Keycloak realms to make setup predictable. Bootstrap scripts add values that are only available at runtime, such as generated keys and trust list URLs.
 

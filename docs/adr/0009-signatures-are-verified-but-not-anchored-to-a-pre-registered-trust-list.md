@@ -1,6 +1,6 @@
 # Signature checks have no configured trust anchors
 
-When a verifier sends a signed request object, the wallet verifies the JWS against the leaf certificate in the `x5c` header and checks that the supplied chain is internally consistent. When an issuer serves signed Credential Issuer Metadata, the wallet verifies the signature over its `x5c` leaf and checks `typ`, `alg` and a `sub` matching the issuer identifier. The wallet has no configured trust anchors for either check.
+When a verifier sends a signed request object, the wallet verifies the JWS against the leaf certificate in the `x5c` header and checks that the supplied chain is internally consistent. When an issuer serves signed Credential Issuer Metadata, the wallet verifies the signature against the leaf certificate in its `x5c` header and checks `typ`, `alg` and a `sub` matching the issuer identifier. The wallet has no configured trust anchors for either check.
 
 ## Trust anchors
 
@@ -16,4 +16,4 @@ A request object for a signing-required `client_id` prefix must be signed (an `a
 
 ## Consequences
 
-Documentation and findings call these results signature and chain-consistency checks. They do not prove who the signer is. `SECURITY.md` and `docs/spec-compliance.md` state this limit. Strict mode ([ADR-0001](0001-debug-by-default-validation-with-opt-in-strict-mode.md)) makes findings fatal only for checks the wallet can perform.
+Documentation and findings call these results signature and chain-consistency checks. They do not prove who the signer is. `SECURITY.md` and `docs/spec-compliance.md` state this limit. Strict mode ([ADR-0001](0001-debug-by-default-validation-with-opt-in-strict-mode.md)) makes a finding fatal only when the wallet can perform the check.

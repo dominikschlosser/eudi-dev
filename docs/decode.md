@@ -61,7 +61,7 @@ eudi decode --screen
 
 `--screen` runs the macOS `screencapture` tool in interactive selection mode. Select the region with the QR code. On other platforms, take a screenshot and pass it with `--qr`.
 
-> **Note:** macOS grants screen capture permission to the terminal app (Terminal.app, iTerm2). If it is missing, System Settings opens at the Screen Recording pane. Enable access for your terminal app there and run the command again.
+> **Note:** macOS grants screen capture permission to the terminal app (Terminal.app, iTerm2). If the permission is missing, System Settings opens at the Screen Recording pane. Enable access for your terminal app there and run the command again.
 
 ## Flags
 

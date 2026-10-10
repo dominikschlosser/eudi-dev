@@ -113,13 +113,13 @@ The wallet publishes lists of trusted entities (ETSI TS 119 602). It takes every
 | `access-ca` | Providers of access certificates | `http://uri.etsi.org/19602/LoTEType/EUWRPACProvidersList` (Annex F) |
 | `registrar` | Providers of registration certificates | `http://uri.etsi.org/19602/LoTEType/EUWRPRCProvidersList` (Annex G) |
 
-TS 119 602 registers no list type for QEAA or other EAA providers (QEAA providers are on TS 119 612 trusted lists). Annex C.1 lets a scheme operator create its own URIs, and §6.3.3 asks for one type per profile. So the `qeaa` and `eaa` lists have types of their own, with the service types `https://eudi-test.dev/SvcType/QEAA/Issuance`, `.../QEAA/Revocation`, `.../EAA/Issuance` and `.../EAA/Revocation`. These URIs name the list profile. They are the same on every deployment, whatever its base URL. A wallet state from eudi-dev 2 stores `http://uri.etsi.org/19602/LoTEType/local` for its EAA list, and the wallet reads that as the `eaa` list.
+TS 119 602 registers no list type for QEAA or other EAA providers (QEAA providers are on TS 119 612 trusted lists). Annex C.1 lets a scheme operator create its own URIs, and §6.3.3 asks for one type per profile. So the `qeaa` and `eaa` lists have types of their own, with the service types `https://eudi-test.dev/SvcType/QEAA/Issuance`, `.../QEAA/Revocation`, `.../EAA/Issuance` and `.../EAA/Revocation`. These URIs name the list profile. They are the same on every deployment, regardless of the base URL. A wallet state from eudi-dev 2 stores `http://uri.etsi.org/19602/LoTEType/local` for its EAA list, and the wallet reads that as the `eaa` list.
 
 The `access-ca` list names the relying party access CA of the [registrar](registrar.md) and the `registrar` list names the registrar CA. CAs from `--relying-party-ca` are on both lists.
 
 #### Credential categories
 
-Each credential category (`pid`, `qeaa`, `pub-eaa` and `eaa`) is a provider role with its own signing key and its own provider CA under the wallet CA. A credential's category decides which key signs it, so its certificate is on the list of its category.
+Each credential category (`pid`, `qeaa`, `pub-eaa` and `eaa`) is a provider role with its own signing key and its own provider CA under the wallet CA. The category of a credential selects the signing key. The signing certificate is then on the list of that category.
 
 The PID role signs with the wallet's issuer key (`issuer.pem`). The other roles have keys named `issuer-<role>` in the signing store, and the wallet provider has `wallet-provider`. `/.well-known/jwt-vc-issuer` lists one JWK per category list, per custom list and for unlisted credentials. The wallet serves each provider CA certificate at `/api/certificates/providers/{role}/{country}.der`.
 
@@ -145,7 +145,7 @@ Wallet and key attestations use a separate wallet provider key. Their `x5c` cont
 
 #### Your providers and lists
 
-`eudi wallet trust` puts your own providers on the wallet's lists and external lists on its list of trusted lists:
+`eudi wallet trust` adds your own providers to the wallet's lists and external lists to the wallet's list of trusted lists:
 
 ```bash
 eudi wallet trust add-ca --list pid --name "Example PID Provider" --ca pid-ca.pem
@@ -156,9 +156,9 @@ eudi wallet trust rm-ca fc390242d2ad08ab
 eudi wallet trust rm-list https://lists.example/pid
 ```
 
-`add-ca` takes a PEM file with CA certificates and one of the list IDs above. The wallet signs the list with the CA on it as a provider with an issuance and a revocation service. So the CA anchors the issued certificates and their status lists. The same certificates on the same list replace the earlier entry. The name defaults to the CA's common name.
+`add-ca` takes a PEM file with CA certificates and one of the list IDs above. The wallet adds the CA to that list as a provider with an issuance and a revocation service, and signs the list. The CA is then a trust anchor for certificates issued under it and for their status lists. Adding the same certificates to the same list again replaces the earlier entry. The name defaults to the CA's common name.
 
-`add-list` puts an external list of trusted entities on the list of trusted lists. With `--arf` its providers anchor the checks of its list type, for example a PID provider list for received PIDs. Its signer must chain to the wallet CA or to a CA from `--trust-list-ca`. In `--mode strict` the wallet refuses an unreadable list. In `--mode debug` it adds the list and reports the reason. `wallet serve --trusted-list <url>` (repeatable) adds lists at startup. They can't be removed through the API.
+`add-list` puts an external list of trusted entities on the list of trusted lists. With `--arf` the providers on the external list are trust anchors for the checks of its list type. For example, a PID provider list anchors the checks of received PIDs. The list signer must chain to the wallet CA or to a CA from `--trust-list-ca`. In `--mode strict` the wallet refuses an unreadable list. In `--mode debug` it adds the list and reports the reason. `wallet serve --trusted-list <url>` (repeatable) adds lists at startup. They can't be removed through the API.
 
 `eudi wallet trust` shows the added providers and lists:
 
@@ -216,7 +216,7 @@ The wallet keeps a fetched external list for 5 minutes. A list past its `NextUpd
 }
 ```
 
-The wallet follows the pointers of an external list of this type, one level deep. A pointed-to list must be signed by a certificate of its pointer (§6.3.13). `GET /api/trust` shows such a list with `via`. Put another eudi-dev wallet's `/api/trustlists/lists` on the list to trust all its lists at once. Its signer chains to that wallet's CA, so start this wallet with `--trust-list-ca` and that CA.
+The wallet follows the pointers of an external list of this type, one level deep. A pointed-to list must be signed by a certificate of its pointer (§6.3.13). `GET /api/trust` shows such a list with `via`. To trust all lists of another eudi-dev wallet at once, add its `/api/trustlists/lists`. That list is signed under the other wallet's CA. Start this wallet with `--trust-list-ca` set to that CA.
 
 `wallet serve` reuses persisted issuer and status list URLs unless `--base-url` or `--docker` overrides them. Credentials generated earlier then keep resolving against the same endpoints. Issuance commands (`issue ... --wallet`, `wallet generate-pid`) follow the same rule. They print a note when no server serves the embedded URLs.
 
@@ -252,7 +252,7 @@ With `--json` it prints the `/api/trustlists` body unchanged.
 - `advertised_url` when the wallet has an issuer URL configured, for example `https://localhost:8086/api/trustlists/pid`
 - `url`, an alias for `advertised_url`
 
-Clients that call the wallet through Docker port mappings, reverse proxies, or Testcontainers should resolve `path` against the URL they used for `/api/trustlists`. `advertised_url` is the configured publication URL of the wallet. It can differ from the URL the caller used.
+Clients that call the wallet through Docker port mappings, reverse proxies, or Testcontainers should resolve `path` against the URL of their `/api/trustlists` request. `advertised_url` is the configured publication URL of the wallet. It can differ from the request URL.
 
 `/api/trustlist` selects a list by credential type:
 
@@ -339,7 +339,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--docker`              | `false`  | Use `host.docker.internal` instead of `localhost` when deriving new HTTP and HTTPS wallet endpoint URLs |
 | `--vci-client-id`       | Wallet origin | Client ID for OID4VCI authorization code flows |
 | `--vci-redirect-uri`    | Wallet origin + `/callback` | Redirect URI for OID4VCI authorization code flows |
-| `--vci-version`         | `1.0`    | OpenID4VCI feature level the wallet uses as a client: `1.0` (the published version) or `1.1` (also uses 1.1 draft features the issuer supports). See [OpenID4VCI feature level](issuing.md#openid4vci-feature-level) |
+| `--vci-version`         | `1.0`    | OpenID4VCI feature level of the wallet as a client: `1.0` (the published version) or `1.1` (also uses 1.1 draft features when the issuer supports them). See [OpenID4VCI feature level](issuing.md#openid4vci-feature-level) |
 | `--haip`                | `false`  | Check incoming presentations and credential offers against HAIP 1.0. `--mode` sets how violations are handled. Strict aborts the flow. Debug reports the violation and continues |
 | `--arf`                 | `false`  | Check the access and registration certificates of verifiers and issuers against the ARF (see [verifiers](presenting.md#arf-checks) and [issuers](issuing.md#arf-checks)). With `--mode strict` the wallet refuses the request or the offer on any finding |
 | `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. The wallet puts them on its `access-ca` and `registrar` lists (repeatable) |
@@ -349,7 +349,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--adhoc-display-images` | `false` | Fetch HTTPS display images on demand instead of storing them. The issuer sees each render. See [display images](#display-images) |
 | `--require-encrypted-request` | `false` | Refuse an unencrypted Request Object. The wallet always sends an encryption key in `wallet_metadata`, so this requires the Verifier to use it |
 | `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode debug`, `--haip`, `--arf` and `--vci-version 1.1` (all overridable), disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](../public-demo.md)) |
-| `--demo-issuer-client-auth` | `required` | Client authentication the built-in demo issuer's authorization server requires at its PAR and token endpoints: `required` (HAIP 1.0 §4.4.1) or `optional`, which also accepts wallets that send no wallet attestation (see [public demo hosting](../public-demo.md)) |
+| `--demo-issuer-client-auth` | `required` | Client authentication required by the authorization server of the built-in demo issuer at its PAR and token endpoints: `required` (HAIP 1.0 §4.4.1) or `optional`, which also accepts wallets that send no wallet attestation (see [public demo hosting](../public-demo.md)) |
 | `--demo-verifier-issuer-ca` | None | PEM file with extra issuer CA certificates for the demo verifier. The demo verifier always accepts the wallet's own CA. The flag is repeatable. Use it for credentials issued outside this wallet, such as in an OIDF conformance suite run |
 | `--serve-tls`           | `false`  | Serve an https `--base-url` locally with the wallet's own TLS certificate instead of expecting an external TLS terminator. Requires an https base URL with an explicit port. The wallet also keeps listening on the HTTP port |
 | `--demo-reset`          | `1h`     | Schedule for restoring the demo baseline: an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables. Requires `--demo` |
@@ -480,7 +480,7 @@ eudi wallet tls-cert --base-url http://wallet:8085 --out wallet-tls-cert.pem
 eudi wallet tls-cert --jwks
 ```
 
-Pass the same `--port`, `--docker`, and `--base-url` flags as to `wallet serve`. The exported certificate then matches the one the running wallet presents.
+Pass the same `--port`, `--docker`, and `--base-url` flags as to `wallet serve`. The exported certificate then matches the certificate of the running wallet.
 
 On a running wallet server the same export is available as `GET /api/certificates/tls` (`?format=jwks` for JWKS). It always matches the running server's HTTPS wallet host. See [Certificate export](http-api.md#certificate-export).
 
@@ -518,7 +518,7 @@ eudi wallet unregister             # Remove URL handlers
 
 ## HTTPS certificate verification
 
-Strict mode verifies server certificates for all HTTPS requests the wallet sends. Debug mode skips verification by default. `--tls-verify=true` or `--tls-verify=false` overrides either default, including for local endpoints and redirects.
+Strict mode verifies server certificates for every outbound HTTPS request. Debug mode skips verification by default. `--tls-verify=true` or `--tls-verify=false` overrides either default, including for local endpoints and redirects.
 
 `--tls-ca dev-ca.pem` adds CA certificates to system trust. Server certificates must also match the hostname and be within their validity dates. Credential and request object signatures are checked separately.
 
@@ -551,7 +551,7 @@ Requests to `localhost`, `127.0.0.1`, `::1` and `host.docker.internal` always by
 
 The wallet verifies the issuer or verifier certificate through the proxy too (see above). If your proxy intercepts TLS traffic, add its CA with `--tls-ca` or disable verification with `--tls-verify=false`.
 
-A running wallet uses the proxy settings it was started with. `wallet accept` and `wallet scan` therefore reject proxy flags when they forward a request to a running wallet. Set them on `wallet serve` instead.
+A running wallet uses its startup proxy settings. `wallet accept` and `wallet scan` therefore reject proxy flags when they forward a request to a running wallet. Set them on `wallet serve` instead.
 
 ## JSON logs
 

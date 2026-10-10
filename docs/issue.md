@@ -60,7 +60,7 @@ Flags shared by all three subcommands:
 | `--always-disclosed` | None            | Claims issued plainly instead of selectively disclosable (dotted paths for nested claims) |
 | `--save-template` | None               | Save the issued claims and settings as a template with this name |
 | `--wallet` | `false`                   | Import the issued credential into the wallet   |
-| `--batch`  | `0`                       | With `--wallet`: issue this many copies with separate holder keys, so the wallet presents an unused one each time |
+| `--batch`  | `0`                       | With `--wallet`: issue this many copies with separate holder keys. The wallet presents an unused copy each time |
 | `--unbound` | `false`                  | With `--wallet`: issue without a holder key (a bearer credential with no cnf). The default binds it to the wallet. Only a query with `require_cryptographic_holder_binding: false` matches it |
 | `--status-list-uri` | None           | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`            | Status list index to embed in credential       |
@@ -102,7 +102,7 @@ The JWT subcommand produces a standard JWT with all claims directly in the paylo
 | `--template`  | None                           | Credential template name or file (see [templates](templates.md)) |
 | `--save-template` | None                       | Save the issued claims and settings as a template with this name |
 | `--wallet`    | `false`                        | Import the issued credential into the wallet   |
-| `--batch`     | `0`                            | With `--wallet`: issue this many copies with separate holder keys, so the wallet presents an unused one each time |
+| `--batch`     | `0`                            | With `--wallet`: issue this many copies with separate holder keys. The wallet presents an unused copy each time |
 | `--unbound`   | `false`                        | With `--wallet`: issue without an MSO device key (a malformed mdoc for testing verifier rejection). The default binds it to the wallet. Only a query with `require_cryptographic_holder_binding: false` matches it. Strict mode never presents it |
 | `--status-list-uri` | None                    | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`                     | Status list index to embed in credential       |
@@ -139,7 +139,7 @@ Without explicit status list flags, `--wallet` registers the credential in the w
 
 If a wallet server is running for the same wallet directory, `--wallet` issues through its REST API (see [remote control](wallet/http-api.md#automatic-routing-single-writer)). Otherwise the command writes directly into the store. The embedded URLs resolve once `wallet serve` is running.
 
-The wallet publishes one trusted list per credential category: `pid`, `qeaa`, `pub-eaa` and `eaa` (see [trusted lists](wallet/serve.md#trusted-lists)). The category of a credential decides its signer, so its certificate is on that list. The category comes from `--category`, else from the template, else from the type's entry in the attestation catalogue. A credential without any of them is an EAA. `--category unlisted` keeps it off every list, to test how a verifier handles an issuer without a trust anchor.
+The wallet publishes one trusted list per credential category: `pid`, `qeaa`, `pub-eaa` and `eaa` (see [trusted lists](wallet/serve.md#trusted-lists)). The category of a credential decides the signer. The signer's certificate is on the list of that category. The category comes from `--category`, else from the template, else from the type's entry in the attestation catalogue. A credential with none of these is an EAA. `--category unlisted` keeps the credential off every list. Use it to test how a verifier handles an issuer without a trust anchor.
 
 The category also sets the stored entitlement. PID gets `PID_Provider`, QEAA `QEAA_Provider`, PuB-EAA `PUB_EAA_Provider` and EAA `Non_Q_EAA_Provider`.
 

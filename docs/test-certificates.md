@@ -4,7 +4,7 @@ The generated certificates identify test services. Their organization names, add
 
 ## Specification versions
 
-Checked on 1 October 2026 against [ARF v3.0.0](https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/releases/tag/v3.0.0), [CIR (EU) 2026/1731](https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:32026R1731) and the Commission's [standards tracker](https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications). Where the regulation pins a version or adapts a specification, that takes precedence over newer standalone versions.
+Checked on 1 October 2026 against [ARF v3.0.0](https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework/releases/tag/v3.0.0), [CIR (EU) 2026/1731](https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:32026R1731) and the Commission's [standards tracker](https://github.com/eu-digital-identity-wallet/eudi-doc-standards-and-technical-specifications). Where the regulation pins a version or adapts a specification, the regulation takes precedence over newer standalone versions.
 
 | Area | Version used | Source |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Checked on 1 October 2026 against [ARF v3.0.0](https://github.com/eu-digital-ide
 | EU PID attributes | PID Rulebook v1.7 | [Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/6d8f7f8422e5bf6c48186005b6835c078f762a67/rulebooks/pid/pid-rulebook.md) |
 | German PID attributes | German PID Rulebook 1.0.0 consultation draft | [Rulebook](https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/) |
 
-The certificates follow the versions the regulation references. For example, TS 119 412-6 V1.1.1 clauses 4.4.3 and 5.1 require the PID and wallet provider certificates' AIA to identify an intermediate CA certificate.
+The certificates follow the versions referenced by the regulation. For example, TS 119 412-6 V1.1.1 clauses 4.4.3 and 5.1 require the PID and wallet provider certificates' AIA to identify an intermediate CA certificate.
 
 OpenID4VCI 1.0 is the baseline, with 1.1 available as an optional draft feature level. The German PID rulebook is a consultation draft, so its national attributes may change.
 

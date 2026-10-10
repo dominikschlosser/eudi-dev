@@ -17,7 +17,7 @@ The harness targets a local OpenID Foundation conformance suite server by defaul
 Current local status:
 
 - The latest full wallet run has 530 `PASSED`, 178 `REVIEW`, 26 `WARNING` and 2 `FAILED` modules. The two failures are suite exceptions in multisigned presentations. The warnings are the IACA path length advisory.
-- The latest demo issuer and verifier run has 61 `PASSED`, 36 `REVIEW` and 4 `WARNING` modules. The warnings concern metadata the suite's schemas do not know. All 36 verifier decisions match expectations.
+- The latest demo issuer and verifier run has 61 `PASSED`, 36 `REVIEW` and 4 `WARNING` modules. The warnings concern metadata unknown to the suite's schemas. All 36 verifier decisions match expectations.
 - Negative modules can end in `REVIEW` after the expected refusal. The local harness accepts that result only when there are no failing conditions.
 - Alpha Final plans use explicit VP module lists. Certifiable HAIP plans run complete and unfiltered.
 
@@ -38,7 +38,7 @@ Only the two HAIP plans are part of the OIDF certification program. The suite pu
 
 ## Default Matrix
 
-The default run covers every plan variant combination the wallet supports.
+The default run covers every plan variant combination supported by the wallet.
 
 VP Final generates the cross product of credential format (SD-JWT, mdoc), response mode, and the supported prefix and request pairs (36 plans):
 

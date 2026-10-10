@@ -21,7 +21,7 @@
 
 # Test Wallet and Dev Tools for the EUDI Ecosystem
 
-A wallet for testing EUDI issuers and verifiers, in the browser, on the command line and over an HTTP API. It speaks OpenID4VP 1.0, OpenID4VCI 1.0 and HAIP 1.0 with SD-JWT VC and mdoc credentials, and it comes with the parts of the ecosystem around a wallet: a registrar (new in 3.0.0), PID templates, a demo issuer and verifier, a decoder and a debug proxy.
+A wallet for testing EUDI issuers and verifiers, in the browser, on the command line and over an HTTP API. It speaks OpenID4VP 1.0, OpenID4VCI 1.0 and HAIP 1.0 with SD-JWT VC and mdoc credentials. It also includes other parts of the ecosystem: a registrar (new in 3.0.0), PID templates, a demo issuer and verifier, a decoder and a debug proxy.
 
 > **Try it online:** a shared public demo runs at **<https://eudi-test.dev>**. The newest beta runs at <https://preview.eudi-test.dev>.
 
@@ -37,11 +37,11 @@ A wallet for testing EUDI issuers and verifiers, in the browser, on the command 
 
 **PIDs and credential templates.** The EUDI PID and the German, Italian and Dutch PIDs are built in as SD-JWT VC and mdoc, with sample identities. The Italian and Dutch PIDs are new in 3.0.0. Templates define your own credentials, and `--credentials` (new in 3.0.0) loads them on every start. → [Templates](docs/templates.md), [startup credentials](docs/wallet/serve.md#startup-credentials)
 
-**A demo issuer and verifier.** The wallet also serves an issuer and a verifier, so you can try a flow end to end or test another wallet. Both pass the OIDF conformance plans for issuers and verifiers. → [Serving the wallet](docs/wallet/serve.md), [demo conformance](docs/conformance-run-demorp.md)
+**A demo issuer and verifier.** The wallet also serves an issuer and a verifier. Use them to try a flow end to end or to test another wallet. Both pass the OIDF conformance plans for issuers and verifiers. → [Serving the wallet](docs/wallet/serve.md), [demo conformance](docs/conformance-run-demorp.md)
 
 **Developer tools.** Decode credentials, requests, offers and trusted lists, validate signatures and status, scan QR codes, generate DCQL queries, and watch live wallet traffic through a proxy. → [Decode](docs/decode.md), [validate](docs/validate.md), [issue](docs/issue.md), [proxy](docs/proxy.md)
 
-**Runs where your tests run.** A single binary, a Docker image, a Helm chart and a Testcontainers module, with state in files, memory or Postgres. → [Docker](docs/docker.md), [storage](docs/wallet.md#storage-backends), [public demo hosting](docs/public-demo.md)
+**Deployment options.** A single binary, a Docker image, a Helm chart and a Testcontainers module, with state in files, memory or Postgres. → [Docker](docs/docker.md), [storage](docs/wallet.md#storage-backends), [public demo hosting](docs/public-demo.md)
 
 **OpenID Certified.** The wallet is certified for OpenID4VP 1.0 and OpenID4VCI 1.0 with HAIP 1.0. → [Certification](#openid-certification), [conformance results](docs/conformance-results.md), [spec compliance](docs/spec-compliance.md)
 
@@ -88,7 +88,7 @@ A beta, such as `v3.0.0-beta.1`, is a version for testing ahead of its release. 
 | Online | <https://preview.eudi-test.dev> runs the newest beta |
 | Docker | `docker pull ghcr.io/dominikschlosser/eudi-dev:beta` gets the newest release, betas included. For repeatable runs, pin the exact tag, such as `:v3.0.0-beta.1` |
 | Go | `go install github.com/dominikschlosser/eudi-dev/v3@v3.0.0-beta.1`. `@latest` installs a beta only while its major version has no stable release |
-| Binaries | Download them from the prerelease on [GitHub Releases](https://github.com/dominikschlosser/eudi-dev/releases). The binaries aren't signed, so macOS blocks one you downloaded in the browser. Run `xattr -d com.apple.quarantine eudi` to unblock it |
+| Binaries | Download them from the prerelease on [GitHub Releases](https://github.com/dominikschlosser/eudi-dev/releases). The binaries aren't signed, so macOS blocks a binary downloaded in the browser. Run `xattr -d com.apple.quarantine eudi` to unblock it |
 | Java tests | [testcontainers-eudi](https://github.com/dominikschlosser/testcontainers-eudi) publishes a matching beta, such as `3.0.0-beta.1`. Maven only uses it when you set that version |
 
 Homebrew and the `latest` Docker tag stay on the newest stable release. If you installed with Homebrew, try a beta with Docker or `go install`. When a stable release is the newest version, `beta` points to it too.
@@ -173,7 +173,7 @@ The official listings link to the certification submissions and test results. Th
 
 ## Notices
 
-**No EU affiliation:** This is an independent open source project. The European Commission and the European Union do not endorse it and it has no affiliation with them. "EUDI" describes the ecosystem the tool targets (European Digital Identity). For official EUDI Wallet resources see the [eu-digital-identity-wallet](https://github.com/eu-digital-identity-wallet) organization.
+**No EU affiliation:** This is an independent open source project. The European Commission and the European Union do not endorse it and it has no affiliation with them. "EUDI" names the target ecosystem (European Digital Identity). For official EUDI Wallet resources see the [eu-digital-identity-wallet](https://github.com/eu-digital-identity-wallet) organization.
 
 ## License
 

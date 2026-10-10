@@ -1,6 +1,6 @@
 # Trust anchors come from trusted lists
 
-The ARF has the wallet accept a trust anchor because a trusted list operator signed the list that names it (PPNot_05, TLPub_05, TLPub_07). It keeps separate lists for PID providers, wallet providers, access certificate providers, registration certificate providers and PuB-EAA providers (RPACANot_05, RPACANot_05a). ETSI TS 119 602 V1.1.1 defines these lists in Annexes D to H. A test wallet also needs a way to trust the issuers and registrars of a test setup without code changes.
+The ARF has the wallet accept a trust anchor because a trusted list operator signed the list containing that anchor (PPNot_05, TLPub_05, TLPub_07). The ARF keeps separate lists for PID providers, wallet providers, access certificate providers, registration certificate providers and PuB-EAA providers (RPACANot_05, RPACANot_05a). ETSI TS 119 602 V1.1.1 defines these lists in Annexes D to H. A test wallet also needs a way to trust the issuers and registrars of a test setup without code changes.
 
 ## Decision
 
@@ -17,7 +17,7 @@ An issuance service anchors issued certificates and credentials. A revocation se
 
 The registrar has two CAs of its own. Neither chains to the wallet CA:
 
-- The relying party access CA signs every access certificate, also those of the demo issuer and the demo verifier. The `access-ca` list names it.
+- The relying party access CA signs every access certificate, including those of the demo issuer and the demo verifier. The `access-ca` list names it.
 - The registrar CA signs the registrar's signing certificate. The `registrar` list names it. The relying party access CA is not on that list, because it signs any visitor's CSR.
 
 The demo issuer and the demo verifier register with the registrar and get their certificates through the same code as any relying party. So a test against them exercises the same checks as a test against another party.

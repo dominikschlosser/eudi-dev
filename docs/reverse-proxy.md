@@ -19,7 +19,7 @@ The wallet builds all of its URLs from this value: the issuer identifier, the en
 
 Use an https base URL. With an http base URL, the wallet serves its own issuer on a separate HTTPS port (the wallet port plus one), which your proxy does not cover.
 
-The path prefix must not start with a path the wallet uses itself, such as `/api`, `/issuer` or `/decoder`. `wallet serve` refuses to start with such a base URL.
+The path prefix must not start with one of the wallet's own paths, such as `/api`, `/issuer` or `/decoder`. `wallet serve` refuses to start with such a base URL.
 
 ## Proxy routes
 
@@ -40,13 +40,13 @@ Requests that bypass the proxy, for example through `kubectl port-forward`, are 
 
 ## Forwarded headers
 
-If the proxy strips the prefix, the wallet receives `/api/version` but still needs the prefix for anything the browser sees. A redirect to `/decoder/`, for example, has to go to `/some/context/decoder/`. The wallet determines the prefix as follows:
+If the proxy strips the prefix, the wallet receives `/api/version` but still needs the prefix for browser-facing URLs. A redirect to `/decoder/`, for example, has to go to `/some/context/decoder/`. The wallet determines the prefix as follows:
 
 1. If the proxy sends `X-Forwarded-Prefix: /some/context`, the wallet uses that value.
 2. Otherwise, if the request's host matches the base URL (`example.com`), the wallet uses the path of the base URL. Most proxies forward the `Host` header, so this usually works without extra configuration.
 3. Otherwise the request did not come through the proxy, and the prefix is empty.
 
-The wallet applies the prefix to redirects, to links in its web pages, to links in API responses (such as credential images) and to its session cookie. The cookie path is the prefix, so other apps on the same host do not receive it. It is marked `Secure` when the proxy reports that the browser used https.
+The wallet applies the prefix to redirects, to links in its web pages, to links in API responses (such as credential images) and to its session cookie. The cookie path is the prefix, so other apps on the same host do not receive it. The cookie is marked `Secure` when the proxy reports that the browser used https.
 
 The wallet reads the browser's host and scheme from `Forwarded` (RFC 7239), or from `X-Forwarded-Host` and `X-Forwarded-Proto`. If these headers or `X-Forwarded-Prefix` don't match the base URL, the wallet logs a warning for each new value. This usually points to a wrong proxy route or `--base-url`.
 

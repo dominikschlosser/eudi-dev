@@ -54,7 +54,7 @@ npx playwright test
 
 [examples/load-test](examples/load-test/README.md) checks correctness under load against two wallet servers on one database.
 
-The Docker specs (`docker.spec.js`) need a running Docker daemon. Skip them with `--grep-invert docker`. The wallet that the suite starts also reads `EUDI_DEV_STORAGE`. CI runs the suite once per backend.
+The Docker specs (`docker.spec.js`) need a running Docker daemon. Skip them with `--grep-invert docker`. The suite's wallet also reads `EUDI_DEV_STORAGE`. CI runs the suite once per backend.
 
 ## Code Style
 
@@ -69,7 +69,7 @@ The Docker specs (`docker.spec.js`) need a running Docker daemon. Skip them with
 - Use `t.Helper()` in test helper functions
 - Use `mock.GenerateKey()`, `mock.GenerateSDJWT()`, `mock.GenerateMDOC()` for test fixtures
 - Table-driven tests with `t.Run()` for multiple cases
-- Test files are in the same package as the code they test (`foo_test.go`)
+- Test files are in the same package as the tested code (`foo_test.go`)
 
 ## Project Structure
 

@@ -1,6 +1,6 @@
 # Only what the EUDI stack references is supported
 
-The specifications this toolkit implements are the ones the EUDI Architecture and Reference Framework builds on: OpenID4VP 1.0, OpenID4VCI 1.0, HAIP 1.0, SD-JWT and SD-JWT VC, ISO 18013-5, ETSI TS 119 602, and the Token Status List draft. `docs/spec-compliance.md` lists them and says what is implemented from each.
+This toolkit implements the specifications that underlie the EUDI Architecture and Reference Framework: OpenID4VP 1.0, OpenID4VCI 1.0, HAIP 1.0, SD-JWT and SD-JWT VC, ISO 18013-5, ETSI TS 119 602, and the Token Status List draft. `docs/spec-compliance.md` lists them and says what is implemented from each.
 
 The toolkit reports mechanisms outside that set as unsupported.
 
@@ -12,7 +12,7 @@ If the toolkit ignored an unsupported mechanism, a request could look verified. 
 
 `openid_federation:` as a Client Identifier Prefix is refused with "not supported by this wallet". OID4VP 1.0 §5.9.3 defers its processing rules to OpenID Federation, and the wallet resolves no trust chain (`internal/wallet/clientid.go`).
 
-A key identified by a DID is reported as unresolved: in the credential import warning, in the HAIP findings, in the skipped-signature note of `validate`, and in the failure of a status list check (`keys.DIDReference`). An issuer key is resolved through the `x5c` chain HAIP 1.0 §6.1.1 requires or the issuer metadata SD-JWT VC defines. `did:key` carries its key in the identifier and would be easy to decode. It is left out on purpose.
+A key identified by a DID is reported as unresolved: in the credential import warning, in the HAIP findings, in the skipped-signature note of `validate`, and in the failure of a status list check (`keys.DIDReference`). An issuer key is resolved through the `x5c` chain (required by HAIP 1.0 §6.1.1) or through the issuer metadata defined by SD-JWT VC. `did:key` carries its key in the identifier and would be easy to decode. It is left out on purpose.
 
 The Status List Token check accepts ES256 and ES384 only (`internal/statuslist/checker.go`).
 

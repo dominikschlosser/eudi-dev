@@ -2,7 +2,7 @@
 
 *(new in 3.0.0)*
 
-This walkthrough registers a verifier and an issuer with the wallet's [registrar](registrar.md) over the HTTP API. Then it uses their certificates against the wallet, which checks them with `--arf`. The requests use `curl`, `jq` and `openssl`. The responses come from a wallet started like this:
+This walkthrough registers a verifier and an issuer with the wallet's [registrar](registrar.md) over the HTTP API. Then it sends requests and offers signed with these certificates to a wallet running with `--arf`. The wallet checks the certificates. The requests use `curl`, `jq` and `openssl`. The responses come from a wallet started like this:
 
 ```bash
 eudi wallet serve --pid --arf --auto-accept
@@ -12,7 +12,7 @@ The wallet API is on port 8085 and its issuer endpoints are on port 8086. Long v
 
 ## Sign with openssl
 
-A verifier signs its request objects and an issuer its metadata, both with ES256. Any JOSE library works. The shell function below signs with `openssl` only, so the walkthrough needs no other tools:
+A verifier signs its request objects and an issuer its metadata, both with ES256. Any JOSE library works. The shell function below signs with `openssl` only. The walkthrough needs no other signing tools:
 
 ```bash
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
@@ -103,7 +103,7 @@ The registrar answers `201` with the stored registration. It assigned the identi
 
 ### 2. Get the access certificate
 
-Create a P-256 key and a certificate signing request. The key stays with you.
+Create a P-256 key and a certificate signing request. You keep the private key.
 
 ```bash
 ID=NTRNL-79AA013C47925C7B
@@ -211,7 +211,7 @@ jq -n --arg uri "openid4vp://authorize?client_id=$(jq -rn --arg v "$CLIENT_ID" '
   curl -s -X POST localhost:8085/api/presentations -H 'Content-Type: application/json' -d @-
 ```
 
-The access certificate chains to the relying party access CA, which is on the wallet's `access-ca` list. The registration certificate chains to the registrar CA on its `registrar` list. The request asks only for registered claims. So the wallet presents the PID and posts the response to `response_uri`:
+The access certificate chains to the relying party access CA, which is on the wallet's `access-ca` list. The registration certificate chains to the registrar CA on the wallet's `registrar` list. The request asks only for registered claims. The wallet therefore presents the PID and posts the response to `response_uri`:
 
 ```json
 {
@@ -239,7 +239,7 @@ Add `family_name` to the DCQL query, sign again and send it. In debug mode the w
 }
 ```
 
-In strict mode (`wallet --mode strict serve` or `PUT /api/config/conformance` with `{"mode": "strict"}`) the wallet refuses. The verifier authenticated with a trusted access certificate, so the wallet sends it `access_denied`:
+In strict mode (`wallet --mode strict serve` or `PUT /api/config/conformance` with `{"mode": "strict"}`) the wallet refuses. The verifier authenticated with a trusted access certificate, so the wallet sends the verifier an `access_denied` error:
 
 ```json
 {
@@ -291,7 +291,7 @@ The service in the answer:
 
 ### 2. Get the certificates
 
-The access certificate works as for a verifier. The registration certificate request names the service instead of an intended use:
+The access certificate request works as for a verifier. The registration certificate request names the service instead of an intended use:
 
 ```bash
 ID=NTRNL-4D1BB6AFA1D92DE9
@@ -351,7 +351,7 @@ PAYLOAD=$(jq -c --argjson iat "$(date +%s)" '. + {sub: .credential_issuer, iat: 
 sign_es256 issuer.key '{"alg":"ES256","typ":"openidvci-issuer-metadata+jwt","x5c":['"$(x5c issuer-chain.pem)"']}' "$PAYLOAD" > metadata.jwt
 ```
 
-Serve `metadata.jwt` at `/.well-known/openid-credential-issuer` with the content type `application/jwt` when the request's `Accept` header asks for it. The wallet asks for it with `--arf`.
+Serve `metadata.jwt` at `/.well-known/openid-credential-issuer` with the content type `application/jwt` when the request's `Accept` header includes `application/jwt`. With `--arf` the wallet sends this header.
 
 ### 4. Offer a credential
 
@@ -364,7 +364,7 @@ jq -n --arg uri "openid-credential-offer://?credential_offer=$(jq -rn --arg v "$
   curl -s -X POST localhost:8085/api/offers -H 'Content-Type: application/json' -d @-
 ```
 
-Before it requests the token, the wallet checks the signed metadata. The access certificate must chain to a CA on its `access-ca` list. The registration certificate must chain to a CA on its `registrar` list, list the offered type and give the issuer the entitlement of its category (see [ARF checks for issuers](issuing.md#arf-checks)).
+Before it requests the token, the wallet checks the signed metadata. The access certificate must chain to a CA on the wallet's `access-ca` list. The registration certificate must chain to a CA on the wallet's `registrar` list, list the offered type and give the issuer the entitlement of the type's category (see [ARF checks for issuers](issuing.md#arf-checks)).
 
 The offer above passes. An offer for a type missing from the registration certificate gets a finding. In debug mode it is a warning in the activity log:
 
@@ -382,7 +382,7 @@ In strict mode the wallet refuses the offer before it requests a token:
 
 ### 5. Ask for a PID before you issue
 
-An issuer that checks who you are before it issues also acts as a verifier. It stays one relying party. CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration. Add an intended use to the registration from step 1. `PUT /wrp` replaces the whole record, so send the stored record back with the new intended use.
+An issuer that checks your identity before issuance also acts as a verifier. It remains a single relying party. CIR (EU) 2025/848 Annex I keeps all entitlements and intended uses of a party in one registration. Add an intended use to the registration from step 1. `PUT /wrp` replaces the whole record, so send the stored record back with the new intended use.
 
 ```bash
 jq '.services[0].intendedUses = [{
@@ -436,7 +436,7 @@ PAYLOAD=$(jq -cn --arg client_id "$CLIENT_ID" --argjson verifier_info "$(jq -r .
 REQUEST=$(sign_es256 issuer.key "$HEADER" "$PAYLOAD")
 ```
 
-The wallet checks it like any verifier's request. The access certificate and the registration certificate name the same relying party (RPRC_17a), so the wallet presents the PID.
+The wallet checks this request like any other verifier request. The access certificate and the registration certificate name the same relying party (RPRC_17a), so the wallet presents the PID.
 
 ## Certificates from another registrar
 

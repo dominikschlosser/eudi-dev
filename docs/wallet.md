@@ -27,7 +27,7 @@ For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/
 | `accept`       | Accept an OID4VP presentation request or OID4VCI credential offer (auto-detects) |
 | `scan`         | Scan a QR code and auto-dispatch to accept/import               |
 | `refresh`      | Ask a credential's issuer for a fresh copy over the refresh token grant |
-| `deferred`     | Manage deferred credentials the wallet has not received yet (`check`, `abandon`) |
+| `deferred`     | Manage pending deferred credentials (`check`, `abandon`) |
 | `logs`         | Show persisted wallet OID4VP/OID4VCI interaction logs      |
 | `trust-list`   | Print a trusted list JWT (`--list` for all lists, `--url` for the URL) |
 | `trust`        | Put your CAs on the wallet's trusted lists and add external lists ([trusted lists](wallet/serve.md#your-providers-and-lists)) |
@@ -103,7 +103,7 @@ While `wallet use <url>` sets a remote target, the macOS URL handler sends click
 
 A domestic PID extends the country-independent type, as required by ARF Annex 2 (v3.0.0), PID_14. For example, `urn:eudi:pid:de:1` includes the attributes defined by `urn:eudi:pid:1` and adds German attributes.
 
-The wallet matches a DCQL `vct_values` entry against the credential's own type and every type it extends. Any PID matches a request for `urn:eudi:pid:1`. A German PID matches a request for `urn:eudi:pid:de:1`. When a credential matches through an extended type, the `[DCQL]` server log records the requested type.
+The wallet matches a DCQL `vct_values` entry against the credential's own type and every extended type. Any PID matches a request for `urn:eudi:pid:1`. A German PID matches a request for `urn:eudi:pid:de:1`. When a credential matches through an extended type, the `[DCQL]` server log records the requested type.
 
 The wallet derives these relationships from two sources:
 

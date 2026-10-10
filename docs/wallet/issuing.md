@@ -8,7 +8,7 @@ The wallet accepts a credential offer with [`wallet accept`](presenting.md#walle
 
 An authorization code offer requires sign-in at the issuer. The wallet returns the authorization URL because a hosted server cannot open a browser itself. An open wallet tab receives the URL through the event stream and navigates to it.
 
-API callers receive `HTTP 202` with the URL. They should open it only when no wallet tab is handling the flow, so that the authorization request is used only once:
+API callers receive `HTTP 202` with the URL. They should open it only when no wallet tab is handling the flow. The authorization request can be used only once:
 
 ```json
 {
@@ -20,7 +20,7 @@ API callers receive `HTTP 202` with the URL. They should open it only when no wa
 
 After sign-in, the issuer redirects to `/callback` and the wallet resumes issuance. Poll `GET /api/offers/{offer_id}` for `authorization_required`, `completed`, `deferred` or `failed`. Deferred and failed responses carry the same payloads as a direct response.
 
-The callback is matched by `state` alone, so the sign-in can happen in any browser that can reach the wallet's redirect URI. `eudi wallet accept` uses this. It opens the URL locally, prints it for a headless shell, and polls the offer until it completes.
+The callback is matched by `state` alone. The sign-in can happen in any browser with access to the wallet's redirect URI. `eudi wallet accept` uses this. It opens the URL locally, prints it for a headless shell, and polls the offer until it completes.
 
 ## Renewing a credential
 
@@ -31,7 +31,7 @@ eudi wallet refresh <credential-id>
 curl -X POST http://localhost:8085/api/credentials/<id>/refresh
 ```
 
-The credential keeps its id, so a verifier query or a UI selection that referred to it keeps working. A rotated refresh token replaces the stored one. Credentials that can be renewed report `can_renew` in listings, alongside `expires_at` (read from `exp` for SD-JWT and from the MSO validity for mdoc).
+The credential keeps its id. Verifier queries and UI selections that use the id keep working. A rotated refresh token replaces the stored one. Credentials that can be renewed report `can_renew` in listings, alongside `expires_at` (read from `exp` for SD-JWT and from the MSO validity for mdoc).
 
 Renewal uses `grant_type=refresh_token` at the original token endpoint, with the original client authentication method. The wallet stores the method, audience and challenge endpoint with the refresh token. It rebuilds authentication proofs and fetches a fresh attestation challenge for each request.
 
@@ -81,18 +81,18 @@ With `--arf` the wallet also checks the issuer before it requests a credential, 
 - the Credential Issuer Metadata is signed with an access certificate (OpenID4VCI 1.0 §12.2.3, ISSU_22 and ISSU_32), and that certificate chains to a trusted access certificate authority (ISSU_24 for a PID Provider, ISSU_34 for an Attestation Provider)
 - the metadata carries a registration certificate in `issuer_info` (ETSI TS 119 472-3 V1.1.1 §4.2.3), signed by a trusted registrar (ISSU_23c, ISSU_33a), not expired and not revoked (RPRC_22a)
 - the registration certificate names the provider of the access certificate (RPRC_22b)
-- it registers the issuer as a PID Provider for a PID (ISSU_24a), or as a QEAA, PuB-EAA or EAA Provider for other attestations (ISSU_34a)
-- it lists every offered credential type in `provides_attestations` (RPRC_23, ISSU_24b, ISSU_34b)
+- the registration certificate registers the issuer as a PID Provider for a PID (ISSU_24a), or as a QEAA, PuB-EAA or EAA Provider for other attestations (ISSU_34a)
+- the registration certificate lists every offered credential type in `provides_attestations` (RPRC_23, ISSU_24b, ISSU_34b)
 
 Signed metadata must carry `iat`, and an `exp` must not be in the past (OpenID4VCI 1.0 §12.2.3). In `--mode debug` the wallet reads such metadata and logs a warning in the activity log. In `--mode strict` it refuses the metadata.
 
 In `--mode debug` the findings are warnings and issuance goes on. The consent dialog for the offer lists them under a collapsed line, and the issuance result returns them in `findings`. In `--mode strict` the wallet refuses the offer before the consent dialog and doesn't request the credential. The trust anchors are the same as for verifiers: an access certificate chains to a CA on an `access-ca` list and a registration certificate to a CA on a `registrar` list (see [ARF checks](presenting.md#arf-checks)). The [registrar API walkthrough](registrar-api.md#an-issuer) registers an issuer and runs these checks.
 
-When the credential arrives, the wallet looks up its type in the [attestation catalogue](registrar.md#attestation-catalogue). The entry's category names the rule: ARF ISSU_07 for a PID, ISSU_08 for a QEAA, ISSU_09 for a PuB-EAA and ISSU_10 for another EAA. The credential's certificate chain (`x5c` or `x5chain`) must end in an issuance service certificate on a trusted list, and the signature must verify. The wallet tries the list of the entry. An entry links the wallet's own list of its category unless it names another list. For a PID or a PuB-EAA, it also tries every list of that type on the [list of trusted lists](serve.md#trusted-lists). A PID from another issuer passes once its CA is on the wallet's `pid` list (`wallet trust add-ca --list pid`) or on an external PID provider list.
+When the credential arrives, the wallet looks up its type in the [attestation catalogue](registrar.md#attestation-catalogue). The entry's category determines the rule: ARF ISSU_07 for a PID, ISSU_08 for a QEAA, ISSU_09 for a PuB-EAA and ISSU_10 for another EAA. The credential's certificate chain (`x5c` or `x5chain`) must end in an issuance service certificate on a trusted list, and the signature must verify. The wallet tries the list linked by the entry. By default an entry links the wallet's own list for its category. For a PID or a PuB-EAA, it also tries every list of that type on the [list of trusted lists](serve.md#trusted-lists). A PID from another issuer passes once its CA is on the wallet's `pid` list (`wallet trust add-ca --list pid`) or on an external PID provider list.
 
 A PID, QEAA or PuB-EAA entry must link a readable trusted list. Otherwise that is a finding too. ISSU_10 applies only when the wallet has the issuer's trust anchors, so for an EAA an unreadable list only gives a warning in the activity log.
 
-The wallet verifies the JAdES signature of each fetched trusted list. The signer must chain to a trusted list operator: the wallet CA or a CA from `--trust-list-ca` (ARF PPNot_05, TLPub_05, TLPub_07). The flag takes a PEM file and is repeatable on `wallet serve`, `wallet accept` and `wallet scan`. A list reached through an external list of trusted lists is signed by the certificate of its pointer instead (ETSI TS 119 602 V1.1.1 §6.3.13).
+The wallet verifies the JAdES signature of each fetched trusted list. The signer must chain to a trusted list operator: the wallet CA or a CA from `--trust-list-ca` (ARF PPNot_05, TLPub_05, TLPub_07). The flag takes a PEM file and is repeatable on `wallet serve`, `wallet accept` and `wallet scan`. A list found through an external list of trusted lists must instead be signed by the certificate in its pointer (ETSI TS 119 602 V1.1.1 §6.3.13).
 
 In `--mode debug` a failure is a warning. In `--mode strict` the wallet doesn't store the credential (ISSU_11b). Every copy of a batch, renewals and deferred credentials get the same check.
 
@@ -177,7 +177,7 @@ sequenceDiagram
     Wallet->>AS: Token request<br/>grant_type=authorization_code
 ```
 
-Steps 2 and 3 repeat while the issuer asks for further interactions. If the wallet cannot complete an interaction, it responds with an OpenID4VP error so the issuer can report the reason.
+Steps 2 and 3 repeat while the issuer asks for further interactions. If the wallet cannot complete an interaction, it responds with an OpenID4VP error. The issuer can then report the reason.
 
 The presentation requires consent like any other presentation (receiving a credential and disclosing one are separate decisions). In auto-accept mode, the wallet approves it automatically.
 
@@ -187,7 +187,7 @@ The presentation interaction works without `--vci-redirect-uri`. An issuer that 
 
 The presentation is bound to the challenge endpoint. An SD-JWT key binding JWT uses `ia:<endpoint>` as `aud`. An mdoc uses the `OpenID4VCIIAEHandover` session transcript. If the request contains `expected_origins`, it must contain the origin of the challenge endpoint. This stops one authorization server from forwarding another server's request.
 
-The wallet supports two interaction types and advertises only those it can complete (§6.2.1):
+The wallet supports two interaction types. It advertises a type only when it can complete that interaction (§6.2.1):
 
 - The presentation interaction (`urn:openid:dcp:ia:openid4vp_presentation`), always.
 - The browser interaction (`urn:openid:dcp:ia:auth_via_web`, §6.2.1.2), when a redirect URI is configured and the server publishes an `authorization_endpoint`. The server answers the challenge with a `request_uri`. The wallet builds an authorization request from it (RFC 9126 §4) and opens the sign-in URL in the user's browser, as in the redirect flow. The redirect back to the wallet carries the authorization code, or an `auth_session` when further steps remain at the challenge endpoint.

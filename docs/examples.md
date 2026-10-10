@@ -80,7 +80,7 @@ It includes:
 
 Folder: [`examples/load-test`](../examples/load-test/README.md)
 
-Two wallet servers share one Postgres database behind an nginx ingress, so requests can reach either server and both serve the same wallet. Use it as the target for load and performance tests of verifiers, issuers and the wallet.
+Two wallet servers share one Postgres database behind an nginx ingress. Requests can go to either server, and both serve the same wallet. Use it as the target for load and performance tests of verifiers, issuers and the wallet.
 
 It includes:
 

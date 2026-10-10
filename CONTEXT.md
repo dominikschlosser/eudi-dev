@@ -1,6 +1,6 @@
 # eudi-dev
 
-A developer toolkit for the EUDI and OpenID4VC ecosystem. This glossary covers the terms this project uses differently or more narrowly than the specifications it implements.
+A developer toolkit for the EUDI and OpenID4VC ecosystem. This glossary covers terms with a different or narrower meaning in this project than in the implemented specifications.
 
 ## Language
 
@@ -19,7 +19,7 @@ A credential type that contains everything another type defines and adds more. F
 _Avoid_: Subtype, derived type, inherited credential, trust relationship
 
 **Attestation**:
-Always qualify this word. It has three unrelated meanings: a **client attestation** (the wallet proving itself to an issuer), a **verifier attestation** (a verifier proving itself to the wallet), and an **issued attestation** (the wallet's record of an issued credential type. Its trusted lists name these types). EUDI documents also use "attestation" as a synonym for credential.
+Always qualify this word. It has three unrelated meanings: a **client attestation** (the wallet proving itself to an issuer), a **verifier attestation** (a verifier proving itself to the wallet), and an **issued attestation** (the wallet's record of an issued credential type. The wallet's trusted lists name these types). EUDI documents also use "attestation" as a synonym for credential.
 
 **Template**:
 A named, reusable set of claims and issuance settings. The wallet issues credentials from it. A template is not a credential and not a credential type.
@@ -35,10 +35,10 @@ _Avoid_: PID as process id (write `processID`)
 The holder. Depending on context this is the stored state, the running server, or the CLI that operates on either. Qualify it as **wallet state**, **wallet server**, or **wallet CLI** when the difference matters.
 
 **Issuer**:
-The party that signs and issues a credential. This toolkit is also an issuer. Say **external issuer** for any other issuer and **demo issuer** for the one this toolkit runs.
+The party that signs and issues a credential. This toolkit is also an issuer. Say **external issuer** for any other issuer and **demo issuer** for the issuer run by this toolkit.
 
 **Verifier**:
-The party that requests and checks a presentation. Say **demo verifier** for the one this toolkit runs. It is different from validation, where this tool checks a credential offline for the user.
+The party that requests and checks a presentation. Say **demo verifier** for the verifier run by this toolkit. It is different from validation, where this tool checks a credential offline for the user.
 _Avoid_: RP
 
 **Relying party**:
@@ -79,10 +79,10 @@ The signed JWT (a JAR) that carries the parameters of an authorization request. 
 _Avoid_: JAR (in prose), signed request
 
 **Consent request**:
-A pending decision the user makes before the wallet sends a presentation. A verifier's authorization request creates it. It exists only inside this wallet.
+A pending user decision before the wallet sends a presentation. A verifier's authorization request creates it. It exists only inside this wallet.
 
 **Owner**:
-The browser a flow belongs to. The wallet identifies it by the `eudi_session` cookie, or a client sets it in the `X-Eudi-Owner` header. A consent request, an error report and an issuer sign-in prompt each have an owner. The term is unrelated to the credential holder and to the OAuth resource owner. A flow started without an owner is **unowned**. Every caller can see and answer it.
+The browser associated with a flow. The wallet identifies it by the `eudi_session` cookie, or a client sets it in the `X-Eudi-Owner` header. A consent request, an error report and an issuer sign-in prompt each have an owner. The term is unrelated to the credential holder and to the OAuth resource owner. A flow started without an owner is **unowned**. Every caller can see and answer it.
 _Avoid_: session, page, acting owner
 
 **Presentation**:
@@ -103,7 +103,7 @@ _Avoid_: Refresh (for the credential operation)
 ### Trust and status
 
 **Trusted list**:
-A signed list that names providers and their certificates. ETSI TS 119 602 calls it a **list of trusted entities** (LoTE). The names mean the same thing. A wallet or verifier checks that a certificate chains to a certificate on the list for its kind. This wallet publishes one list per credential category ([ADR-0022](docs/adr/0022-one-trusted-list-per-credential-category.md)) and the lists `wallet-provider`, `access-ca` and `registrar`. It takes every trust anchor from trusted lists ([ADR-0023](docs/adr/0023-trust-anchors-come-from-trusted-lists.md)). A trusted list operator signs a list.
+A signed list that names providers and their certificates. ETSI TS 119 602 calls it a **list of trusted entities** (LoTE). The names mean the same thing. A wallet or verifier checks that a certificate chains to a certificate on the list for that kind of certificate. This wallet publishes one list per credential category ([ADR-0022](docs/adr/0022-one-trusted-list-per-credential-category.md)) and the lists `wallet-provider`, `access-ca` and `registrar`. It takes every trust anchor from trusted lists ([ADR-0023](docs/adr/0023-trust-anchors-come-from-trusted-lists.md)). A trusted list operator signs a list.
 _Avoid_: Trust list, trust profile
 
 **List of trusted lists**:
@@ -139,7 +139,7 @@ Where the wallet state is stored: `file` (the default, in the wallet directory),
 _Avoid_: Database (for the layer as a whole), persistence provider
 
 **Seed**:
-A string the wallet derives its generated keys from. With a seed, a wallet that stores nothing has the same keys on every start. It is unrelated to the baseline credentials of the demo profile.
+A string for deriving the wallet's generated keys. With a seed, a wallet that stores nothing has the same keys on every start. It is unrelated to the baseline credentials of the demo profile.
 _Avoid_: Seed (for the demo profile's starting credentials, say baseline)
 
 **Wallet directory**:

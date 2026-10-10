@@ -14,6 +14,6 @@ The image sets `EUDI_DEV_SEED=eudi-dev` with the memory backend, so every contai
 
 Anyone who knows or guesses a seed can derive every key generated from it (see SECURITY.md). Test environments can choose a private seed or leave it empty.
 
-The seed is passed through the environment. The detached server inherits `EUDI_DEV_SEED`, so the seed never appears on its command line. The URL handler script contains no seed, so a wallet it starts generates random keys unless the handler's environment sets `EUDI_DEV_SEED`.
+The seed is passed through the environment. The detached server inherits `EUDI_DEV_SEED`, so the seed never appears on its command line. The URL handler script contains no seed, so a wallet started by the handler generates random keys unless the handler's environment sets `EUDI_DEV_SEED`.
 
 The default container combines memory storage and a fixed public seed, and can run on a read-only filesystem.
