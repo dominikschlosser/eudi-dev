@@ -50,7 +50,7 @@ To use the certificates, an issuer:
 
 A wallet with `--arf` then checks the issuer before it requests a credential (see [issuing](issuing.md#arf-checks)).
 
-A provider that also requests attributes, for example to authenticate the user during issuance, registers intended uses too. The registrar then adds the `Service_Provider` entitlement (ARF RPRC_05 note).
+A provider that also requests attributes, for example to authenticate the user during issuance, registers intended uses too. The registrar then adds the `Service_Provider` entitlement (ARF RPRC_05 note). A registration certificate lists every entitlement of the party (ETSI TS 119 475 V1.2.1 Table 7). Adding the other role therefore makes the certificates issued before out of date, and the registrar revokes them. Issue new ones afterwards, or register both roles at once.
 
 ## Revocation
 

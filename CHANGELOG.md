@@ -22,7 +22,7 @@ Version 3.0.0 adds a registrar, ARF checks, a catalogue of attestations and a tr
 
 - **Go module path.** Install with `go install github.com/dominikschlosser/eudi-dev/v3@latest`.
 - **`--category` replaces `--trust-profile`.** `issue --category` and the API field `category` replace `--trust-profile` and `trust_profile`. They take `pid`, `qeaa`, `pub-eaa`, `eaa` or `unlisted`. A credential without a category is an EAA. `unlisted` keeps it off every list (see [ADR 0022](docs/adr/0022-one-trusted-list-per-credential-category.md)).
-- **Trusted lists.** Each category signs with its own key and has its own list. Only PIDs are signed with `issuer.pem`. The `local` list is renamed to `eaa`. The QEAA list, the EAA list and the list of trusted lists use the types `https://eudi-test.dev/LoTEType/QEAAProvidersList`, `EAAProvidersList` and `ListOfTrustedLists` instead of the unregistered `http://uri.etsi.org/19602/LoTEType/local`. A wallet from eudi-dev 2 migrates its stored types.
+- **Trusted lists.** Each category signs with its own key and has its own list. Only PIDs are signed with `issuer.pem`. The `local` list is renamed to `eaa`, so `/api/trustlists/local` is now `/api/trustlists/eaa`. `wallet serve --issuer-key` signs only PIDs too. The QEAA list, the EAA list and the list of trusted lists use the types `https://eudi-test.dev/LoTEType/QEAAProvidersList`, `EAAProvidersList` and `ListOfTrustedLists` instead of the unregistered `http://uri.etsi.org/19602/LoTEType/local`. A wallet from eudi-dev 2 migrates its stored types.
 - **Trust anchors of the ARF checks.** Access certificates anchor only through the access certificate provider list, and registration certificates only through the registrar list. The wallet CA anchors neither. The registrar signs under its own registrar CA, and the CAs from `--relying-party-ca` are on both lists (see [ADR 0023](docs/adr/0023-trust-anchors-come-from-trusted-lists.md)).
 - **Imported credentials.** An imported credential is on none of the wallet's lists.
 - **A running wallet keeps its settings.** CLI commands that talk to a running wallet refuse `--mode`, `--haip`, `--arf`, the CA flags, `--trusted-list` and `--key-attestation-level`. Change them on `wallet serve`, through `PUT /api/config/conformance` or with `wallet trust`.
@@ -32,6 +32,17 @@ Version 3.0.0 adds a registrar, ARF checks, a catalogue of attestations and a tr
 - **JSON output.** `validate`, `wallet deferred check`, `wallet list` and one-shot `wallet accept` print a different `--json` document (see [ADR 0020](docs/adr/0020-cli-output-can-be-automated.md)).
 - **"Trusted list" in CLI names.** `wallet trust-list` is now `wallet trusted-list`, `validate --trust-list` is `--trusted-list`, `issue --trust-list-type` and `--trust-entity-name` are `--trusted-list-type` and `--trusted-entity-name`, and `decode --format trustlist` is `trusted-list`, which is also the format in its `--json` output.
 - **Presentation API errors.** `POST /api/presentations` refuses an invalid request with `{"error": "<code>", "error_description": "<message>"}` (see [presenting](docs/wallet/presenting.md)).
+- **Outbound addresses.** `serve` and `wallet serve` reach public addresses, loopback and their own URLs only. `--allow-private-networks` or `EUDI_DEV_ALLOW_PRIVATE_NETWORKS=true` lets them reach private networks. The Docker image sets the variable (see [outbound address limits](docs/wallet/serve.md#outbound-address-limits)).
+- **Exit codes.** `wallet accept` and `wallet scan` exit non-zero when a flow fails or is denied. `validate` also exits non-zero when the `typ` of an SD-JWT VC is not `dc+sd-jwt`, when a digest doesn't match, or when the credential is not valid yet. `--allow-expired` skips both validity checks.
+- **`--json` on servers.** Most commands print one JSON document with `--json`. `serve`, `wallet serve` and `completion` refuse it. `wallet serve --log-format json` writes JSON logs (see [ADR 0020](docs/adr/0020-cli-output-can-be-automated.md)).
+- **Demo verifier requests.** A request without `credential_sets` needs a presentation for every credential query (OpenID4VP 1.0 §6.4.2). The verifier refuses a response for a query it did not ask, a response without the request's `state`, and an SD-JWT VC whose `typ` is `vc+sd-jwt` or missing. It checks mdoc revocation and matches claims by their full DCQL path.
+- **Demo issuer authorization.** The demo issuer refuses an unknown `scope` or `issuer_state` and redeems an offer once. A code bound to a DPoP key needs that key at the token endpoint.
+- **Issuer identifiers.** The wallet compares an authorization server's `issuer` and the RFC 9207 `iss` exactly. A trailing slash is a mismatch. Strict mode refuses it and debug mode warns.
+- **Fragment responses.** A request with `response_mode=fragment` needs a `redirect_uri`. The wallet doesn't send the response to `response_uri`.
+- **Lists in `trusted_authorities`.** The wallet uses an `etsi_tl` list only when a known operator signed it. Add the operator with `wallet trust` or `--trusted-list-ca`.
+- **Malformed DCQL in strict mode.** Strict mode refuses a malformed `dcql_query` with `invalid_request`.
+- **Trusted lists in `validate`.** `validate --trusted-list` fails on a list without `NextUpdate` or past it. Only the issuance services of a list anchor the credential.
+- **`POST /api/decode` removed.** Use `POST /api/validate`. It takes the same `input` and returns the decoded credential with its checks.
 
 ### Added
 
@@ -48,6 +59,8 @@ Version 3.0.0 adds a registrar, ARF checks, a catalogue of attestations and a tr
 - **Italian and Dutch PIDs.** Templates for the IT-Wallet 1.4.7 PID and the NL Wallet PID draft, with specimen card images (see [templates](docs/templates.md)).
 - **More control in debug mode.** The consent dialog lets you pick another `claim_sets` option and credentials that don't match.
 - **Beta channel.** A tag such as `v3.0.0-beta.1` is a GitHub prerelease. The Docker tag `beta` follows the newest release, betas included. `latest` and Homebrew stay on the newest stable release. The wallet footer marks a beta (see [beta releases](README.md#beta-releases)).
+- **Registration in one step.** `POST /api/registrar/enrolments` registers a relying party and issues its access and registration certificates together. `PUT` does the same for a change. If a certificate fails, the registration stays as it was (see [registrar](docs/wallet/registrar.md)).
+- **Configuration choice for offers.** `credential_configuration_id` on `POST /api/offers` and on the approve request picks one configuration of a multi-configuration offer (see [issuing](docs/wallet/issuing.md)).
 - **One registration for both roles.** **+ Add verifier registration certificate** lets an issuer ask for a PID before it issues, like the demo issuer. **+ Add issuer registration certificate** lets a verifier issue as well. The party stays one registration with both roles. Deleting a certificate removes it from the registration and revokes it. In the CLI, `verifiers add --to` and `issuers add --to` add the other role or more types, and `registration-cert` prints the current certificate (`--new` issues a new one). See the [registrar walkthrough](docs/wallet/registrar-api.md#5-ask-for-a-pid-before-you-issue).
 
 ### Changed
@@ -57,12 +70,14 @@ Version 3.0.0 adds a registrar, ARF checks, a catalogue of attestations and a tr
 - **HAIP checks of received credentials.** With `--haip` every received SD-JWT VC follows HAIP 1.0 §6.1.1, on every issuance path and for every copy of a batch.
 - **Status list trust.** A credential's status list anchors through the revocation service of the trusted list that anchors the credential, and the credential through its issuance service (ETSI TS 119 602 V1.1.1 Table D.3). This applies in the wallet, the decoder, `validate`, DCQL `trusted_authorities` and the demo verifier.
 - **Status list format.** The wallet asks for a JWT status list for an SD-JWT VC and a CWT status list for an mdoc, and accepts the other one.
-- **JSON output for more commands.** Most commands print one JSON document with `--json`. `serve` and `wallet serve` refuse it (see [ADR 0020](docs/adr/0020-cli-output-can-be-automated.md)).
-- **Failed flows exit non-zero.** `wallet accept` and `wallet scan` exit non-zero when a flow fails or is denied.
 - **Templates.** The default PIDs and the demo ticket come from templates. `--pid --vct` and `wallet generate-pid --vct` find the PID templates by their type. The template field `unique_claims` gives a claim a fresh random value in every credential. **New template** and **Edit** open the issue form with a builder and the template JSON (see [templates](docs/templates.md#wallet-ui)).
 - **Public demo.** Visitors can save templates without their own images. The predefined templates can't be changed, and a reset deletes the visitor templates. Visitors can add at most 20 providers and 5 lists. The demo keeps the newest 500 credentials and 100 pending issuances and shows nobody the errors of a flow that no browser started. The demo issuer and verifier make room for new requests instead of refusing them. The GitHub Sponsors link appears only with `--demo`.
 - **Conformance dialog.** The settings have clearer names, and the key attestation levels match the catalogue's levels of security.
 - **Signed issuer metadata.** The wallet's issuers sign their metadata when the `Accept` header ranks `application/jwt` above `application/json`. With `--arf` the wallet asks for signed metadata first.
+- **Shared credential checks.** `validate`, the decoder and the demo verifier run the same checks: chain, signature, validity with one minute of clock skew, status and HAIP. A trusted list past its `NextUpdate` anchors nothing there either (see [validate](docs/validate.md#checks)).
+- **Deferred credentials.** Collection checks the issuer metadata like the first request. A collected credential can be renewed.
+- **Debug mode findings.** Batch copies that bind no proof key, an `expected_origins` mismatch in interactive authorization and a `trusted_authorities` list the wallet can't read are findings: strict mode refuses, debug mode warns.
+- **Not yet valid credentials.** A credential card shows **Not yet valid** before its `nbf` or `validFrom`.
 - **Demo verifier issuer CAs.** `--demo-verifier-issuer-ca` replaces `--demo-verifier-trust-anchor`, which stays as a deprecated alias.
 
 ### Fixed
