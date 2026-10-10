@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -70,24 +71,17 @@ type NextErrorOverride struct {
 }
 
 type Wallet struct {
-	HolderKey          *ecdsa.PrivateKey
-	IssuerKey          *ecdsa.PrivateKey
-	CAKey              *ecdsa.PrivateKey
-	CertChain          []*x509.Certificate     // [leaf, CA] certificate chain
-	IssuedAttestations []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
-	// The registrar's registrations, status entries and catalogue are saved
-	// with the wallet.
-	registrar.State
-	AutoAccept              bool
-	SessionTranscript       SessionTranscriptMode // "oid4vp" (default) or "iso"
-	PreferredFormat         string                // "" (no preference), "dc+sd-jwt", or "mso_mdoc"
-	RequireEncryptedRequest bool                  // Rejects unencrypted request_uri responses.
+	HolderKey *ecdsa.PrivateKey
+	IssuerKey *ecdsa.PrivateKey
+	CAKey     *ecdsa.PrivateKey
+	CertChain []*x509.Certificate // [leaf, CA] certificate chain
+	PersistedState
+	AutoAccept        bool
+	SessionTranscript SessionTranscriptMode // "oid4vp" (default) or "iso"
+	PreferredFormat   string                // "" (no preference), "dc+sd-jwt", or "mso_mdoc"
 	// The wallet advertises this key even when RequireEncryptedRequest is false.
 	RequestEncryptionKey *ecdsa.PrivateKey
-	RequireHAIP          bool
-	// RequireARF turns on the ARF checks of verifiers, issuers and received
-	// credentials (--arf).
-	RequireARF bool
+	ConformanceSettings  `json:"-"`
 	// RelyingPartyCAPEM holds further CAs that issue relying party access and
 	// registration certificates (--relying-party-ca).
 	RelyingPartyCAPEM []byte
@@ -97,28 +91,13 @@ type Wallet struct {
 	TrustListCAPEM []byte
 	// ConfiguredTrustedListURLs are the external lists from --trusted-list.
 	ConfiguredTrustedListURLs []string
-	// TrustedEntities and AddedTrustedLists are added by users through
-	// `wallet trust` or the API. The wallet stores them.
-	TrustedEntities   []TrustedEntity
-	AddedTrustedLists []string
-	// Read runtime changes through KeyAttestationLevelSetting. See
-	// ParseKeyAttestationLevel for supported claims about key storage.
-	KeyAttestationLevel string `json:"-"`
-	// Defaults to 1.0. Version 1.1 enables supported draft features when the issuer
-	// advertises them.
-	VCIVersion VCIVersion `json:"-"`
 	// Sends the wallet attestation even without advertised support. Disabled by
 	// default because reusing an attestation can link activity across issuers.
 	ForceClientAttestation bool
 	// Keeps HTTPS image URLs so the browser fetches them on demand. HTTP images,
 	// data URIs and template images are still stored. By default every image is
 	// fetched through the restricted HTTP client and stored.
-	AdhocDisplayImages bool           `json:"-"`
-	ValidationMode     ValidationMode `json:"-"`
-	Credentials        []StoredCredential
-	DeferredIssuances  []DeferredIssuance
-	StatusEntries      map[string]StatusEntry
-	StatusListCounter  int
+	AdhocDisplayImages bool `json:"-"`
 	BaseURL            string
 	IssuerURL          string
 	VCIClientID        string `json:"-"`
@@ -127,13 +106,12 @@ type Wallet struct {
 	ServingOrigin string `json:"-"`
 	// The zero value uses the default template directory.
 	Templates credtemplate.Location `json:"-"`
-	Log       []LogEntry
 	mu        sync.RWMutex
 	// demoRegistrationMu serializes the demo registrations. Concurrent
 	// requests then share one certificate instead of replacing each other's.
 	demoRegistrationMu sync.Mutex
 	// capacity bounds what a shared wallet stores. Zero means no bound.
-	capacity walletCapacity
+	capacity Capacity
 	// saveRegistrarChange runs a registrar change outside a request to the
 	// registrar and saves it. A server sets it to its saveMutation, which
 	// takes the store lock. Never call it while holding that lock.
@@ -141,7 +119,6 @@ type Wallet struct {
 	listCacheMu         sync.Mutex
 	listCache           map[string]cachedList
 	listFetches         singleflight.Group
-	tlsVerify           *bool
 	outboundHTTP        *http.Client
 	// Entity backends track the last loaded or saved snapshot and section revisions.
 	// File storage leaves these nil.
@@ -255,6 +232,59 @@ type WalletError struct {
 	Detail  string `json:"detail,omitempty"`
 	// Never serialize the owner because another caller could use it to claim the flow.
 	Owner string `json:"-"`
+}
+
+// PersistedState is the wallet state the store saves. Load, save, reload and
+// reset each handle it as a whole.
+type PersistedState struct {
+	Credentials        []StoredCredential      `json:"credentials"`
+	IssuedAttestations []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
+	// The registrar's registrations, status entries and catalogue.
+	registrar.State
+	// TrustedEntities and AddedTrustedLists are added by users through
+	// `wallet trust` or the API.
+	TrustedEntities   []TrustedEntity        `json:"trusted_entities,omitempty"`
+	AddedTrustedLists []string               `json:"trusted_lists,omitempty"`
+	Log               []LogEntry             `json:"log,omitempty"`
+	DeferredIssuances []DeferredIssuance     `json:"deferred_issuances,omitempty"`
+	StatusEntries     map[string]StatusEntry `json:"status_entries,omitempty"`
+	StatusListCounter int                    `json:"status_list_counter,omitempty"`
+}
+
+// clone copies the lists, so the copy and p change independently.
+func (p PersistedState) clone() PersistedState {
+	c := p
+	c.Credentials = slices.Clone(p.Credentials)
+	c.IssuedAttestations = slices.Clone(p.IssuedAttestations)
+	c.RelyingParties = slices.Clone(p.RelyingParties)
+	c.RegistrationStatuses = slices.Clone(p.RegistrationStatuses)
+	c.Catalog = slices.Clone(p.Catalog)
+	c.TrustedEntities = slices.Clone(p.TrustedEntities)
+	c.AddedTrustedLists = slices.Clone(p.AddedTrustedLists)
+	c.Log = slices.Clone(p.Log)
+	c.DeferredIssuances = slices.Clone(p.DeferredIssuances)
+	c.StatusEntries = maps.Clone(p.StatusEntries)
+	return c
+}
+
+// ConformanceSettings are the switches a test run changes at runtime. A
+// server restores its startup values on DELETE /api/config/conformance.
+type ConformanceSettings struct {
+	ValidationMode ValidationMode
+	RequireHAIP    bool
+	// RequireARF turns on the ARF checks of verifiers, issuers and received
+	// credentials (--arf).
+	RequireARF bool
+	// RequireEncryptedRequest rejects unencrypted request_uri responses.
+	RequireEncryptedRequest bool
+	// Defaults to 1.0. Version 1.1 enables supported draft features when the
+	// issuer advertises them.
+	VCIVersion VCIVersion
+	// Read runtime changes through KeyAttestationLevelSetting. See
+	// ParseKeyAttestationLevel for supported claims about key storage.
+	KeyAttestationLevel string
+	// tlsVerify overrides TLS verification. Nil follows the validation mode.
+	tlsVerify *bool
 }
 
 type StoredCredential struct {
@@ -511,12 +541,11 @@ const severityWarning = "warning"
 // New creates a CA and signing leaf to provide an x5c chain for testing.
 func New(holderKey, issuerKey *ecdsa.PrivateKey, autoAccept bool) *Wallet {
 	w := &Wallet{
-		HolderKey:      holderKey,
-		IssuerKey:      issuerKey,
-		AutoAccept:     autoAccept,
-		ValidationMode: ValidationModeDebug,
-		VCIVersion:     VCIVersion10,
-		runtime:        newWalletRuntime(),
+		HolderKey:           holderKey,
+		IssuerKey:           issuerKey,
+		AutoAccept:          autoAccept,
+		ConformanceSettings: ConformanceSettings{ValidationMode: ValidationModeDebug, VCIVersion: VCIVersion10},
+		runtime:             newWalletRuntime(),
 	}
 
 	caKey, err := mock.GenerateKey()
@@ -882,6 +911,14 @@ func (w *Wallet) GetCredentials() []StoredCredential {
 	return out
 }
 
+// Conformance returns the current settings. A flow reads them once, so a
+// change in the middle of the flow doesn't mix two settings.
+func (w *Wallet) Conformance() ConformanceSettings {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.ConformanceSettings
+}
+
 // Mode takes the lock because the mode can change at runtime.
 func (w *Wallet) Mode() ValidationMode {
 	w.mu.RLock()
@@ -921,13 +958,6 @@ func (w *Wallet) ARFChecks() bool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.RequireARF
-}
-
-// ConformanceSettings reads the three settings under one lock so they are consistent.
-func (w *Wallet) ConformanceSettings() (ValidationMode, bool, bool) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.ValidationMode, w.RequireHAIP, w.RequireEncryptedRequest
 }
 
 // KeyAttestationLevelSetting takes the lock because the level can change during a
@@ -1368,27 +1398,28 @@ func (w *Wallet) PutCredential(cred StoredCredential) {
 	w.Credentials = append(w.Credentials, cred)
 }
 
-// walletCapacity bounds a wallet that visitors share, such as a public demo.
-type walletCapacity struct {
-	credentials, deferred int
+// Capacity bounds a wallet that visitors share, such as a public demo. Zero
+// means no bound. Credentials and deferred issuances make room by dropping
+// the oldest entry, so a flood doesn't lock out other visitors. Added
+// providers and lists are refused when full, because each one changes what
+// every check trusts.
+type Capacity struct {
+	Credentials, Deferred, TrustedEntities, TrustedLists int
 }
 
-// SetCapacity bounds the credentials and deferred issuances a shared wallet
-// stores. When one is full, the oldest entry makes room, so a flood doesn't
-// lock out other visitors.
-func (w *Wallet) SetCapacity(credentials, deferred int) {
+func (w *Wallet) SetCapacity(c Capacity) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.capacity = walletCapacity{credentials: credentials, deferred: deferred}
+	w.capacity = c
 }
 
 // makeCredentialRoomLocked removes the oldest credentials that aren't
 // protected until one more fits.
 func (w *Wallet) makeCredentialRoomLocked() {
-	if w.capacity.credentials <= 0 {
+	if w.capacity.Credentials <= 0 {
 		return
 	}
-	for len(w.Credentials) >= w.capacity.credentials {
+	for len(w.Credentials) >= w.capacity.Credentials {
 		i := slices.IndexFunc(w.Credentials, func(c StoredCredential) bool { return !c.Protected })
 		if i < 0 {
 			return

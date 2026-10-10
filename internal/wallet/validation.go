@@ -22,10 +22,11 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 )
 
-// ValidateAuthorizationRequest adds profile checks when requireHAIP or
-// requireARF is set. The validation mode decides whether findings stop the
-// flow or become warnings.
-func ValidateAuthorizationRequest(mode ValidationMode, requireHAIP, requireARF bool, params *AuthorizationRequestParams) ([]string, error) {
+// ValidateAuthorizationRequest adds profile checks when the settings require
+// HAIP or ARF. The validation mode decides whether findings stop the flow or
+// become warnings.
+func ValidateAuthorizationRequest(settings ConformanceSettings, params *AuthorizationRequestParams) ([]string, error) {
+	mode, requireHAIP, requireARF := settings.ValidationMode, settings.RequireHAIP, settings.RequireARF
 	if err := validateAuthorizationRequestSyntax(params); err != nil {
 		return nil, fmt.Errorf("authorization request validation failed: %w", err)
 	}

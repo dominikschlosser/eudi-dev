@@ -76,8 +76,8 @@ func TestBuildWalletMetadata_WithEncryption(t *testing.T) {
 	}
 
 	w := &Wallet{
-		RequireEncryptedRequest: true,
-		RequestEncryptionKey:    key,
+		ConformanceSettings:  ConformanceSettings{RequireEncryptedRequest: true},
+		RequestEncryptionKey: key,
 	}
 	meta := BuildWalletMetadata(w, "")
 
@@ -115,7 +115,7 @@ func TestBuildWalletMetadata_OffersEncryptionKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := &Wallet{RequireEncryptedRequest: false, RequestEncryptionKey: key}
+	w := &Wallet{RequestEncryptionKey: key}
 	meta := BuildWalletMetadata(w, "")
 
 	if meta["jwks"] == nil {
@@ -402,8 +402,8 @@ func TestMakeFetchRequestURI_POST_Encrypted(t *testing.T) {
 	}
 
 	wallet := &Wallet{
-		RequireEncryptedRequest: true,
-		RequestEncryptionKey:    walletKey,
+		ConformanceSettings:  ConformanceSettings{RequireEncryptedRequest: true},
+		RequestEncryptionKey: walletKey,
 	}
 
 	var transmitted string
@@ -475,8 +475,8 @@ func TestMakeFetchRequestURI_POST_RequireEncryptedRequestRejectsPlainJWT(t *test
 	}
 
 	wallet := &Wallet{
-		RequireEncryptedRequest: true,
-		RequestEncryptionKey:    walletKey,
+		ConformanceSettings:  ConformanceSettings{RequireEncryptedRequest: true},
+		RequestEncryptionKey: walletKey,
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -554,13 +554,13 @@ func TestRequestURIMediaTypeFollowsTheValidationMode(t *testing.T) {
 
 	for _, method := range []string{"get", "post"} {
 		t.Run(method+" strict", func(t *testing.T) {
-			w := &Wallet{ValidationMode: ValidationModeStrict}
+			w := &Wallet{ConformanceSettings: ConformanceSettings{ValidationMode: ValidationModeStrict}}
 			if _, err := MakeFetchRequestURI(w, nil)(srv.URL, method, ""); err == nil {
 				t.Fatal("expected the wrong media type to be refused in strict mode")
 			}
 		})
 		t.Run(method+" debug", func(t *testing.T) {
-			w := &Wallet{ValidationMode: ValidationModeDebug}
+			w := &Wallet{ConformanceSettings: ConformanceSettings{ValidationMode: ValidationModeDebug}}
 			result, err := MakeFetchRequestURI(w, nil)(srv.URL, method, "")
 			if err != nil {
 				t.Fatalf("debug mode should read the request object: %v", err)

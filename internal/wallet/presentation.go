@@ -394,9 +394,6 @@ func (w *Wallet) BuildAuthorizationResponse(vpResult *VPTokenMapResult, idToken,
 
 	switch responseMode {
 	case "direct_post.jwt", "dc_api.jwt", "ia_post.jwt":
-		if !HasEncryptionKeyForParams(params.RequestObject, params.ClientMetadata) {
-			return nil, fmt.Errorf("response_mode is %s but client_metadata.jwks carries no encryption key (OID4VP 1.0 requires one)", responseMode)
-		}
 		jwe, cek, err := w.EncryptResponse(vpToken, idToken, state, mdocNonce, params)
 		if err != nil {
 			return nil, fmt.Errorf("encrypting response: %w", err)
@@ -408,11 +405,10 @@ func (w *Wallet) BuildAuthorizationResponse(vpResult *VPTokenMapResult, idToken,
 			Plain:        authorizationResponsePlaintext(plain, responseMode),
 		}, nil
 	case "fragment":
-		redirectURI := params.RedirectURI
-		if redirectURI == "" {
-			redirectURI = params.ResponseURI
+		if params.RedirectURI == "" {
+			return nil, errFragmentWithoutRedirect
 		}
-		redirectURL, err := BuildFragmentRedirect(redirectURI, state, vpToken, idToken)
+		redirectURL, err := BuildFragmentRedirect(params.RedirectURI, state, vpToken, idToken)
 		if err != nil {
 			return nil, fmt.Errorf("building fragment redirect: %w", err)
 		}
@@ -432,6 +428,9 @@ func (w *Wallet) BuildAuthorizationResponse(vpResult *VPTokenMapResult, idToken,
 	}
 }
 
+// RFC 6749 §4.2.2 puts the response in the fragment of the redirect URI.
+var errFragmentWithoutRedirect = errors.New("response_mode fragment needs a redirect_uri")
+
 func (w *Wallet) BuildAuthorizationErrorResponse(errorCode, errorDescription, state string, params PresentationParams) (*AuthorizationResponseEnvelope, error) {
 	responseMode := params.ResponseMode
 	if responseMode == "" {
@@ -450,9 +449,6 @@ func (w *Wallet) BuildAuthorizationErrorResponse(errorCode, errorDescription, st
 
 	switch responseMode {
 	case "direct_post.jwt", "ia_post.jwt":
-		if !HasEncryptionKeyForParams(params.RequestObject, params.ClientMetadata) {
-			return nil, fmt.Errorf("response_mode is %s but client_metadata.jwks carries no encryption key (OID4VP 1.0 requires one)", responseMode)
-		}
 		jwe, cek, err := w.EncryptErrorResponse(errorCode, errorDescription, state, params)
 		if err != nil {
 			return nil, fmt.Errorf("encrypting error response: %w", err)
@@ -464,13 +460,12 @@ func (w *Wallet) BuildAuthorizationErrorResponse(errorCode, errorDescription, st
 			Plain:        buildPlainAuthorizationErrorResponse(errorCode, errorDescription, state),
 		}, nil
 	case "fragment":
-		redirectURI := params.RedirectURI
-		if redirectURI == "" {
-			redirectURI = params.ResponseURI
+		if params.RedirectURI == "" {
+			return nil, errFragmentWithoutRedirect
 		}
 		return &AuthorizationResponseEnvelope{
 			ResponseMode: responseMode,
-			RedirectURI:  BuildFragmentErrorRedirect(redirectURI, state, errorCode, errorDescription),
+			RedirectURI:  BuildFragmentErrorRedirect(params.RedirectURI, state, errorCode, errorDescription),
 			Plain:        buildPlainAuthorizationErrorResponse(errorCode, errorDescription, state),
 		}, nil
 	case "direct_post", "dc_api", "ia_post":

@@ -33,48 +33,45 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	reqServer := s
-
 	requestOrigin := strings.TrimSpace(r.Header.Get("Origin"))
-	protocol, authReq, err := ParseBrowserAPIRequest(body, reqServer.parseOpts, requestOrigin)
+	protocol, authReq, err := ParseBrowserAPIRequest(body, s.parseOpts, requestOrigin)
 	if err != nil {
-		reqServer.log("  ERROR: %v", err)
-		reqServer.wallet.AddLog("presentation", fmt.Sprintf("Failed to parse browser request: %v", err), false)
+		s.log("  ERROR: %v", err)
+		s.wallet.AddLog("presentation", fmt.Sprintf("Failed to parse browser request: %v", err), false)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
-	reqServer.log("Received Browser API authorization request")
-	reqServer.log("  Protocol:      %s", protocol)
-	reqServer.log("  Client ID:     %s", authReq.ClientID)
-	reqServer.log("  Response Mode: %s", authReq.ResponseMode)
+	s.log("Received Browser API authorization request")
+	s.log("  Protocol:      %s", protocol)
+	s.log("  Client ID:     %s", authReq.ClientID)
+	s.log("  Response Mode: %s", authReq.ResponseMode)
 	authReq.Source = "browser_api"
 	if authReq.Nonce != "" {
-		reqServer.log("  Nonce:         %s", authReq.Nonce)
+		s.log("  Nonce:         %s", authReq.Nonce)
 	}
 	if requestOrigin != "" {
-		reqServer.log("  Origin:        %s", requestOrigin)
+		s.log("  Origin:        %s", requestOrigin)
 	}
-	reqServer.addPresentationRequestLog(authReq, "browser_api")
+	s.addPresentationRequestLog(authReq, "browser_api")
 
-	dcMode, dcHAIP, _ := reqServer.wallet.ConformanceSettings()
-	reqServer.wallet.PrepareARFChecks(authReq)
-	findings, err := ValidateAuthorizationRequest(dcMode, dcHAIP, reqServer.wallet.ARFChecks(), authReq)
+	s.wallet.PrepareARFChecks(authReq)
+	findings, err := ValidateAuthorizationRequest(s.wallet.Conformance(), authReq)
 	var refusal *ARFRefusal
 	if errors.As(err, &refusal) {
-		reqServer.log("  REFUSED: %v", err)
-		reqServer.wallet.AddLog("presentation", err.Error(), false)
-		reqServer.wallet.NotifyError(WalletError{Owner: requestOwner(r), Message: "The request does not meet the ARF registration rules", Detail: err.Error()})
-		reqServer.triggerUIRequest("")
+		s.log("  REFUSED: %v", err)
+		s.wallet.AddLog("presentation", err.Error(), false)
+		s.wallet.NotifyError(WalletError{Owner: requestOwner(r), Message: "The request does not meet the ARF registration rules", Detail: err.Error()})
+		s.triggerUIRequest("")
 		// OpenID4VP 1.0 Appendix A returns a protocol error inside the
 		// fulfilled API result.
-		reqServer.writeBrowserAuthorizationError(w, authReq, protocol, errorCodeAccessDenied, "The request does not meet the ARF registration rules: "+strings.Join(refusal.Findings, ", "), http.StatusOK)
+		s.writeBrowserAuthorizationError(w, authReq, protocol, errorCodeAccessDenied, "The request does not meet the ARF registration rules: "+strings.Join(refusal.Findings, ", "), http.StatusOK)
 		return
 	}
 	if err != nil {
-		reqServer.log("  ERROR: %v", err)
-		reqServer.wallet.AddLog("presentation", err.Error(), false)
-		reqServer.wallet.NotifyError(WalletError{
+		s.log("  ERROR: %v", err)
+		s.wallet.AddLog("presentation", err.Error(), false)
+		s.wallet.NotifyError(WalletError{
 			Owner:   requestOwner(r),
 			Message: "Authorization request validation failed",
 			Detail:  err.Error(),
@@ -82,7 +79,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		// Invalid requests receive an API error. OpenID4VP 1.0 §8.5 follows RFC 6749
 		// §4.1.2.1, which reports the error to the user without redirecting to an
 		// invalid destination.
-		reqServer.triggerUIRequest("")
+		s.triggerUIRequest("")
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error":             refusalCodeForRequest(authReq, err),
 			"error_description": err.Error(),
@@ -91,12 +88,12 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	}
 	// The override answers only a valid request. RFC 6749 §4.1.2.1, which
 	// OpenID4VP 1.0 §8.5 applies, sends no error to an invalid client.
-	if override := reqServer.wallet.ConsumeNextError(); override != nil {
-		reqServer.log("  Next-error override consumed: %s", override.Error)
-		result, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, override.Error, override.ErrorDescription)
+	if override := s.wallet.ConsumeNextError(); override != nil {
+		s.log("  Next-error override consumed: %s", override.Error)
+		result, buildErr := s.buildBrowserAuthorizationErrorResult(authReq, protocol, override.Error, override.ErrorDescription)
 		if buildErr != nil {
-			reqServer.log("  ERROR: Browser error response failed: %v", buildErr)
-			reqServer.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
+			s.log("  ERROR: Browser error response failed: %v", buildErr)
+			s.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
 			return
 		}
@@ -105,20 +102,20 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		errorDetails["source"] = "browser_api"
 		errorDetails["error"] = override.Error
 		addStringDetail(errorDetails, "error_description", override.ErrorDescription)
-		reqServer.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true, errorDetails)
+		s.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true, errorDetails)
 		writeJSON(w, http.StatusOK, result)
 		return
 	}
 	for _, finding := range findings {
-		reqServer.log("  WARNING: %s", finding)
+		s.log("  WARNING: %s", finding)
 	}
 	authReq.Findings = findings
-	reqServer.wallet.warnFindings("presentation", specCitedSummary("The request", findings), findings)
-	reqServer.wallet.warnUndefinedRequestParameters("presentation", authReq)
+	s.wallet.warnFindings("presentation", specCitedSummary("The request", findings), findings)
+	s.wallet.warnUndefinedRequestParameters("presentation", authReq)
 
 	if authReq.DCQLQuery != nil {
 		if dcqlJSON, err := json.Marshal(authReq.DCQLQuery); err == nil {
-			reqServer.log("  DCQL Query:    %s", string(dcqlJSON))
+			s.log("  DCQL Query:    %s", string(dcqlJSON))
 		}
 	}
 
@@ -127,53 +124,49 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	var matches []CredentialMatch
 	var credentialOptions *ConsentCredentialOptions
 	if authReq.DCQLQuery != nil && requiresVP {
-		matches, credentialOptions = reqServer.wallet.EvaluateDCQLWithOptions(authReq.DCQLQuery)
+		matches, credentialOptions = s.wallet.EvaluateDCQLWithOptions(authReq.DCQLQuery)
 	}
 
-	reqServer.log("  Matched:       %d credential(s)", len(matches))
+	s.log("  Matched:       %d credential(s)", len(matches))
 	for _, m := range matches {
-		reqServer.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), shortID(m.CredentialID), len(m.SelectedKeys))
+		s.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), shortID(m.CredentialID), len(m.SelectedKeys))
 	}
 
 	// Debug mode lets the user answer with a credential that does not match.
-	if requiresVP && len(matches) == 0 && credentialOptions != nil && !reqServer.wallet.AutoAccept {
-		reqServer.log("  Result:        no matching credentials, debug mode offers the others")
+	if requiresVP && len(matches) == 0 && credentialOptions != nil && !s.autoAccepts(authReq) {
+		s.log("  Result:        no matching credentials, debug mode offers the others")
 	} else if requiresVP && len(matches) == 0 {
-		reqServer.log("  Result:        no matching credentials")
-		reqServer.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
-		// §8.5 access_denied: "The Wallet did not have the requested
-		// Credentials to satisfy the Authorization Request."
-		errorCode, description := unsatisfiableQueryError(authReq.DCQLQuery)
-		reqServer.writeBrowserAuthorizationError(w, authReq, protocol, errorCode, description, http.StatusOK)
+		errorCode, description := s.reportNoMatch(authReq, requestOwner(r))
+		s.writeBrowserAuthorizationError(w, authReq, protocol, errorCode, description, http.StatusOK)
 		return
 	}
 
-	if reqServer.wallet.AutoAccept {
-		reqServer.writeBrowserPresentationResult(w, authReq, protocol, matches)
+	if s.autoAccepts(authReq) {
+		s.writeBrowserPresentationResult(w, authReq, protocol, matches)
 		return
 	}
 
-	reqServer.log("  Mode:          interactive (waiting for consent)")
+	s.log("  Mode:          interactive (waiting for consent)")
 	consentReq := newPresentationConsent("presentation", requestOwner(r), authReq.ClientID, authReq, matches, credentialOptions)
-	reqServer.wallet.CreateConsentRequest(consentReq)
-	reqServer.triggerUIRequest(consentReq.ID)
-	if reqServer.onConsentRequest != nil {
-		reqServer.onConsentRequest(consentReq)
+	s.wallet.CreateConsentRequest(consentReq)
+	s.triggerUIRequest(consentReq.ID)
+	if s.onConsentRequest != nil {
+		s.onConsentRequest(consentReq)
 	}
 
-	reqServer.allowSlowResponse(w, config.ConsentTimeout)
-	result, answered := reqServer.wallet.awaitConsent(consentReq, config.ConsentTimeout)
+	s.allowSlowResponse(w, config.ConsentTimeout)
+	result, answered := s.wallet.awaitConsent(consentReq, config.ConsentTimeout)
 	switch {
 	case !answered:
-		reqServer.wallet.AddLog("presentation", "Consent timeout", false)
+		s.wallet.AddLog("presentation", "Consent timeout", false)
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}
 		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})
 	case !result.Approved:
-		reqServer.log("  Consent:       denied")
-		browserResult, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, "access_denied", "User denied presentation")
+		s.log("  Consent:       denied")
+		browserResult, buildErr := s.buildBrowserAuthorizationErrorResult(authReq, protocol, "access_denied", "User denied presentation")
 		if buildErr != nil {
-			reqServer.log("  ERROR: Browser error response failed: %v", buildErr)
-			reqServer.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
+			s.log("  ERROR: Browser error response failed: %v", buildErr)
+			s.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
 			consentReq.SubmissionCh <- SubmissionResult{Error: buildErr.Error()}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
 			return
@@ -183,11 +176,11 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		denialDetails["source"] = "browser_api"
 		denialDetails["error"] = "access_denied"
 		denialDetails["browser_api_result"] = browserResult
-		reqServer.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true, denialDetails)
+		s.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true, denialDetails)
 		consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK, Error: "access_denied"}
 		writeJSON(w, http.StatusOK, browserResult)
 	default:
-		consentReq.SubmissionCh <- reqServer.writeBrowserPresentationResult(w, authReq, protocol, reqServer.wallet.consentedMatches(consentReq, matches, result))
+		consentReq.SubmissionCh <- s.writeBrowserPresentationResult(w, authReq, protocol, s.wallet.consentedMatches(consentReq, matches, result))
 	}
 }
 

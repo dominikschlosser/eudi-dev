@@ -256,7 +256,7 @@ func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
 func (w *Wallet) checkReceivedCredentials(credResp map[string]any, issuer string) ([]string, error) {
 	credentials := credentialStringsFromResponse(credResp)
 	var debugFindings []string
-	if _, haip, _ := w.ConformanceSettings(); haip {
+	if w.HAIPChecks() {
 		var violations []string
 		for _, raw := range credentials {
 			violations = append(violations, w.haipCredentialViolations(raw)...)

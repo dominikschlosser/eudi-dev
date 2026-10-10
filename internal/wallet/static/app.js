@@ -355,7 +355,7 @@
 
     // Protected credentials cannot be deleted or revoked, so hide those actions.
     const protectedBadge = isProtected
-      ? '<span class="status-badge status-protected" id="' + idPrefix + 'protected-' + cred.id + '"' +
+      ? '<span class="status-badge status-protected" id="' + idPrefix + 'protected-' + domID(cred.id) + '"' +
         ' title="Part of this wallet\'s baseline. It cannot be deleted or revoked' +
         ' through the UI or the API, only by editing the wallet file.">' + LOCK_SVG + 'Protected</span>'
       : '';
@@ -365,19 +365,19 @@
     if (st && st.managed) {
       const revoked = st.status === 1;
       dataset.status = revoked ? 'revoked' : 'active';
-      statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked ico-block' : 'status-active ico-dot') + '" id="' + idPrefix + 'status-' + cred.id + '" title="' + (revoked ? 'The issuer has revoked this credential on its status list' : 'Not revoked on the issuer\'s status list') + ' (' + escHtml(st.uri || '') + ' idx ' + st.idx + ').">' + (revoked ? 'Revoked' : 'Active') + '</span>';
+      statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked ico-block' : 'status-active ico-dot') + '" id="' + idPrefix + 'status-' + domID(cred.id) + '" title="' + (revoked ? 'The issuer has revoked this credential on its status list' : 'Not revoked on the issuer\'s status list') + ' (' + escHtml(st.uri || '') + ' idx ' + st.idx + ').">' + (revoked ? 'Revoked' : 'Active') + '</span>';
     } else if (st && st.uri) {
       dataset.status = 'external';
-      statusBadge = '<span class="status-badge status-external ico-half" id="' + idPrefix + 'status-' + cred.id + '" title="Revocation is tracked on a status list this wallet does not manage, so its state is not read here (' + escHtml(st.uri) + ' idx ' + st.idx + ').">External list</span>';
+      statusBadge = '<span class="status-badge status-external ico-half" id="' + idPrefix + 'status-' + domID(cred.id) + '" title="Revocation is tracked on a status list this wallet does not manage, so its state is not read here (' + escHtml(st.uri) + ' idx ' + st.idx + ').">External list</span>';
     } else {
-      statusBadge = '<span class="status-badge status-none ico-circle" id="' + idPrefix + 'status-' + cred.id + '" title="This credential carries no status list, so revocation cannot be checked.">No status</span>';
+      statusBadge = '<span class="status-badge status-none ico-circle" id="' + idPrefix + 'status-' + domID(cred.id) + '" title="This credential carries no status list, so revocation cannot be checked.">No status</span>';
     }
 
     const expiry = validityInfo(cred.valid_from, cred.expires_at);
     let expiryBadge = '';
     if (expiry) {
       dataset.expiry = expiry.state;
-      expiryBadge = '<span class="status-badge status-' + expiry.state + ' ico-clock" id="' + idPrefix + 'expiry-' + cred.id +
+      expiryBadge = '<span class="status-badge status-' + expiry.state + ' ico-clock" id="' + idPrefix + 'expiry-' + domID(cred.id) +
         '" title="' + escHtml(expiry.title) + '">' + escHtml(expiry.label) + '</span>';
     }
 
@@ -387,12 +387,12 @@
     const sig = cred.signature;
     if (sig && sig.algorithm) {
       if (sig.self_consistent) {
-        signatureBadge = '<span class="status-badge status-active ico-check" id="' + idPrefix + 'signature-' + cred.id +
+        signatureBadge = '<span class="status-badge status-active ico-check" id="' + idPrefix + 'signature-' + domID(cred.id) +
           '" title="The signature verifies against the key material the credential carries (its x5c certificate or embedded jwk, ' + escHtml(sig.algorithm) +
           '). It is not checked against any trust anchor, so it proves the credential is intact, not who the issuer is.">Self-consistent</span>';
       } else {
         const kind = cred.issuer && cred.issuer.kind ? ' · ' + escHtml(cred.issuer.kind.toUpperCase()) : '';
-        signatureBadge = '<span class="status-badge status-revoked ico-x" id="' + idPrefix + 'signature-' + cred.id +
+        signatureBadge = '<span class="status-badge status-revoked ico-x" id="' + idPrefix + 'signature-' + domID(cred.id) +
           '" title="The credential carries no key material this wallet can verify the signature against offline, so its integrity is unchecked here.">not verified' + kind + '</span>';
       }
     }
@@ -402,20 +402,20 @@
       (cred.key_binding_not_held === true ? 'other_key' : '');
     if (binding === 'this_wallet') {
       dataset.keyBinding = 'this-wallet';
-      keyBindingBadge = '<span class="status-badge status-active ico-check" id="' + idPrefix + 'key-binding-' + cred.id +
+      keyBindingBadge = '<span class="status-badge status-active ico-check" id="' + idPrefix + 'key-binding-' + domID(cred.id) +
         '" title="Bound to a holder key this wallet holds, so it can be presented.">Bound to this wallet</span>';
     } else if (binding === 'other_key') {
       dataset.keyBinding = 'not-held';
-      keyBindingBadge = '<span class="status-badge status-unheld-key ico-warn" id="' + idPrefix + 'key-binding-' + cred.id +
+      keyBindingBadge = '<span class="status-badge status-unheld-key ico-warn" id="' + idPrefix + 'key-binding-' + domID(cred.id) +
         '" title="Bound to a holder key this wallet does not hold. Presenting it fails the verifier\'s key binding check.">Bound to another key</span>';
     } else if (binding === 'none') {
       dataset.keyBinding = 'none';
-      keyBindingBadge = '<span class="status-badge status-none" id="' + idPrefix + 'key-binding-' + cred.id +
+      keyBindingBadge = '<span class="status-badge status-none" id="' + idPrefix + 'key-binding-' + domID(cred.id) +
         '" title="The credential names no holder key.">No key binding</span>';
     }
 
     const display = cred.display || {};
-    const cp = idPrefix + 'credential-' + cred.id + '-';
+    const cp = idPrefix + 'credential-' + domID(cred.id) + '-';
     const logoImg = display.logo_uri
       ? '<img class="credential-logo" id="' + cp + 'logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
       : '';
@@ -519,41 +519,41 @@
 
       const isProtected = cred.protected === true;
       const body = credentialCardBody(cred, '');
-      card.id = 'credential-' + cred.id;
+      card.id = 'credential-' + domID(cred.id);
       Object.assign(card.dataset, body.dataset);
 
       const st = cred.status;
       let revokeBtn = '';
       if (st && st.managed) {
         if (!isProtected) {
-          revokeBtn = '<button class="btn btn-sm" id="revoke-' + cred.id + '" data-revoke="' + cred.id + '">' + (st.status === 1 ? 'Activate' : 'Revoke') + '</button>';
+          revokeBtn = '<button class="btn btn-sm" id="revoke-' + domID(cred.id) + '" data-revoke="' + escHtml(cred.id) + '">' + (st.status === 1 ? 'Activate' : 'Revoke') + '</button>';
         }
       } else if (st && st.uri) {
-        revokeBtn = '<button class="btn btn-sm" id="status-check-' + cred.id + '" data-check-status="' + cred.id + '">Check status</button>';
+        revokeBtn = '<button class="btn btn-sm" id="status-check-' + domID(cred.id) + '" data-check-status="' + escHtml(cred.id) + '">Check status</button>';
       }
 
       // Container queries choose whether the description flips the card or expands beneath
       // it.
       const hasDesc = !!(cred.display && cred.display.description);
       const aboutBtn = hasDesc
-        ? '<button class="btn btn-sm about-btn" id="about-' + cred.id + '" data-about="' + cred.id + '" aria-expanded="false" aria-label="Show description">' +
+        ? '<button class="btn btn-sm about-btn" id="about-' + domID(cred.id) + '" data-about="' + escHtml(cred.id) + '" aria-expanded="false" aria-label="Show description">' +
             descIcon('ic-info', '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6h.01"/>') +
-            '<span id="about-' + cred.id + '-label">About</span>' +
+            '<span id="about-' + domID(cred.id) + '-label">About</span>' +
             descIcon('ic-chev', '<path d="M6 9l6 6 6-6"/>') +
           '</button>'
         : '';
       const actionsHtml = '<div class="credential-actions">' +
           aboutBtn +
           revokeBtn +
-          '<button class="btn btn-sm" id="show-' + cred.id + '" data-show="' + cred.id + '">Show</button>' +
-          (isProtected ? '' : '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>') +
+          '<button class="btn btn-sm" id="show-' + domID(cred.id) + '" data-show="' + escHtml(cred.id) + '">Show</button>' +
+          (isProtected ? '' : '<button class="btn btn-danger btn-sm" id="delete-' + domID(cred.id) + '" data-delete="' + escHtml(cred.id) + '">Delete</button>') +
         '</div>';
       // The flipped card hides the About button, so phones need a Back control inside the
       // description.
       const descPane = hasDesc
         ? '<div class="cred-desc" id="' + card.id + '-desc"><div class="cred-desc-in">' +
             '<div class="cred-desc-head"><span class="cred-desc-label" id="' + card.id + '-desc-label">Description</span>' +
-              '<button class="cred-desc-back" id="' + card.id + '-desc-back" data-desc-close="' + cred.id + '" aria-label="Back to card">' +
+              '<button class="cred-desc-back" id="' + card.id + '-desc-back" data-desc-close="' + escHtml(cred.id) + '" aria-label="Back to card">' +
                 descIcon('', '<path d="M15 18l-6-6 6-6"/>') + '<span id="' + card.id + '-desc-back-label">Back</span></button></div>' +
             '<div class="cred-desc-body" id="' + card.id + '-desc-body">' + linkifyText(cred.display.description, card.id + '-desc-body') + '</div>' +
           '</div></div>'

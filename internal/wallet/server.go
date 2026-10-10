@@ -25,7 +25,6 @@ import (
 	"maps"
 	"net"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,29 +84,17 @@ type Server struct {
 	ShutdownFunc func()
 	// DELETE /api/config/conformance restores these startup settings. Demo mode
 	// disables that endpoint.
-	defaultTLSVerify               *bool
-	defaultValidationMode          ValidationMode
-	defaultRequireHAIP             bool
-	defaultRequireARF              bool
-	defaultRequireEncryptedRequest bool
-	defaultVCIVersion              VCIVersion
-	defaultKeyAttestationLevel     string
+	defaultConformance ConformanceSettings
 }
 
 // NewServer calls onSave after operations that change credentials.
 func NewServer(w *Wallet, port int, onSave func()) *Server {
 	processBuildID()
 	s := &Server{
-		wallet:                         w,
-		port:                           port,
-		onSave:                         onSave,
-		defaultTLSVerify:               w.tlsVerify,
-		defaultValidationMode:          w.ValidationMode,
-		defaultRequireHAIP:             w.RequireHAIP,
-		defaultRequireARF:              w.RequireARF,
-		defaultRequireEncryptedRequest: w.RequireEncryptedRequest,
-		defaultVCIVersion:              w.VCIFeatureVersion(),
-		defaultKeyAttestationLevel:     w.KeyAttestationLevelSetting(),
+		wallet:             w,
+		port:               port,
+		onSave:             onSave,
+		defaultConformance: w.Conformance(),
 	}
 	w.SetLogSink(func(entry LogEntry) {
 		if store := s.store.Load(); store != nil && store.entityMode() {
@@ -460,18 +447,11 @@ func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
 	s.wallet.CAKey = reloaded.CAKey
 	s.wallet.signers = reloaded.signers
 	s.wallet.CertChain = append([]*x509.Certificate(nil), reloaded.CertChain...)
-	s.wallet.IssuedAttestations = append([]IssuedAttestationSpec(nil), reloaded.IssuedAttestations...)
-	s.wallet.RelyingParties = slices.Clone(reloaded.RelyingParties)
-	s.wallet.RegistrationStatuses = slices.Clone(reloaded.RegistrationStatuses)
-	s.wallet.Catalog = slices.Clone(reloaded.Catalog)
-	s.wallet.TrustedEntities = slices.Clone(reloaded.TrustedEntities)
-	s.wallet.AddedTrustedLists = slices.Clone(reloaded.AddedTrustedLists)
-	s.wallet.Credentials = append([]StoredCredential(nil), reloaded.Credentials...)
 	// The poller and issuance flow manage deferred issuances in memory. Reloading them
 	// here could erase a new deferral before it has been saved.
-	s.wallet.StatusEntries = cloneStatusEntries(reloaded.StatusEntries)
-	s.wallet.StatusListCounter = reloaded.StatusListCounter
-	s.wallet.Log = append([]LogEntry(nil), reloaded.Log...)
+	deferred := s.wallet.DeferredIssuances
+	s.wallet.PersistedState = reloaded.PersistedState.clone()
+	s.wallet.DeferredIssuances = deferred
 	// Copy the snapshot with the loaded state. Keep deferred rows in the existing
 	// snapshot because the server manages them in memory.
 	if store := s.store.Load(); reloaded.persisted != nil && store != nil {

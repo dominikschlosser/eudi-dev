@@ -18,6 +18,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -136,7 +137,11 @@ func TestTheListOfTrustedListsPointsToEveryList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyTrustListSigner(raw, w.TrustListCAs()); err != nil {
+	operators, err := w.TrustListCAs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyTrustListSigner(raw, operators); err != nil {
 		t.Fatal(err)
 	}
 	list, err := trustlist.Parse(raw)
@@ -343,19 +348,73 @@ func TestAFailedListIsReusedForAMinute(t *testing.T) {
 	}
 }
 
-// Any visitor can name a list URL, so the list cache stays bounded.
+// Any visitor can name a list URL, so the list cache stays bounded. The
+// bound leaves room for the lists the wallet reads itself.
 func TestTheTrustedListCacheIsBounded(t *testing.T) {
 	w := generateTestWallet(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		_, _ = rw.Write([]byte("list"))
 	}))
 	defer srv.Close()
-	for i := range maxCachedLists + 5 {
+	w.AddedTrustedLists = []string{srv.URL + "/added"}
+	bound := w.listCacheBound()
+	if bound != 1+maxFollowedPointers+requestedListSlots {
+		t.Fatalf("bound = %d with one added list", bound)
+	}
+	for i := range bound + 5 {
 		if _, err := w.rawTrustedList(fmt.Sprintf("%s/list-%d", srv.URL, i)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if n := len(w.listCache); n > maxCachedLists {
-		t.Errorf("cached lists = %d, want at most %d", n, maxCachedLists)
+	if n := len(w.listCache); n > bound {
+		t.Errorf("cached lists = %d, want at most %d", n, bound)
+	}
+}
+
+// The capacity bounds added providers and lists on every path, the CLI
+// included.
+func TestCapacityBoundsAddedProvidersAndLists(t *testing.T) {
+	w := generateTestWallet(t)
+	w.SetCapacity(Capacity{TrustedEntities: 1, TrustedLists: 1})
+	w.AddedTrustedLists = []string{"https://lists.example/one"}
+	if _, err := w.AddTrustedList("https://lists.example/two"); !errors.Is(err, ErrTrustFull) {
+		t.Errorf("a second list: %v, want ErrTrustFull", err)
+	}
+	if err := w.trustedListRoom("https://lists.example/one"); err != nil {
+		t.Errorf("a list the wallet has: %v", err)
+	}
+	pem := string(certPEM(w.CertChain[len(w.CertChain)-1]))
+	if _, err := w.AddTrustedEntity("pid", "first", pem); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.AddTrustedEntity("eaa", "second", pem); !errors.Is(err, ErrTrustFull) {
+		t.Errorf("a second provider: %v, want ErrTrustFull", err)
+	}
+}
+
+// A stored trusted-list CA that no longer decodes is reported, so the wallet
+// doesn't trust fewer list operators without saying why.
+func TestTrustListCAsReportsAnUnreadableEntity(t *testing.T) {
+	w := generateTestWallet(t)
+	w.TrustedEntities = []TrustedEntity{{ID: "x", List: trustedListCAID, Name: "broken", Certificates: []string{"not base64"}}}
+	if _, err := w.TrustListCAs(); err == nil || !strings.Contains(err.Error(), "broken") {
+		t.Errorf("TrustListCAs: %v", err)
+	}
+}
+
+// The wallet builds its own lists in process for every spelling of its origin.
+func TestOwnTrustListIDMatchesTheOriginLikeSameURL(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://wallet.example/prefix"
+	for raw, want := range map[string]bool{
+		"https://wallet.example/prefix/api/trustlists/pid":     true,
+		"https://WALLET.example:443/prefix/api/trustlists/pid": true,
+		"http://wallet.example/prefix/api/trustlists/pid":      false,
+		"https://wallet.example/api/trustlists/pid":            false,
+		"https://other.example/prefix/api/trustlists/pid":      false,
+	} {
+		if id, ok := w.ownTrustListID(raw); ok != want || (ok && id != "pid") {
+			t.Errorf("%s: %q %t, want %t", raw, id, ok, want)
+		}
 	}
 }

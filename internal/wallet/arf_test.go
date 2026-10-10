@@ -151,11 +151,11 @@ func TestAnExpiredAccessCertificate(t *testing.T) {
 	}
 	params := signedARFRequest(t, w, key, []*x509.Certificate{expired}, issueTestRegistrationCertificate(t, w, rp).VerifierInfo)
 
-	findings, err := ValidateAuthorizationRequest(ValidationModeDebug, false, true, params)
+	findings, err := ValidateAuthorizationRequest(ConformanceSettings{ValidationMode: ValidationModeDebug, RequireARF: true}, params)
 	if err != nil || !containsSubstring(findings, "RPA_04") {
 		t.Errorf("debug mode: findings %v (%v), want the RPA_04 warning", findings, err)
 	}
-	if _, err := ValidateAuthorizationRequest(ValidationModeStrict, false, true, params); err == nil || !strings.Contains(err.Error(), "RPA_04") {
+	if _, err := ValidateAuthorizationRequest(ConformanceSettings{ValidationMode: ValidationModeStrict, RequireARF: true}, params); err == nil || !strings.Contains(err.Error(), "RPA_04") {
 		t.Errorf("strict mode: err %v, want the RPA_04 refusal", err)
 	}
 }

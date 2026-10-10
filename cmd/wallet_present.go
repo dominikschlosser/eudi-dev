@@ -117,7 +117,7 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 	responseURI := wallet.GetResponseURI(parsed)
 	authReq := authorizationRequestParamsFromParsed(parsed, responseURI, "cli")
 	w.PrepareARFChecks(authReq)
-	findings, err := wallet.ValidateAuthorizationRequest(w.ValidationMode, w.RequireHAIP, w.RequireARF, authReq)
+	findings, err := wallet.ValidateAuthorizationRequest(w.Conformance(), authReq)
 	var refusal *wallet.ARFRefusal
 	if errors.As(err, &refusal) {
 		// The verifier authenticated with a trusted access certificate, so it

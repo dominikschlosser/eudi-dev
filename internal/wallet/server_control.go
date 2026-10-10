@@ -60,12 +60,15 @@ func (s *Server) protectedRelyingParty(rp registrar.WalletRelyingParty) bool {
 }
 
 // protectedRelyingParties names the registrations the UI shows without
-// actions.
+// actions, by their first identifier.
 func (s *Server) protectedRelyingParties() []string {
-	if s.demo == nil {
-		return []string{}
+	protected := []string{}
+	for _, rp := range s.wallet.Registrar().RegisteredRelyingParties() {
+		if s.protectedRelyingParty(rp) {
+			protected = append(protected, rp.Identifier[0].Identifier)
+		}
 	}
-	return []string{demoIssuerIdentity.Identifier, demoVerifierIdentity.Identifier}
+	return protected
 }
 
 // SetNews makes the news of a public demo available to the UI.
@@ -207,9 +210,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		seeded = store.Seeded()
 	}
 	templatesDir := s.wallet.Templates.String()
-	// Read conformance settings together under the lock because PUT
-	// /api/config/conformance can change them concurrently.
-	mode, requireHAIP, requireEncrypted := s.wallet.ConformanceSettings()
+	conformance := s.wallet.Conformance()
+	mode, requireHAIP, requireEncrypted := conformance.ValidationMode, conformance.RequireHAIP, conformance.RequireEncryptedRequest
 	config := map[string]any{
 		"port":                      s.port,
 		"build_id":                  processBuildID(),
@@ -317,10 +319,6 @@ func (s *Server) handleSetAutoAccept(w http.ResponseWriter, r *http.Request) {
 // Runtime conformance settings apply to every flow using this server. Demo mode keeps
 // HAIP with debug validation and rejects changes.
 func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
-	if s.demo != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "conformance settings are fixed in public demo mode (run the wallet locally to change them)"})
-		return
-	}
 	var body struct {
 		TLSVerify           json.RawMessage `json:"tls_verify,omitempty"`
 		Mode                *string         `json:"mode,omitempty"`
@@ -394,20 +392,9 @@ func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
 	s.writeConformanceConfig(w)
 }
 
-// Demo mode rejects changes to conformance settings, including resets.
 func (s *Server) handleResetConformance(w http.ResponseWriter, r *http.Request) {
-	if s.demo != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "conformance settings are fixed in public demo mode"})
-		return
-	}
 	s.wallet.mu.Lock()
-	s.wallet.tlsVerify = s.defaultTLSVerify
-	s.wallet.ValidationMode = s.defaultValidationMode
-	s.wallet.RequireHAIP = s.defaultRequireHAIP
-	s.wallet.RequireARF = s.defaultRequireARF
-	s.wallet.RequireEncryptedRequest = s.defaultRequireEncryptedRequest
-	s.wallet.VCIVersion = s.defaultVCIVersion
-	s.wallet.KeyAttestationLevel = s.defaultKeyAttestationLevel
+	s.wallet.ConformanceSettings = s.defaultConformance
 	s.wallet.mu.Unlock()
 	s.writeConformanceConfig(w)
 }

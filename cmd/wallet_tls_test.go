@@ -62,7 +62,7 @@ func TestWalletTLSFlags(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			w := &wallet.Wallet{ValidationMode: tc.mode}
+			w := &wallet.Wallet{ConformanceSettings: wallet.ConformanceSettings{ValidationMode: tc.mode}}
 			if err := applyWalletOutbound(w); err != nil {
 				t.Fatal(err)
 			}

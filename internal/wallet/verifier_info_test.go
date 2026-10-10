@@ -398,13 +398,13 @@ func TestARFChecksOverAsking(t *testing.T) {
 		}
 	}
 
-	if _, err := ValidateAuthorizationRequest(ValidationModeStrict, false, true, request("birthdate")); err == nil || !strings.Contains(err.Error(), "RPRC_21") {
+	if _, err := ValidateAuthorizationRequest(ConformanceSettings{ValidationMode: ValidationModeStrict, RequireARF: true}, request("birthdate")); err == nil || !strings.Contains(err.Error(), "RPRC_21") {
 		t.Errorf("strict mode with --arf: err = %v, want the RPRC_21 refusal", err)
 	}
-	if findings, err := ValidateAuthorizationRequest(ValidationModeDebug, false, true, request("birthdate")); err != nil || !containsSubstring(findings, "RPRC_21") {
+	if findings, err := ValidateAuthorizationRequest(ConformanceSettings{ValidationMode: ValidationModeDebug, RequireARF: true}, request("birthdate")); err != nil || !containsSubstring(findings, "RPRC_21") {
 		t.Errorf("debug mode with --arf: findings %v (%v), want the RPRC_21 warning", findings, err)
 	}
-	if findings, err := ValidateAuthorizationRequest(ValidationModeStrict, false, false, request("birthdate")); err != nil || containsSubstring(findings, "RPRC") {
+	if findings, err := ValidateAuthorizationRequest(ConformanceSettings{ValidationMode: ValidationModeStrict}, request("birthdate")); err != nil || containsSubstring(findings, "RPRC") {
 		t.Errorf("strict mode without --arf: findings %v (%v), want no ARF check", findings, err)
 	}
 }

@@ -157,8 +157,8 @@ func (w *Wallet) AddDeferredIssuance(pending *DeferredIssuance) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.capacity.deferred > 0 && len(w.DeferredIssuances) >= w.capacity.deferred {
-		w.DeferredIssuances = slices.Delete(w.DeferredIssuances, 0, len(w.DeferredIssuances)-w.capacity.deferred+1)
+	if w.capacity.Deferred > 0 && len(w.DeferredIssuances) >= w.capacity.Deferred {
+		w.DeferredIssuances = slices.Delete(w.DeferredIssuances, 0, len(w.DeferredIssuances)-w.capacity.Deferred+1)
 	}
 	w.DeferredIssuances = append(w.DeferredIssuances, *pending)
 }

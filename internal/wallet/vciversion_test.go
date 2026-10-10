@@ -278,7 +278,7 @@ func TestNoteDeclinedInteractiveAuthorizationStaysQuietWithoutAnEndpoint(t *test
 
 func TestConformanceAPICarriesTheVCIFeatureVersion(t *testing.T) {
 	srv := newTestServer(t, true)
-	srv.defaultVCIVersion = VCIVersion10
+	srv.defaultConformance.VCIVersion = VCIVersion10
 	srv.wallet.VCIVersion = VCIVersion10
 
 	if got := conformanceVCIVersion(t, srv, http.MethodGet, "/api/config", ""); got != "1.0" {

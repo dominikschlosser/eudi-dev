@@ -197,9 +197,8 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	authReq.Source = source
 	s.addPresentationRequestLog(authReq, source)
 
-	mode, requireHAIP, _ := s.wallet.ConformanceSettings()
 	s.wallet.PrepareARFChecks(authReq)
-	findings, err := ValidateAuthorizationRequest(mode, requireHAIP, s.wallet.ARFChecks(), authReq)
+	findings, err := ValidateAuthorizationRequest(s.wallet.Conformance(), authReq)
 	var refusal *ARFRefusal
 	if errors.As(err, &refusal) {
 		s.log("  REFUSED: %v", err)
@@ -268,21 +267,10 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 	// Debug mode lets the user answer with a credential that does not match. An
 	// API submission or auto-accept has no one to pick it.
-	interactive := !s.wallet.AutoAccept && !authReq.AutoAccept && authReq.Source != "api"
-	if requiresVP && len(matches) == 0 && credentialOptions != nil && interactive {
+	if requiresVP && len(matches) == 0 && credentialOptions != nil && !s.autoAccepts(authReq) {
 		s.log("  Result:        no matching credentials, debug mode offers the others")
 	} else if requiresVP && len(matches) == 0 {
-		s.log("  Result:        no matching credentials")
-		s.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
-		s.wallet.NotifyError(WalletError{
-			Owner:   authReq.Session,
-			Message: "No matching credentials",
-			Detail:  fmt.Sprintf("Verifier %s requested credentials but none matched the query", authReq.ClientID),
-		})
-		s.triggerUIRequest("")
-		// §8.5 access_denied: "The Wallet did not have the requested
-		// Credentials to satisfy the Authorization Request."
-		errorCode, description := unsatisfiableQueryError(authReq.DCQLQuery)
+		errorCode, description := s.reportNoMatch(authReq, authReq.Session)
 		redirectURI := s.reportRefusalToVerifier(authReq, errorCode, description)
 		if authReq.BrowserRedirect {
 			redirectBrowser(w, redirectURI)
@@ -299,7 +287,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 	// An API submission provides the caller's consent. Interactive URLs and scheme
 	// handlers still show the consent dialog unless auto-accept is enabled.
-	if s.wallet.AutoAccept || authReq.AutoAccept || authReq.Source == "api" {
+	if s.autoAccepts(authReq) {
 		s.log("  Mode:          auto-accept")
 		s.autoAcceptPresentation(w, authReq, matches)
 		return
@@ -322,6 +310,28 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		return
 	}
 	s.awaitPresentationConsent(w, authReq, matches, consentReq)
+}
+
+// autoAccepts reports whether the request goes without a consent dialog. An
+// API submission provides the caller's consent.
+func (s *Server) autoAccepts(authReq *AuthorizationRequestParams) bool {
+	return s.wallet.AutoAccept || authReq.AutoAccept || authReq.Source == "api"
+}
+
+// reportNoMatch tells the log and the UI that no credential answers the
+// request, and returns the error for the verifier.
+func (s *Server) reportNoMatch(authReq *AuthorizationRequestParams, owner string) (errorCode, description string) {
+	s.log("  Result:        no matching credentials")
+	s.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
+	s.wallet.NotifyError(WalletError{
+		Owner:   owner,
+		Message: "No matching credentials",
+		Detail:  fmt.Sprintf("Verifier %s requested credentials but none matched the query", authReq.ClientID),
+	})
+	s.triggerUIRequest("")
+	// §8.5 access_denied: "The Wallet did not have the requested Credentials
+	// to satisfy the Authorization Request."
+	return unsatisfiableQueryError(authReq.DCQLQuery)
 }
 
 // The submission channel also delivers the result to the approve API.

@@ -195,7 +195,7 @@ func extractEncryptionKey(mode ValidationMode, reqObj *oid4vc.RequestObjectJWT, 
 		}
 	}
 	if jwk == nil {
-		return nil, fmt.Errorf("no encryption JWK found in client_metadata.jwks")
+		return nil, fmt.Errorf("client_metadata.jwks carries no encryption key (OID4VP 1.0 requires one for an encrypted response)")
 	}
 
 	kid, _ := jwk["kid"].(string)
@@ -211,7 +211,7 @@ func extractEncryptionKey(mode ValidationMode, reqObj *oid4vc.RequestObjectJWT, 
 			return nil, fmt.Errorf("constructing RSA key: %w", err)
 		}
 		return &encryptionKeyInfo{RSAKey: rsaKey, Kid: kid, Alg: alg, Finding: selectionFinding}, nil
-	case "EC", "":
+	case "EC":
 		x, _ := jwk["x"].(string)
 		y, _ := jwk["y"].(string)
 		if x == "" || y == "" {
@@ -243,12 +243,6 @@ func joinFindings(findings ...string) string {
 
 func HasEncryptionKey(reqObj *oid4vc.RequestObjectJWT) bool {
 	_, err := extractEncryptionKey(ValidationModeDebug, reqObj, nil)
-	return err == nil
-}
-
-// HasEncryptionKeyForParams gives Request Object metadata precedence over URL parameters.
-func HasEncryptionKeyForParams(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) bool {
-	_, err := extractEncryptionKey(ValidationModeDebug, reqObj, clientMetadata)
 	return err == nil
 }
 

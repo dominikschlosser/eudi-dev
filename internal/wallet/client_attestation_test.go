@@ -70,7 +70,7 @@ func TestAttestsClient(t *testing.T) {
 		{"haip debug, another method does not attest", otherMethod, true, false, ValidationModeDebug, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := &Wallet{RequireHAIP: tc.haip, ForceClientAttestation: tc.force, ValidationMode: tc.mode}
+			w := &Wallet{ConformanceSettings: ConformanceSettings{RequireHAIP: tc.haip, ValidationMode: tc.mode}, ForceClientAttestation: tc.force}
 			if got := w.attestsClient(tc.meta); got != tc.want {
 				t.Errorf("attestsClient = %v, want %v", got, tc.want)
 			}

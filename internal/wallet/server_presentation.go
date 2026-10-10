@@ -83,32 +83,31 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid session transcript %q", body.SessionTranscript)})
 		return
 	}
-	reqServer := s
-	parsed, err := ParseAuthorizationRequestWithOptions(body.URI, reqServer.parseOpts)
+	parsed, err := ParseAuthorizationRequestWithOptions(body.URI, s.parseOpts)
 	if err != nil {
-		reqServer.log("  ERROR: %v", err)
-		reqServer.wallet.AddLog("presentation", fmt.Sprintf("Failed to parse request: %v", err), false)
-		reqServer.wallet.NotifyError(WalletError{
+		s.log("  ERROR: %v", err)
+		s.wallet.AddLog("presentation", fmt.Sprintf("Failed to parse request: %v", err), false)
+		s.wallet.NotifyError(WalletError{
 			Owner:   requestOwner(r),
 			Message: "Failed to parse authorization request",
 			Detail:  err.Error(),
 		})
-		reqServer.triggerUIRequest("")
+		s.triggerUIRequest("")
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
-	reqServer.log("  Client ID:     %s", parsed.ClientID)
-	reqServer.log("  Response Mode: %s", parsed.ResponseMode)
-	reqServer.log("  Response URI:  %s", parsed.ResponseURI)
+	s.log("  Client ID:     %s", parsed.ClientID)
+	s.log("  Response Mode: %s", parsed.ResponseMode)
+	s.log("  Response URI:  %s", parsed.ResponseURI)
 	if parsed.State != "" {
-		reqServer.log("  State:         %s", parsed.State)
+		s.log("  State:         %s", parsed.State)
 	}
 	if parsed.Nonce != "" {
-		reqServer.log("  Nonce:         %s", parsed.Nonce)
+		s.log("  Nonce:         %s", parsed.Nonce)
 	}
 	if parsed.RequestURIMethod != "" {
-		reqServer.log("  Request URI Method: %s", parsed.RequestURIMethod)
+		s.log("  Request URI Method: %s", parsed.RequestURIMethod)
 	}
 
 	authReq := authorizationParams(parsed)
@@ -124,18 +123,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		s.noteStaleClient(r)
 	}
 
-	reqServer.handleAuthFlow(w, authReq)
-}
-
-func cloneStatusEntries(src map[string]StatusEntry) map[string]StatusEntry {
-	if len(src) == 0 {
-		return nil
-	}
-	dst := make(map[string]StatusEntry, len(src))
-	for key, value := range src {
-		dst[key] = value
-	}
-	return dst
+	s.handleAuthFlow(w, authReq)
 }
 
 func mapKeys[V any](m map[string]V) []string {

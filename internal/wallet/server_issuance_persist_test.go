@@ -73,7 +73,7 @@ func TestSaveIssuedCredential_SurvivesConcurrentStoreReload(t *testing.T) {
 	srv.wallet.RestoreCredential(issued)
 
 	// Simulate a reload before the imported credential has been saved.
-	persisted := &Wallet{Credentials: []StoredCredential{}}
+	persisted := &Wallet{PersistedState: PersistedState{Credentials: []StoredCredential{}}}
 	srv.applyPersistedWalletState(persisted)
 	if _, ok := srv.wallet.GetCredential(issued.ID); ok {
 		t.Fatal("precondition failed: the reload should have dropped the credential")
@@ -116,7 +116,7 @@ func TestSaveIssuedCredential_KeepsTheAdoptedStatusEntry(t *testing.T) {
 		t.Fatal("precondition failed: the import should have adopted the status entry")
 	}
 
-	srv.applyPersistedWalletState(&Wallet{Credentials: []StoredCredential{}})
+	srv.applyPersistedWalletState(&Wallet{PersistedState: PersistedState{Credentials: []StoredCredential{}}})
 	if _, ok := srv.wallet.StatusEntryFor(issued.ID); ok {
 		t.Fatal("precondition failed: the reload should have wiped the status entry")
 	}
@@ -180,7 +180,7 @@ func TestSaveRenewedCredential_SurvivesConcurrentStoreReload(t *testing.T) {
 	}
 
 	srv.wallet.PutCredential(renewed)
-	srv.applyPersistedWalletState(&Wallet{Credentials: []StoredCredential{stale}})
+	srv.applyPersistedWalletState(&Wallet{PersistedState: PersistedState{Credentials: []StoredCredential{stale}}})
 
 	srv.saveCredential(&renewed, true)
 

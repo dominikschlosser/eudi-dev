@@ -100,12 +100,13 @@ type demoState struct {
 	stopOnce       sync.Once
 }
 
-// SetDemo enables the public-demo profile. Call before ListenAndServe.
-// Visitors share the demo wallet, so it holds at most this many credentials
-// and pending issuances between resets.
+// Visitors share the demo wallet, so it holds at most this many entries
+// between resets. Every check reads the added providers and lists.
 const (
-	maxDemoCredentials = 500
-	maxDemoDeferred    = 100
+	maxDemoCredentials     = 500
+	maxDemoDeferred        = 100
+	maxDemoTrustedEntities = 20
+	maxDemoTrustedLists    = 5
 )
 
 // SetDemo turns on the public demo profile. The templates present now are
@@ -116,7 +117,7 @@ func (s *Server) SetDemo(opts DemoOptions) error {
 		return fmt.Errorf("reading the operator's templates: %w", err)
 	}
 	s.demo = &demoState{opts: opts, fixedTemplates: map[string]bool{}}
-	s.wallet.SetCapacity(maxDemoCredentials, maxDemoDeferred)
+	s.wallet.SetCapacity(Capacity{Credentials: maxDemoCredentials, Deferred: maxDemoDeferred, TrustedEntities: maxDemoTrustedEntities, TrustedLists: maxDemoTrustedLists})
 	for _, t := range templates {
 		s.demo.fixedTemplates[t.Name] = true
 	}
@@ -192,19 +193,9 @@ func demoBlockedRoute(r *http.Request) bool {
 func (w *Wallet) ResetToBaseline() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.Credentials = nil
-	w.Log = nil
-	w.StatusEntries = nil
-	w.StatusListCounter = 0
-	w.IssuedAttestations = nil
-	w.RelyingParties = nil
-	w.RegistrationStatuses = nil
-	w.Catalog = nil
-	w.TrustedEntities = nil
-	w.AddedTrustedLists = nil
-	// A pending deferral belongs to the wiped session. The poller must not
+	// A pending deferral belongs to the wiped session too. The poller must not
 	// carry it or its keys into the fresh baseline.
-	w.DeferredIssuances = nil
+	w.PersistedState = PersistedState{}
 }
 
 func (s *Server) startDemoReset() {

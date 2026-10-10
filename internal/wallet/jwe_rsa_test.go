@@ -155,6 +155,24 @@ func TestExtractEncryptionKeySigningOnlyFallback(t *testing.T) {
 	}
 }
 
+// The response follows the same key rule as the extraction, so strict mode
+// refuses a signing-only key with the missing-key error.
+func TestAuthorizationResponseUsesTheModeForTheEncryptionKey(t *testing.T) {
+	meta := map[string]any{"jwks": map[string]any{"keys": []any{ecEncJWK(t, "sig")}}}
+	params := PresentationParams{ResponseMode: "direct_post.jwt", ClientMetadata: meta}
+
+	strict := generateTestWallet(t)
+	strict.ValidationMode = ValidationModeStrict
+	if _, err := strict.BuildAuthorizationErrorResponse("access_denied", "", "s", params); err == nil || !strings.Contains(err.Error(), "carries no encryption key") {
+		t.Errorf("strict: %v", err)
+	}
+	debug := generateTestWallet(t)
+	debug.ValidationMode = ValidationModeDebug
+	if _, err := debug.BuildAuthorizationErrorResponse("access_denied", "", "s", params); err != nil {
+		t.Errorf("debug: %v", err)
+	}
+}
+
 func TestHaipEncryptionKeyViolationsRSA(t *testing.T) {
 	rsaPriv, _ := rsa.GenerateKey(rand.Reader, 2048)
 	meta := map[string]any{"jwks": map[string]any{"keys": []any{rsaEncJWK(&rsaPriv.PublicKey, "RSA-OAEP")}}}

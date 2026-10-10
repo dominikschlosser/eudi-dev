@@ -930,7 +930,7 @@ func TestTheDemoShowsNobodyTheErrorsOfUnownedFlows(t *testing.T) {
 func TestASharedWalletMakesRoomForANewCredential(t *testing.T) {
 	w := generateTestWallet(t)
 	w.Credentials = nil
-	w.SetCapacity(3, 1)
+	w.SetCapacity(Capacity{Credentials: 3, Deferred: 1})
 	w.PutCredential(StoredCredential{ID: "protected", Protected: true})
 	for _, id := range []string{"a", "b", "c"} {
 		w.PutCredential(StoredCredential{ID: id})
@@ -971,7 +971,7 @@ func TestARenewalKeepsItsCredentialInAFullWallet(t *testing.T) {
 	for i := range w.Credentials {
 		w.Credentials[i].Protected = false
 	}
-	w.SetCapacity(len(creds), 0)
+	w.SetCapacity(Capacity{Credentials: len(creds)})
 	oldest := creds[0]
 	if _, err := w.ReplaceCredential(oldest.ID, oldest.Raw, nil); err != nil {
 		t.Fatal(err)

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -124,6 +125,10 @@ type TrustedEntity struct {
 // have.
 var ErrTrustNotFound = errors.New("not on the wallet's trusted lists")
 
+// ErrTrustFull reports that the wallet holds as many added providers or lists
+// as its capacity allows.
+var ErrTrustFull = errors.New("the wallet is full")
+
 // TrustedEntityLists are the wallet lists that take trusted entities.
 func TrustedEntityLists() []string {
 	return append(slices.Clone(credtemplate.Categories), walletProviderID, accessCAListID, registrarListID, trustedListCAID)
@@ -136,8 +141,7 @@ func (w *Wallet) AddTrustedEntity(list, name, certificatesPEM string) (TrustedEn
 	if err != nil {
 		return TrustedEntity{}, err
 	}
-	w.storeTrustedEntity(entity)
-	return entity, nil
+	return entity, w.storeTrustedEntity(entity)
 }
 
 // NewTrustedEntity reads the provider with the certificates in PEM. Its ID
@@ -162,17 +166,32 @@ func NewTrustedEntity(list, name, certificatesPEM string) (TrustedEntity, error)
 	return entity, nil
 }
 
-func (w *Wallet) storeTrustedEntity(entity TrustedEntity) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.TrustedEntities = append(slices.DeleteFunc(w.TrustedEntities, func(e TrustedEntity) bool { return e.ID == entity.ID }), entity)
+// certificates decodes the stored base64 DER certificates.
+func (e TrustedEntity) certificates() ([]*x509.Certificate, error) {
+	certs := make([]*x509.Certificate, 0, len(e.Certificates))
+	for _, encoded := range e.Certificates {
+		der, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, err
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, err
+		}
+		certs = append(certs, cert)
+	}
+	return certs, nil
 }
 
-// hasTrustedEntity reports whether the wallet holds an entity with the ID.
-func (w *Wallet) hasTrustedEntity(id string) bool {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return slices.ContainsFunc(w.TrustedEntities, func(e TrustedEntity) bool { return e.ID == id })
+func (w *Wallet) storeTrustedEntity(entity TrustedEntity) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	others := slices.DeleteFunc(slices.Clone(w.TrustedEntities), func(e TrustedEntity) bool { return e.ID == entity.ID })
+	if limit := w.capacity.TrustedEntities; limit > 0 && len(others) >= limit {
+		return fmt.Errorf("%w: it holds at most %d added providers. Remove one first", ErrTrustFull, limit)
+	}
+	w.TrustedEntities = append(others, entity)
+	return nil
 }
 
 // RemoveTrustedEntity takes a provider off its list.
@@ -224,12 +243,14 @@ func (w *Wallet) trustListEntities(listID string) []trustListEntity {
 // mode refuses an unreadable list. Debug mode adds it and reports why it can't
 // be read.
 func (w *Wallet) AddTrustedList(rawURL string) (TrustedListLink, error) {
+	if err := w.trustedListRoom(rawURL); err != nil {
+		return TrustedListLink{}, err
+	}
 	link, err := w.CheckTrustedList(rawURL)
 	if err != nil {
 		return TrustedListLink{}, err
 	}
-	w.storeTrustedList(link.URL)
-	return link, nil
+	return link, w.storeTrustedList(link.URL)
 }
 
 // CheckTrustedList reads an external list before it is added. Strict mode
@@ -252,26 +273,40 @@ func (w *Wallet) CheckTrustedList(rawURL string) (TrustedListLink, error) {
 	return link, nil
 }
 
-// addedTrustedListCount counts the lists users added, without the one at
-// rawURL.
-func (w *Wallet) addedTrustedListCount(rawURL string) int {
+// listCacheBound keeps every list the wallet reads itself in the cache,
+// together with the lists they point to.
+func (w *Wallet) listCacheBound() int {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
-	n := 0
-	for _, u := range w.AddedTrustedLists {
-		if u != rawURL {
-			n++
-		}
-	}
-	return n
+	return (len(w.ConfiguredTrustedListURLs)+len(w.AddedTrustedLists))*(1+maxFollowedPointers) + requestedListSlots
 }
 
-func (w *Wallet) storeTrustedList(rawURL string) {
+// trustedListRoom reports whether the wallet can add the list. A list it
+// already has always fits.
+func (w *Wallet) trustedListRoom(rawURL string) error {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.trustedListRoomLocked(strings.TrimSpace(rawURL))
+}
+
+func (w *Wallet) trustedListRoomLocked(rawURL string) error {
+	limit := w.capacity.TrustedLists
+	if limit <= 0 || slices.Contains(w.AddedTrustedLists, rawURL) || len(w.AddedTrustedLists) < limit {
+		return nil
+	}
+	return fmt.Errorf("%w: it holds at most %d added lists. Remove one first", ErrTrustFull, limit)
+}
+
+func (w *Wallet) storeTrustedList(rawURL string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if err := w.trustedListRoomLocked(rawURL); err != nil {
+		return err
+	}
 	if !slices.Contains(w.AddedTrustedLists, rawURL) {
 		w.AddedTrustedLists = append(w.AddedTrustedLists, rawURL)
 	}
+	return nil
 }
 
 // RemoveTrustedList takes an external list off the list of trusted lists.
@@ -312,8 +347,10 @@ func (w *Wallet) ownTrustListURL(id string) string {
 const (
 	listCacheTTL       = 5 * time.Minute
 	failedListCacheTTL = time.Minute
-	// maxCachedLists bounds the cache. Any visitor can name a list URL.
-	maxCachedLists = 16
+	// requestedListSlots is the room in the list cache for lists that
+	// requests name, besides the lists the wallet reads itself. Any visitor
+	// can name a list URL.
+	requestedListSlots = 16
 	// maxFollowedPointers caps the lists the wallet reads from one external
 	// list of trusted lists.
 	maxFollowedPointers = 20
@@ -325,10 +362,24 @@ type cachedList struct {
 	fetched time.Time
 }
 
+// ownTrustListID returns the ID of one of the wallet's own lists. The URL
+// compares like sameURL, so another spelling of the wallet's origin matches.
+func (w *Wallet) ownTrustListID(rawURL string) (string, bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", false
+	}
+	base, err := url.Parse(w.RegistrarBase())
+	if err != nil || !sameOrigin(u, base) {
+		return "", false
+	}
+	return strings.CutPrefix(u.Path, strings.TrimSuffix(base.Path, "/")+"/api/trustlists/")
+}
+
 // rawTrustedList builds one of the wallet's own lists in process, because the
 // wallet may not serve them over HTTP. It fetches every other list.
 func (w *Wallet) rawTrustedList(rawURL string) (string, error) {
-	if id, ok := strings.CutPrefix(rawURL, w.RegistrarBase()+"/api/trustlists/"); ok {
+	if id, ok := w.ownTrustListID(rawURL); ok {
 		group, found := FindTrustListGroupForWallet(w, id, "", "")
 		if !found {
 			return "", fmt.Errorf("the wallet has no trusted list %q", id)
@@ -343,11 +394,12 @@ func (w *Wallet) rawTrustedList(rawURL string) (string, error) {
 	}
 	fetched, err, _ := w.listFetches.Do(rawURL, func() (any, error) {
 		raw, err := format.FetchURL(rawURL, w.HTTPClient())
+		bound := w.listCacheBound()
 		w.listCacheMu.Lock()
 		if w.listCache == nil {
 			w.listCache = map[string]cachedList{}
 		}
-		for len(w.listCache) >= maxCachedLists {
+		for len(w.listCache) >= bound {
 			oldest := ""
 			for u, c := range w.listCache {
 				if oldest == "" || c.fetched.Before(w.listCache[oldest].fetched) {
@@ -370,7 +422,11 @@ func (w *Wallet) rawTrustedList(rawURL string) (string, error) {
 // ARF, that signature is why the wallet accepts the trust anchors on the list
 // (PPNot_05, TLPub_05, TLPub_07).
 func (w *Wallet) readTrustedList(rawURL string) (*trustlist.TrustList, error) {
-	return w.readListSignedBy(rawURL, w.TrustListCAs())
+	operators, err := w.TrustListCAs()
+	if err != nil {
+		return nil, err
+	}
+	return w.readListSignedBy(rawURL, operators)
 }
 
 // readListSignedBy returns the list if its signer chains to one of the
@@ -423,9 +479,13 @@ func (w *Wallet) trustedLists() []trustedList {
 	for _, u := range urls {
 		seen[u] = true
 	}
-	operators := w.TrustListCAs()
+	operators, operatorsErr := w.TrustListCAs()
 	out := make([]trustedList, len(urls))
 	readAll(len(urls), func(i int) {
+		if operatorsErr != nil {
+			out[i] = trustedList{URL: urls[i], Err: operatorsErr}
+			return
+		}
 		list, err := w.readListSignedBy(urls[i], operators)
 		out[i] = trustedList{URL: urls[i], List: list, Err: err}
 	})
@@ -517,7 +577,7 @@ func GenerateListOfTrustedLists(w *Wallet, issuer string) (string, error) {
 			continue
 		}
 		location := tl.URL
-		if id, own := strings.CutPrefix(tl.URL, w.RegistrarBase()+"/api/trustlists/"); own && issuer != "" {
+		if id, own := w.ownTrustListID(tl.URL); own && issuer != "" {
 			location = issuer + "/api/trustlists/" + id
 		}
 		pointers = append(pointers, listPointer(location, tl.List.SchemeInfo, base64.StdEncoding.EncodeToString(signers[0].Raw)))

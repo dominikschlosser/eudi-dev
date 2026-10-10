@@ -17,8 +17,8 @@ package wallet
 import (
 	"crypto/ecdsa"
 	"crypto/x509"
-	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -105,29 +105,31 @@ func (w *Wallet) RegistrationStatusCAs() []*x509.Certificate {
 // wallet's list operator key, certified by the wallet CA, signs the wallet's
 // own lists, like the seal of the Commission on the lists it compiles (ARF
 // TLPub_07). --trusted-list-ca and the trusted-list-ca entities add others.
-func (w *Wallet) TrustListCAs() []*x509.Certificate {
+func (w *Wallet) TrustListCAs() ([]*x509.Certificate, error) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	var cas []*x509.Certificate
 	if len(w.CertChain) > 0 {
 		cas = append(cas, w.CertChain[len(w.CertChain)-1])
 	}
-	if configured, err := keys.ParseCertificatesPEM(w.TrustListCAPEM); err == nil {
+	if len(w.TrustListCAPEM) > 0 {
+		configured, err := keys.ParseCertificatesPEM(w.TrustListCAPEM)
+		if err != nil {
+			return nil, fmt.Errorf("the trusted list CAs: %w", err)
+		}
 		cas = append(cas, configured...)
 	}
 	for _, entity := range w.TrustedEntities {
 		if entity.List != trustedListCAID {
 			continue
 		}
-		for _, encoded := range entity.Certificates {
-			if der, err := base64.StdEncoding.DecodeString(encoded); err == nil {
-				if cert, err := x509.ParseCertificate(der); err == nil {
-					cas = append(cas, cert)
-				}
-			}
+		certs, err := entity.certificates()
+		if err != nil {
+			return nil, fmt.Errorf("the trusted list CA %s: %w", entity.Name, err)
 		}
+		cas = append(cas, certs...)
 	}
-	return cas
+	return cas, nil
 }
 
 // sameURL compares scheme, host with its default port, and path. Host and
@@ -137,6 +139,10 @@ func sameURL(u *url.URL, raw string) bool {
 	if err != nil {
 		return false
 	}
+	return sameOrigin(u, other) && strings.TrimSuffix(u.Path, "/") == strings.TrimSuffix(other.Path, "/")
+}
+
+func sameOrigin(u, other *url.URL) bool {
 	hostPort := func(v *url.URL) string {
 		port := v.Port()
 		if port == "" {
@@ -144,7 +150,7 @@ func sameURL(u *url.URL, raw string) bool {
 		}
 		return strings.ToLower(v.Hostname()) + ":" + port
 	}
-	return strings.EqualFold(u.Scheme, other.Scheme) && hostPort(u) == hostPort(other) && strings.TrimSuffix(u.Path, "/") == strings.TrimSuffix(other.Path, "/")
+	return strings.EqualFold(u.Scheme, other.Scheme) && hostPort(u) == hostPort(other)
 }
 
 // RegistrarBase is the base URL of the registrar's default contact URLs and

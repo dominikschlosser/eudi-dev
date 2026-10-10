@@ -17,7 +17,7 @@ package wallet
 import "testing"
 
 func TestPresentationSubmissionLogDetailsIncludePresentedCredentialMaterial(t *testing.T) {
-	w := &Wallet{Credentials: []StoredCredential{
+	w := &Wallet{PersistedState: PersistedState{Credentials: []StoredCredential{
 		{
 			ID:     "cred-1",
 			Format: "dc+sd-jwt",
@@ -28,7 +28,7 @@ func TestPresentationSubmissionLogDetailsIncludePresentedCredentialMaterial(t *t
 				"family_name": "Mustermann",
 			},
 		},
-	}}
+	}}}
 
 	details := PresentationSubmissionLogDetails(
 		&AuthorizationRequestParams{
@@ -77,14 +77,14 @@ func TestPresentationSubmissionLogDetailsIncludePresentedCredentialMaterial(t *t
 }
 
 func TestPresentationResponseLogDetailsExcludeRequestMaterial(t *testing.T) {
-	w := &Wallet{Credentials: []StoredCredential{
+	w := &Wallet{PersistedState: PersistedState{Credentials: []StoredCredential{
 		{
 			ID:     "cred-1",
 			Format: "dc+sd-jwt",
 			Raw:    "issuer.jwt~disclosure~kb.jwt",
 			VCT:    "urn:eudi:pid:1",
 		},
-	}}
+	}}}
 
 	details := PresentationResponseLogDetails(
 		&AuthorizationRequestParams{
