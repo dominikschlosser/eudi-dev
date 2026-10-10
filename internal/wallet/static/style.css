@@ -2741,6 +2741,12 @@ header h1 {
   flex-shrink: 0;
 }
 
+.trust-added .trust-remove {
+  flex-shrink: 0;
+  padding: 0 7px;
+  line-height: 1.4;
+}
+
 .trust-added .trust-list-error {
   display: block;
   color: var(--red);

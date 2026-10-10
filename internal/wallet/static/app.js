@@ -3288,9 +3288,9 @@
       if (current) select.value = current;
       entities.innerHTML = (state.entities || []).map(e =>
         '<li id="trust-entity-' + escHtml(e.id) + '"><span>' + escHtml(e.name) + ' <span class="trust-list-name">' + escHtml(e.list) + '</span></span>' +
-        '<button type="button" class="link-btn" data-entity="' + escHtml(e.id) + '">Remove</button></li>').join('');
+        '<button type="button" class="btn btn-danger btn-sm trust-remove" data-entity="' + escHtml(e.id) + '" title="Remove" aria-label="Remove ' + escHtml(e.name) + '">&times;</button></li>').join('');
       lists.innerHTML = (state.lists || []).map((l, i) => {
-        let action = '<button type="button" class="link-btn" data-list="' + escHtml(l.url) + '">Remove</button>';
+        let action = '<button type="button" class="btn btn-danger btn-sm trust-remove" data-list="' + escHtml(l.url) + '" title="Remove" aria-label="Remove ' + escHtml(l.url) + '">&times;</button>';
         if (l.via) action = '<span class="trust-list-name">from ' + escHtml(l.via) + '</span>';
         else if (l.configured) action = '<span class="trust-list-name">--trusted-list</span>';
         const error = l.error ? '<span class="trust-list-error" id="trust-list-error-' + i + '">Not used: ' + escHtml(l.error) + '</span>' : '';
