@@ -3208,146 +3208,234 @@
     return m + ' minutes';
   }
 
+  // The trust dialog shows each published list with the providers added to
+  // it, then the external lists and the CAs of their operators.
+  const TRUSTED_LIST_CA = 'trusted-list-ca';
+  const trustDomID = value => String(value).replace(/[^A-Za-z0-9_-]/g, '-');
+  let trustEntityLists = [];
+
+  function trustRemoveButton(id, label, data) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-danger btn-sm trust-remove';
+    button.id = id;
+    button.title = 'Remove';
+    button.setAttribute('aria-label', 'Remove ' + label);
+    button.innerHTML = '&times;';
+    button.addEventListener('click', () => {
+      const path = data.entity ? 'api/trust/entities/' + encodeURIComponent(data.entity) : 'api/trust/lists?url=' + encodeURIComponent(data.list);
+      changeTrust('DELETE', path, null, document.getElementById('trust-error'));
+    });
+    return button;
+  }
+
+  function addedEntityList(id, entities) {
+    const list = document.createElement('ul');
+    list.className = 'trust-added';
+    list.id = id;
+    entities.forEach(e => {
+      const item = document.createElement('li');
+      item.id = 'trust-entity-' + trustDomID(e.id);
+      const name = document.createElement('span');
+      name.id = item.id + '-name';
+      name.textContent = e.name;
+      item.append(name, trustRemoveButton(item.id + '-remove', e.name, { entity: e.id }));
+      list.appendChild(item);
+    });
+    return list;
+  }
+
   // Issuance can add trusted lists, so refresh links when credentials change.
   async function loadTrustLists() {
     const row = document.getElementById('trust-list-links');
-    try {
-      const resp = await fetch('api/trustlists');
-      const doc = await resp.json();
-      const lists = (doc && doc.trust_lists) || [];
-      row.querySelectorAll('.trust-items').forEach(el => el.remove());
-      row.hidden = lists.length === 0;
-
-      const groups = new Map();
-      lists.forEach(entry => {
-        const category = entry.category || 'Other';
-        if (!groups.has(category)) groups.set(category, []);
-        groups.get(category).push(entry);
-      });
-
-      const list = document.createElement('dl');
-      list.className = 'trust-items';
-      [...groups.keys()].sort().forEach(category => {
-        const term = document.createElement('dt');
-        term.textContent = category;
-        list.appendChild(term);
-
-        const detail = document.createElement('dd');
-        groups.get(category).forEach(entry => {
-          const url = entry.advertised_url || entry.url ||
-            (entry.path ? window.location.origin + entry.path : '');
-          if (!url) return;
-          const links = document.createElement('span');
-          links.className = 'trust-links';
-          const link = document.createElement('a');
-          link.href = url;
-          link.textContent = entry.id || 'trusted list';
-          link.title = url;
-          links.appendChild(link);
-          if (entry.entityName) {
-            const name = document.createElement('span');
-            name.className = 'trust-list-name';
-            name.textContent = entry.entityName;
-            links.appendChild(name);
-          }
-          const copy = document.createElement('button');
-          copy.type = 'button';
-          copy.className = 'copy-btn';
-          copy.textContent = '\u29C9';
-          copy.title = 'Copy trusted list URL';
-          copy.addEventListener('click', async () => {
-            try {
-              await navigator.clipboard.writeText(url);
-              copy.textContent = '\u2713';
-              setTimeout(() => { copy.textContent = '\u29C9'; }, 1200);
-            } catch (e) { /* The clipboard API may be unavailable. */ }
-          });
-          links.appendChild(copy);
-          detail.appendChild(links);
-          if (entry.description) {
-            const desc = document.createElement('span');
-            desc.className = 'trust-item-hint';
-            desc.textContent = entry.description;
-            detail.appendChild(desc);
-          }
-        });
-        list.appendChild(detail);
-      });
-      row.appendChild(list);
-    } catch (e) {
-      row.hidden = true;
-    }
-  }
-
-  // Providers and external lists added by the user (GET api/trust).
-  async function loadAddedTrust() {
-    const entities = document.getElementById('trust-added-entities');
-    const lists = document.getElementById('trust-added-lists');
-    const select = document.getElementById('trust-entity-list');
-    try {
-      const state = await registrarRequest('GET', 'api/trust');
-      const current = select.value;
-      select.innerHTML = (state.entity_lists || []).map(id => '<option value="' + escHtml(id) + '">' +
-        escHtml(id === 'trusted-list-ca' ? 'trusted-list-ca (CA of a list operator, for external lists)' : id) + '</option>').join('');
-      if (current) select.value = current;
-      entities.innerHTML = (state.entities || []).map(e =>
-        '<li id="trust-entity-' + escHtml(e.id) + '"><span>' + escHtml(e.name) + ' <span class="trust-list-name">' + escHtml(e.list) + '</span></span>' +
-        '<button type="button" class="btn btn-danger btn-sm trust-remove" data-entity="' + escHtml(e.id) + '" title="Remove" aria-label="Remove ' + escHtml(e.name) + '">&times;</button></li>').join('');
-      lists.innerHTML = (state.lists || []).map((l, i) => {
-        let action = '<button type="button" class="btn btn-danger btn-sm trust-remove" data-list="' + escHtml(l.url) + '" title="Remove" aria-label="Remove ' + escHtml(l.url) + '">&times;</button>';
-        if (l.via) action = '<span class="trust-list-name">from ' + escHtml(l.via) + '</span>';
-        else if (l.configured) action = '<span class="trust-list-name">--trusted-list</span>';
-        const error = l.error ? '<span class="trust-list-error" id="trust-list-error-' + i + '">Not used: ' + escHtml(l.error) + '</span>' : '';
-        return '<li id="trust-list-' + i + '"><span>' + escHtml(l.url) + error + '</span>' + action + '</li>';
-      }).join('');
-    } catch (e) {
-      document.getElementById('trust-error').textContent = e.message;
-    }
-  }
-  async function changeTrust(method, path, body) {
     const error = document.getElementById('trust-error');
+    let lists = [];
+    let state = {};
+    try {
+      const doc = await (await fetch('api/trustlists')).json();
+      lists = (doc && doc.trust_lists) || [];
+      state = await registrarRequest('GET', 'api/trust');
+    } catch (e) {
+      error.textContent = e.message;
+    }
+    trustEntityLists = state.entity_lists || [];
+    const added = state.entities || [];
+    row.querySelectorAll('.trust-items').forEach(el => el.remove());
+
+    const groups = new Map();
+    lists.forEach(entry => {
+      const category = entry.category || 'Other';
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push(entry);
+    });
+
+    const list = document.createElement('dl');
+    list.className = 'trust-items';
+    list.id = 'trust-items';
+    const group = (title, slug) => {
+      const term = document.createElement('dt');
+      term.id = 'trust-group-' + slug;
+      term.textContent = title;
+      const detail = document.createElement('dd');
+      detail.id = 'trust-group-' + slug + '-lists';
+      list.append(term, detail);
+      return detail;
+    };
+    [...groups.keys()].sort().forEach(category => {
+      const detail = group(category, trustDomID(category.toLowerCase()));
+      groups.get(category).forEach(entry => {
+        const url = entry.advertised_url || entry.url ||
+          (entry.path ? window.location.origin + entry.path : '');
+        if (!url) return;
+        const prefix = 'trust-list-' + trustDomID(entry.id || 'list');
+        const links = document.createElement('span');
+        links.className = 'trust-links';
+        links.id = prefix;
+        const link = document.createElement('a');
+        link.id = prefix + '-link';
+        link.href = url;
+        link.textContent = entry.id || 'trusted list';
+        link.title = url;
+        links.appendChild(link);
+        if (entry.entityName) {
+          const name = document.createElement('span');
+          name.className = 'trust-list-name';
+          name.id = prefix + '-name';
+          name.textContent = entry.entityName;
+          links.appendChild(name);
+        }
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'copy-btn';
+        copy.id = prefix + '-copy';
+        copy.textContent = '⧉';
+        copy.title = 'Copy trusted list URL';
+        copy.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            copy.textContent = '✓';
+            setTimeout(() => { copy.textContent = '⧉'; }, 1200);
+          } catch (e) { /* The clipboard API may be unavailable. */ }
+        });
+        links.appendChild(copy);
+        detail.appendChild(links);
+        if (entry.description) {
+          const desc = document.createElement('span');
+          desc.className = 'trust-item-hint';
+          desc.id = prefix + '-hint';
+          desc.textContent = entry.description;
+          detail.appendChild(desc);
+        }
+        const mine = added.filter(e => e.list === entry.id);
+        if (mine.length > 0) detail.appendChild(addedEntityList(prefix + '-added', mine));
+      });
+    });
+
+    const operators = added.filter(e => e.list === TRUSTED_LIST_CA);
+    const external = state.lists || [];
+    if (operators.length > 0 || external.length > 0) {
+      const detail = group('External lists', 'external');
+      const items = document.createElement('ul');
+      items.className = 'trust-added';
+      items.id = 'trust-external-lists';
+      external.forEach((l, i) => {
+        const item = document.createElement('li');
+        item.id = 'trust-external-' + i;
+        const text = document.createElement('span');
+        text.id = item.id + '-url';
+        text.textContent = l.url;
+        if (l.error) {
+          const failure = document.createElement('span');
+          failure.className = 'trust-list-error';
+          failure.id = item.id + '-error';
+          failure.textContent = 'Not used: ' + l.error;
+          text.appendChild(failure);
+        }
+        item.appendChild(text);
+        if (l.via || l.configured) {
+          const source = document.createElement('span');
+          source.className = 'trust-list-name';
+          source.id = item.id + '-source';
+          source.textContent = l.via ? 'from ' + l.via : '--trusted-list';
+          item.appendChild(source);
+        } else {
+          item.appendChild(trustRemoveButton(item.id + '-remove', l.url, { list: l.url }));
+        }
+        items.appendChild(item);
+      });
+      detail.appendChild(items);
+      if (operators.length > 0) {
+        const label = document.createElement('span');
+        label.className = 'trust-item-hint';
+        label.id = 'trust-operators-label';
+        label.textContent = 'CAs of list operators (trusted-list-ca)';
+        detail.append(label, addedEntityList('trust-operators', operators));
+      }
+    }
+    row.appendChild(list);
+  }
+
+  async function changeTrust(method, path, body, error) {
     error.textContent = '';
     try {
       await registrarRequest(method, path, body);
-      await loadAddedTrust();
+      await loadTrustLists();
       return true;
     } catch (e) {
       error.textContent = e.message;
       return false;
     }
   }
-  document.getElementById('trust-entity-add').addEventListener('click', async () => {
-    const ca = document.getElementById('trust-entity-ca');
-    const added = await changeTrust('POST', 'api/trust/entities', {
-      list: document.getElementById('trust-entity-list').value,
-      name: document.getElementById('trust-entity-name').value.trim(),
-      certificates: ca.value,
-    });
-    if (added) {
-      ca.value = '';
-      document.getElementById('trust-entity-name').value = '';
-      loadTrustLists();
-    }
-  });
-  document.getElementById('trust-list-add').addEventListener('click', async () => {
-    const input = document.getElementById('trust-list-url');
-    if (await changeTrust('POST', 'api/trust/lists', { url: input.value.trim() })) input.value = '';
-  });
-  document.getElementById('trust-added-section').addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-entity], button[data-list]');
-    if (!button) return;
-    if (button.dataset.entity) {
-      changeTrust('DELETE', 'api/trust/entities/' + encodeURIComponent(button.dataset.entity)).then(() => loadTrustLists());
-    } else {
-      changeTrust('DELETE', 'api/trust/lists?url=' + encodeURIComponent(button.dataset.list));
-    }
-  });
 
   const trustOverlay = document.getElementById('trust-overlay');
+  const trustProviderOverlay = document.getElementById('trust-provider-overlay');
+  const trustExternalOverlay = document.getElementById('trust-external-overlay');
+  function openTrustPopup(popup, focus) {
+    popup.querySelector('.form-error').textContent = '';
+    trustOverlay.classList.remove('active');
+    popup.classList.add('active');
+    document.getElementById(focus).focus();
+  }
+  function closeTrustPopup(popup, opener) {
+    popup.classList.remove('active');
+    trustOverlay.classList.add('active');
+    document.getElementById(opener).focus();
+  }
+  document.getElementById('trust-add-provider').addEventListener('click', () => {
+    const select = document.getElementById('trust-entity-list');
+    select.innerHTML = trustEntityLists.map(id => '<option value="' + escHtml(id) + '" id="trust-entity-list-' + trustDomID(id) + '">' +
+      escHtml(id === TRUSTED_LIST_CA ? TRUSTED_LIST_CA + ' (CA of a list operator, for external lists)' : id) + '</option>').join('');
+    openTrustPopup(trustProviderOverlay, 'trust-entity-list');
+  });
+  document.getElementById('trust-add-list').addEventListener('click', () => openTrustPopup(trustExternalOverlay, 'trust-list-url'));
+  document.getElementById('trust-provider-cancel').addEventListener('click', () => closeTrustPopup(trustProviderOverlay, 'trust-add-provider'));
+  document.getElementById('trust-external-cancel').addEventListener('click', () => closeTrustPopup(trustExternalOverlay, 'trust-add-list'));
+  document.getElementById('trust-provider-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const ca = document.getElementById('trust-entity-ca');
+    const name = document.getElementById('trust-entity-name');
+    if (await changeTrust('POST', 'api/trust/entities', {
+      list: document.getElementById('trust-entity-list').value,
+      name: name.value.trim(),
+      certificates: ca.value,
+    }, document.getElementById('trust-provider-error'))) {
+      ca.value = '';
+      name.value = '';
+      closeTrustPopup(trustProviderOverlay, 'trust-add-provider');
+    }
+  });
+  document.getElementById('trust-external-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = document.getElementById('trust-list-url');
+    if (await changeTrust('POST', 'api/trust/lists', { url: input.value.trim() }, document.getElementById('trust-external-error'))) {
+      input.value = '';
+      closeTrustPopup(trustExternalOverlay, 'trust-add-list');
+    }
+  });
   document.getElementById('trust-link').addEventListener('click', (event) => {
     event.preventDefault();
+    document.getElementById('trust-error').textContent = '';
     loadTrustLists();
-    loadAddedTrust();
     trustOverlay.classList.add('active');
   });
   document.getElementById('trust-close').addEventListener('click', () => {
@@ -3972,6 +4060,9 @@
   makeModal(registrarPartiesOverlay, document.getElementById('registrar-parties-close'));
   makeModal(document.getElementById('registrar-cert-overlay'), document.getElementById('registrar-cert-close'));
   makeModal(document.getElementById('registrar-overlay'), document.getElementById('registrar-close'));
+  makeModal(trustOverlay, document.getElementById('trust-close'));
+  makeModal(trustProviderOverlay, document.getElementById('trust-provider-cancel'));
+  makeModal(trustExternalOverlay, document.getElementById('trust-external-cancel'));
 
   const registrarOverlay = document.getElementById('registrar-overlay');
   const registrarSubmit = document.getElementById('registrar-submit');

@@ -249,14 +249,19 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
   </div>
 
   <div class="consent-overlay" id="trust-overlay">
-    <div class="consent-dialog">
-      <div class="consent-title">Trust &amp; certificates</div>
-      <p class="dialog-hint">The wallet signs a trusted list (ETSI TS 119 602) for each kind of provider. With --arf it checks credentials, access certificates and registration certificates against these lists and the lists you add.</p>
+    <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="trust-title" id="trust-dialog">
+      <div class="consent-title" id="trust-title" tabindex="-1">Trust &amp; certificates</div>
+      <p class="dialog-hint" id="trust-hint">The wallet signs a trusted list (ETSI TS 119 602) for each kind of provider. With --arf it checks credentials, access certificates and registration certificates against these lists and the lists you add.</p>
 
-      <div class="trust-section">
-        <div class="trust-section-title">Trusted lists</div>
-        <p class="trust-section-hint">Lists of trusted entities, signed under the wallet CA.</p>
+      <div class="trust-section" id="trust-lists-section">
+        <div class="trust-section-title" id="trust-lists-title">Trusted lists</div>
+        <p class="trust-section-hint" id="trust-lists-hint">Lists of trusted entities, signed under the wallet CA. The <a id="trust-lists-of-lists-link" href="api/trustlists/lists">list of trusted lists</a> points to all of them.</p>
         <div class="cert-links" id="trust-list-links"></div>
+        <div class="registrar-add-row" id="trust-add-row">
+          <button type="button" class="btn btn-sm" id="trust-add-provider">+ Add provider CA</button>
+          <button type="button" class="btn btn-sm" id="trust-add-list">+ Add external list</button>
+        </div>
+        <div class="form-error" id="trust-error" role="alert"></div>
       </div>
 
       <div class="trust-section">
@@ -307,27 +312,49 @@ eudi wallet registrar issuers add --name "Example University" --attestation dc+s
         </dl>
       </div>
 
-      <div class="trust-section" id="trust-added-section">
-        <div class="trust-section-title">Your providers and lists</div>
-        <p class="trust-section-hint">Put the CA of your issuer or registrar on a list, or add an external list. For an external list, first add the CA of its operator on <code>trusted-list-ca</code>. The <a id="trust-lists-of-lists-link" href="api/trustlists/lists">list of trusted lists</a> points to all of them.</p>
-        <ul class="trust-added" id="trust-added-entities"></ul>
-        <div class="trust-add-form">
-          <select id="trust-entity-list" class="form-input" aria-label="List"></select>
-          <input type="text" id="trust-entity-name" class="form-input" placeholder="Provider name (optional)" aria-label="Provider name">
-          <textarea id="trust-entity-ca" class="form-input form-textarea" placeholder="CA certificate (PEM)" aria-label="CA certificate"></textarea>
-          <button type="button" class="btn btn-sm" id="trust-entity-add">Add CA</button>
-        </div>
-        <ul class="trust-added" id="trust-added-lists"></ul>
-        <div class="trust-add-form">
-          <input type="url" id="trust-list-url" class="form-input" placeholder="https://example.com/trusted-list" aria-label="Trusted list URL">
-          <button type="button" class="btn btn-sm" id="trust-list-add">Add list</button>
-        </div>
-        <div class="form-error" id="trust-error" role="alert"></div>
-      </div>
-
       <div class="consent-buttons">
         <button class="btn" id="trust-close">Close</button>
       </div>
+    </div>
+  </div>
+
+  <div class="consent-overlay" id="trust-provider-overlay">
+    <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="trust-provider-title" id="trust-provider-dialog">
+      <div class="consent-title" id="trust-provider-title" tabindex="-1">Add a provider CA</div>
+      <p class="dialog-hint" id="trust-provider-hint">The wallet puts the CA on one of its trusted lists. Use it for your own issuer or registrar. For an external list, add the CA of its operator on <code>trusted-list-ca</code>.</p>
+      <form id="trust-provider-form">
+        <div class="form-grid">
+          <label class="form-label" for="trust-entity-list">List</label>
+          <select id="trust-entity-list" class="form-input"></select>
+          <label class="form-label" for="trust-entity-name">Provider name</label>
+          <input type="text" id="trust-entity-name" class="form-input" placeholder="Optional">
+          <label class="form-label" for="trust-entity-ca">CA certificate (PEM)</label>
+          <textarea id="trust-entity-ca" class="form-input form-textarea" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
+        </div>
+        <div class="form-error" id="trust-provider-error" role="alert"></div>
+        <div class="consent-buttons">
+          <button type="button" class="btn" id="trust-provider-cancel">Close</button>
+          <button type="submit" class="btn btn-primary" id="trust-entity-add">Add CA</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="consent-overlay" id="trust-external-overlay">
+    <div class="consent-dialog" role="dialog" aria-modal="true" aria-labelledby="trust-external-title" id="trust-external-dialog">
+      <div class="consent-title" id="trust-external-title" tabindex="-1">Add an external list</div>
+      <p class="dialog-hint" id="trust-external-hint">The wallet uses the list if its signer chains to the wallet CA or to a CA on <code>trusted-list-ca</code>.</p>
+      <form id="trust-external-form">
+        <div class="form-grid">
+          <label class="form-label" for="trust-list-url">URL</label>
+          <input type="url" id="trust-list-url" class="form-input" placeholder="https://example.com/trusted-list">
+        </div>
+        <div class="form-error" id="trust-external-error" role="alert"></div>
+        <div class="consent-buttons">
+          <button type="button" class="btn" id="trust-external-cancel">Close</button>
+          <button type="submit" class="btn btn-primary" id="trust-list-add">Add list</button>
+        </div>
+      </form>
     </div>
   </div>
 

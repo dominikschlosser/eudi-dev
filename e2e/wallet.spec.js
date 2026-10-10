@@ -1093,6 +1093,36 @@ test.describe("Credential Issuing via UI", () => {
     await page.locator("#trust-close").click();
     await expect(page.locator("#trust-overlay")).not.toHaveClass(/active/);
   });
+
+  test("trust dialog adds a provider CA and an external list in popups and shows them under their lists", async ({ page, request }) => {
+    const ca = await (await request.get(`${WALLET_URL}/api/certificates/ca`)).text();
+    await page.goto(WALLET_URL);
+    await page.locator("#trust-link").click();
+
+    await page.locator("#trust-add-provider").click();
+    await expect(page.locator("#trust-provider-overlay")).toHaveClass(/active/);
+    await expect(page.locator("#trust-overlay")).not.toHaveClass(/active/);
+    await page.locator("#trust-entity-list").selectOption("pid");
+    await page.locator("#trust-entity-name").fill("E2E provider");
+    await page.locator("#trust-entity-ca").fill(ca);
+    await page.locator("#trust-entity-add").click();
+    await expect(page.locator("#trust-overlay")).toHaveClass(/active/);
+    const provider = page.locator("#trust-list-pid-added li").filter({ hasText: "E2E provider" });
+    await expect(provider).toHaveCount(1);
+
+    await page.locator("#trust-add-list").click();
+    await expect(page.locator("#trust-external-overlay")).toHaveClass(/active/);
+    await page.locator("#trust-list-url").fill(`${WALLET_URL}/api/trustlists/pid`);
+    await page.locator("#trust-list-add").click();
+    await expect(page.locator("#trust-overlay")).toHaveClass(/active/);
+    await expect(page.locator("#trust-group-external")).toHaveText("External lists");
+    await expect(page.locator("#trust-external-0-url")).toHaveText(`${WALLET_URL}/api/trustlists/pid`);
+
+    await page.locator("#trust-external-0-remove").click();
+    await expect(page.locator("#trust-group-external")).toHaveCount(0);
+    await provider.locator(".trust-remove").click();
+    await expect(provider).toHaveCount(0);
+  });
 });
 
 test.describe("Stored XSS", () => {
