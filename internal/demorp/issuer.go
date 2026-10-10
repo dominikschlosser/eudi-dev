@@ -74,8 +74,10 @@ type offerState struct {
 	// offerSettings are what the offer was created with. Its grant issues
 	// with them.
 	offerSettings
-	// preAuthCode or issuerState is the grant of the offer. It is redeemed
-	// once, for one access token.
+	// preAuthCode is the grant of a pre-authorized offer and is redeemed
+	// once, for one access token. issuerState only links an authorization
+	// request to the offer (OpenID4VCI 1.0 §4.1.1), so it stays valid until
+	// the offer expires, and the authorization code is the one-time grant.
 	preAuthCode string
 	issuerState string
 	redeemed    bool

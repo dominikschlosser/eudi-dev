@@ -871,3 +871,72 @@ func TestTheCodeIsBoundToTheDPoPKeyOfThePushedRequest(t *testing.T) {
 		t.Errorf("token with another DPoP key: %d %v, want invalid_dpop_proof", code, doc)
 	}
 }
+
+// issuer_state links an authorization request to the offer (OpenID4VCI 1.0
+// §4.1.1), so two clients can each run a full flow with the same offer.
+func TestTwoClientsRedeemTheSameIssuerState(t *testing.T) {
+	d, w, holderKey := newDemoRP(t)
+	w.BaseURL = "http://demo.example"
+	h := d.IssuerHandler()
+	provider := foreignWalletProvider(t)
+
+	code, doc := doJSON(t, h, "POST", "/api/offers?grant=authorization_code", "", nil)
+	if code != http.StatusCreated {
+		t.Fatalf("creating the offer: %d %v", code, doc)
+	}
+	offerURI := doc["offer_uri"].(string)
+	_, offer := doJSON(t, h, "GET", "/offer/"+offerURI[strings.LastIndex(offerURI, "/")+1:], "", nil)
+	issuerState := offer["grants"].(map[string]any)[authCodeGrant].(map[string]any)["issuer_state"].(string)
+
+	verifier := "aVeryLongCodeVerifierThatIsAtLeastFortyThreeCharacters"
+	sum := sha256.Sum256([]byte(verifier))
+	challenge := format.EncodeBase64URL(sum[:])
+
+	for _, clientID := range []string{"http://wallet-one.example", "http://wallet-two.example"} {
+		clientKey, err := mock.GenerateKey()
+		if err != nil {
+			t.Fatalf("generating client key: %v", err)
+		}
+		clientAuth := map[string]string{
+			"Content-Type":                 "application/x-www-form-urlencoded",
+			"DPoP":                         dpopProof(t, holderKey, "POST", demoIssuerID+"/par"),
+			"OAuth-Client-Attestation":     provider.attest(t, clientID, clientKey),
+			"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+		}
+		par := url.Values{
+			"client_id":             {clientID},
+			"response_type":         {"code"},
+			"code_challenge_method": {"S256"},
+			"code_challenge":        {challenge},
+			"redirect_uri":          {"http://wallet.example/cb"},
+			"issuer_state":          {issuerState},
+		}
+		status, pushed := doJSON(t, h, "POST", "/par", par.Encode(), clientAuth)
+		if status != http.StatusCreated {
+			t.Fatalf("%s: pushing the authorization request: %d %v", clientID, status, pushed)
+		}
+		login := postForm(t, h, "/authorize", url.Values{
+			"request_uri": {pushed["request_uri"].(string)},
+			"username":    {demoAccountUsername},
+			"password":    {demoAccountPassword},
+		})
+		if login.Code != http.StatusFound {
+			t.Fatalf("%s: signing in: %d %s", clientID, login.Code, login.Body.String())
+		}
+		redirect, err := url.Parse(login.Header().Get("Location"))
+		if err != nil {
+			t.Fatalf("%s: parsing the callback: %v", clientID, err)
+		}
+		token := url.Values{
+			"grant_type":    {authCodeGrant},
+			"code":          {redirect.Query().Get("code")},
+			"redirect_uri":  {"http://wallet.example/cb"},
+			"code_verifier": {verifier},
+		}
+		clientAuth["DPoP"] = dpopProof(t, holderKey, "POST", demoIssuerID+"/token")
+		clientAuth["OAuth-Client-Attestation-PoP"] = attestationPoP(t, clientKey, demoIssuerID)
+		if status, tokenDoc := doJSON(t, h, "POST", "/token", token.Encode(), clientAuth); status != http.StatusOK {
+			t.Fatalf("%s: token request: %d %v", clientID, status, tokenDoc)
+		}
+	}
+}

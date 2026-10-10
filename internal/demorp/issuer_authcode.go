@@ -104,8 +104,8 @@ type authGrant struct {
 	// redirectURI and state go with a code delivered by redirect.
 	redirectURI string
 	state       string
-	// issuerState names the offer that the token redeems. A flow started by
-	// scope has none.
+	// issuerState names the offer whose settings the flow issues. A flow
+	// started by scope has none.
 	issuerState string
 	// dpopJKT is the DPoP key the code is bound to (RFC 9449 §10), if any.
 	dpopJKT  string
@@ -121,12 +121,12 @@ func (d *DemoRP) resolveAuthGrant(grant authGrant, scope, authorizationDetails s
 	if grant.issuerState != "" {
 		d.mu.Lock()
 		offer := d.offerLocked(grant.issuerState, issuerStateKey)
-		if offer != nil && !offer.redeemed {
+		if offer != nil {
 			grant.settings = offer.offerSettings
 		}
 		d.mu.Unlock()
-		if offer == nil || offer.redeemed {
-			return grant, oauthError("invalid_request", "unknown, used or expired issuer_state")
+		if offer == nil {
+			return grant, oauthError("invalid_request", "unknown or expired issuer_state")
 		}
 		return grant, nil
 	}
@@ -456,12 +456,6 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 	}
 
 	d.mu.Lock()
-	// The token redeems the offer, so an issuer_state grants one token.
-	if granted.issuerState != "" && d.redeemOfferLocked(granted.issuerState, issuerStateKey) == nil {
-		d.mu.Unlock()
-		writeJSON(w, http.StatusBadRequest, oauthError("invalid_grant", "the offer of this authorization is used or expired"))
-		return
-	}
 	token := d.issueTokenLocked(tokenState{
 		offerSettings: granted.settings,
 		holderClaims:  granted.holderClaims,
