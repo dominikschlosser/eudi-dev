@@ -15,7 +15,6 @@
 package validate
 
 import (
-	"bytes"
 	"fmt"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
@@ -66,40 +65,15 @@ func CheckMDOCIntegrity(doc *mdoc.Document) Check {
 	if doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
 		return Check{Name: CheckIntegrity, Status: Skipped, Detail: "No MSO available for digest verification"}
 	}
-
-	mso := doc.IssuerAuth.MSO
-	if len(mso.ValueDigests) == 0 {
-		return Check{Name: CheckIntegrity, Status: Skipped, Detail: "No value digests in MSO"}
-	}
-
-	hash, err := mdoc.DigestHasher(mso.DigestAlgorithm)
-	if err != nil {
-		return Check{Name: CheckIntegrity, Status: Skipped, Detail: fmt.Sprintf("Unsupported digest algorithm: %s", mso.DigestAlgorithm)}
-	}
-
-	matched := 0
 	total := 0
-	for ns, items := range doc.NameSpaces {
-		nsDigests, ok := mso.ValueDigests[ns]
-		if !ok {
-			continue
-		}
-		for _, item := range items {
-			if len(item.RawCBOR) == 0 {
-				continue
-			}
-			total++
-			if expected, ok := nsDigests[item.DigestID]; ok && bytes.Equal(hash(item.RawCBOR), expected) {
-				matched++
-			}
-		}
+	for _, items := range doc.NameSpaces {
+		total += len(items)
 	}
-
 	if total == 0 {
-		return Check{Name: CheckIntegrity, Status: Skipped, Detail: "No claims with raw CBOR available for verification"}
+		return Check{Name: CheckIntegrity, Status: Skipped, Detail: "No disclosed elements to verify"}
 	}
-	if matched == total {
-		return Check{Name: CheckIntegrity, Status: Pass, Detail: fmt.Sprintf("%d/%d claim digests verified", matched, total)}
+	if err := mdoc.VerifyValueDigests(doc); err != nil {
+		return Check{Name: CheckIntegrity, Status: Fail, Detail: err.Error()}
 	}
-	return Check{Name: CheckIntegrity, Status: Fail, Detail: fmt.Sprintf("%d/%d claim digests matched", matched, total)}
+	return Check{Name: CheckIntegrity, Status: Pass, Detail: fmt.Sprintf("%d/%d claim digests verified", total, total)}
 }

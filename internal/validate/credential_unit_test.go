@@ -15,6 +15,8 @@
 package validate
 
 import (
+	"crypto/ecdsa"
+	"crypto/x509"
 	"testing"
 	"time"
 
@@ -122,6 +124,59 @@ func TestCredential_SignatureSkippedNoKey(t *testing.T) {
 	if result.Detail != "No key provided" {
 		t.Errorf("expected 'No key provided', got %q", result.Detail)
 	}
+}
+
+// Supplied trust is the only trust source. Without a key or an issuance
+// service, the certificate a credential carries cannot verify it.
+func TestCredential_SuppliedTrustWithoutAnchorsFailsTheSignature(t *testing.T) {
+	key, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	caCert, err := mock.GenerateCACert(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := mock.GenerateLeafCert(key, caCert, &key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer: "https://issuer.example", VCT: "urn:example:vc", ExpiresIn: time.Hour,
+		Claims: map[string]any{"name": "x"}, Key: key, CertChain: []*x509.Certificate{leaf},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := sdjwt.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := mdoc.Parse(mustMDOC(t, key, leaf))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, result := range map[string]*Result{
+		"SD-JWT VC": SDJWT(token, Trust{Supplied: true}, Options{Offline: true}),
+		"mdoc":      MDOC(doc, Trust{Supplied: true}, Options{Offline: true}),
+	} {
+		if check := mustFind(t, result, CheckSignature); check.Status != Fail {
+			t.Errorf("%s: signature %s (%s), want fail", name, check.Status, check.Detail)
+		}
+	}
+}
+
+func mustMDOC(t *testing.T, key *ecdsa.PrivateKey, leaf *x509.Certificate) string {
+	t.Helper()
+	raw, err := mock.GenerateMDOC(mock.MDOCConfig{
+		DocType: "org.example.doc", Namespace: "org.example.doc",
+		Claims: map[string]any{"name": "x"}, Key: key, CertChain: []*x509.Certificate{leaf},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
 
 func TestCredential_SignatureSkippedWhenIssuerMetadataLookupFails(t *testing.T) {

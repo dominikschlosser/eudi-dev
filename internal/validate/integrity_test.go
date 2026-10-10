@@ -217,6 +217,30 @@ func TestCheckMDOCIntegrity_DigestMismatch(t *testing.T) {
 	}
 }
 
+// The issuer signature covers only the MSO, so an element in a namespace the
+// MSO does not list has no issuer behind it.
+func TestCheckMDOCIntegrity_ElementOutsideTheMSO(t *testing.T) {
+	rawCBOR := []byte{0xa4, 0x01, 0x02, 0x03, 0x04}
+	hash := sha256.Sum256(rawCBOR)
+
+	doc := &mdoc.Document{
+		NameSpaces: map[string][]mdoc.IssuerSignedItem{
+			"org.iso.18013.5.1": {{DigestID: 0, ElementIdentifier: "family_name", RawCBOR: rawCBOR}},
+			"org.example.added": {{DigestID: 0, ElementIdentifier: "vip", RawCBOR: rawCBOR}},
+		},
+		IssuerAuth: &mdoc.IssuerAuth{
+			MSO: &mdoc.MSO{
+				DigestAlgorithm: "SHA-256",
+				ValueDigests:    map[string]map[uint64][]byte{"org.iso.18013.5.1": {0: hash[:]}},
+			},
+		},
+	}
+
+	if result := CheckMDOCIntegrity(doc); result.Status != Fail {
+		t.Errorf("expected fail for an element outside the MSO, got %s: %s", result.Status, result.Detail)
+	}
+}
+
 func TestCheckMDOCIntegrity_NoMSO(t *testing.T) {
 	doc := &mdoc.Document{
 		NameSpaces: map[string][]mdoc.IssuerSignedItem{

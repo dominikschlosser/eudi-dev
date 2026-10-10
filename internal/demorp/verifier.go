@@ -36,8 +36,6 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
@@ -995,6 +993,7 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		return nil, log.entries, err
 	}
 
+	trust := d.credentialTrust()
 	result := map[string]any{}
 	recorded := false
 	for _, q := range req.queries {
@@ -1029,9 +1028,9 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 			var claims map[string]any
 			var err error
 			if q.format == "mso_mdoc" {
-				claims, _, err = d.verifyMDOCPresentation(req, presentation, q.docType, q.paths, log)
+				claims, err = d.verifyMDOCPresentation(req, presentation, q.docType, q.paths, itemLabel, trust, log)
 			} else {
-				claims, err = d.verifySDJWTEntry(req, presentation, q.vct, q.paths, itemLabel, log)
+				claims, err = d.verifySDJWTEntry(req, presentation, q.vct, q.paths, itemLabel, trust, log)
 			}
 			if err != nil {
 				d.recordPresentation(req, presentation)
@@ -1052,9 +1051,10 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	return result, log.entries, nil
 }
 
-// verifySDJWTEntry checks type, issuer trust, revocation and key binding. The
-// label prefix tells ticket checks apart from PID checks.
-func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT string, paths [][]any, label string, log *checklist) (map[string]any, error) {
+// verifySDJWTEntry runs the shared credential checks and checks the requested
+// type, the key binding and the disclosed claims. The label prefix tells ticket
+// checks apart from PID checks.
+func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT string, paths [][]any, label string, trust validate.Trust, log *checklist) (map[string]any, error) {
 	check := func(name string, err error) error {
 		return log.record(label+name, err)
 	}
@@ -1066,10 +1066,6 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 	for _, warning := range token.Warnings {
 		log.warn(label+"credential is well-formed (RFC 9901)", fmt.Errorf("%s", warning))
 	}
-
-	// SD-JWT VC requires typ dc+sd-jwt on the issuer-signed JWT (vc+sd-jwt
-	// during the transition). A wrong typ is a warning.
-	log.warn(label+"issuer-signed JWT declares an SD-JWT VC typ", sdjwt.ValidateVCType(token.Header))
 
 	if err = check("every disclosure is referenced by the credential", checkDisclosuresReferenced(token)); err != nil {
 		return nil, err
@@ -1084,36 +1080,7 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 		return nil, err
 	}
 
-	// HAIP 1.0 section 6.1.1 asks for the issuer signing certificate and trust
-	// chain in x5c, without the trust anchor and with a leaf that is not
-	// self-signed. This is a profile rule, so a violation is a warning.
-	certs, _ := validate.X5CCertificates(token.Header)
-	if violations := validate.HAIPCredentialChain(certs); len(violations) > 0 {
-		log.warn(label+"issuer certificate chain follows HAIP", fmt.Errorf("%s", strings.Join(violations, ". ")))
-	} else {
-		log.warn(label+"issuer certificate chain follows HAIP", nil)
-	}
-
-	tlCerts := d.trustedIssuerCerts()
-	if len(tlCerts) == 0 {
-		return nil, check("issuer certificate chains to a trusted CA", fmt.Errorf("this verifier has no CA certificate"))
-	}
-	issuerKey, err := validate.ExtractAndValidateX5C(token.Header, tlCerts)
-	if err == nil && issuerKey == nil {
-		err = fmt.Errorf("the credential carries no x5c certificate chain")
-	}
-	if err = check("issuer certificate chains to a trusted CA", err); err != nil {
-		return nil, err
-	}
-	result := sdjwt.Verify(token, issuerKey)
-	if err = check("issuer signature verifies", errIf(!result.SignatureValid, "issuer signature is invalid")); err != nil {
-		return nil, err
-	}
-	if err = check("credential is within its validity period",
-		errIf(result.Expired || result.NotYetValid, "credential is expired or not yet valid")); err != nil {
-		return nil, err
-	}
-	if err = d.checkRevocation(token.ResolvedClaims, statuslist.FormatJWT, check); err != nil {
+	if err = log.credential(label, validate.SDJWT(token, trust, credentialChecks)); err != nil {
 		return nil, err
 	}
 
@@ -1210,47 +1177,22 @@ func checkDisclosuresReferenced(token *sdjwt.Token) error {
 	return nil
 }
 
-// checkRevocation checks the status list entry of a presented credential.
-// Both formats carry the reference in the same claim shape.
-func (d *DemoRP) checkRevocation(statusClaims map[string]any, prefer string, check func(string, error) error) error {
-	ref := statuslist.ExtractStatusRef(statusClaims)
-	if ref == nil {
-		return check("revocation status (credential references no status list)", nil)
-	}
+// credentialChecks are the shared checks of a presented credential. The
+// verifier fetches the status list and applies the HAIP 1.0 §6.1 rules.
+var credentialChecks = validate.Options{Status: true, HAIP: true}
 
-	// The status list JWT must chain to a revocation service on the wallet's
-	// credential provider lists (ETSI TS 119 602 V1.1.1 Table D.3). A forged
-	// list could otherwise un-revoke a credential.
-	anchors := d.trustedStatusCerts()
-	if len(anchors) == 0 {
-		return check("credential is not revoked", fmt.Errorf("this verifier has no CA certificate"))
+// credentialTrust anchors presented credentials. Issuer chains end in the
+// issuance services and status lists in the revocation services of the
+// wallet's credential provider lists (ETSI TS 119 602 V1.1.1 Table D.3). The
+// anchors from SetVerifierTrustAnchors anchor both. Fetches use the wallet's
+// HTTP client, so they follow --tls-ca, --tls-verify and the proxy settings.
+func (d *DemoRP) credentialTrust() validate.Trust {
+	return validate.Trust{
+		Supplied:   true,
+		Issuance:   append(d.wallet.CredentialProviderAnchors(wallet.IssuanceServices), d.verifierTrustAnchors...),
+		Revocation: append(d.wallet.CredentialProviderAnchors(wallet.RevocationServices), d.verifierTrustAnchors...),
+		HTTPClient: d.wallet.HTTPClient(),
 	}
-	trustCerts := make([]statuslist.TrustCert, 0, len(anchors))
-	for _, anchor := range anchors {
-		trustCerts = append(trustCerts, statuslist.TrustCert{Raw: anchor.Raw})
-	}
-	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{
-		Prefer:         prefer,
-		TrustListCerts: trustCerts,
-	})
-	if err != nil {
-		return check("credential is not revoked", fmt.Errorf("checking the status list: %w", err))
-	}
-	return check("credential is not revoked", errIf(result.Status != 0, "the issuer's status list marks this credential as revoked"))
-}
-
-// trustedIssuerCerts returns the trust anchors for issuer chains: the
-// issuance services on the wallet's credential provider lists and the anchors
-// from SetVerifierTrustAnchors. A credential on no list fails.
-func (d *DemoRP) trustedIssuerCerts() []trustlist.CertInfo {
-	return trustlist.CertInfos(append(d.wallet.CredentialProviderAnchors(wallet.IssuanceServices), d.verifierTrustAnchors...))
-}
-
-// trustedStatusCerts returns the trust anchors for status lists: the
-// revocation services of the credential provider lists (ETSI TS 119 602 V1.1.1
-// Table D.3), and the anchors from SetVerifierTrustAnchors.
-func (d *DemoRP) trustedStatusCerts() []trustlist.CertInfo {
-	return trustlist.CertInfos(append(d.wallet.CredentialProviderAnchors(wallet.RevocationServices), d.verifierTrustAnchors...))
 }
 
 func errIf(cond bool, format string, args ...any) error {
@@ -1276,68 +1218,42 @@ func disclosedClaims(token *sdjwt.Token) map[string]any {
 	return claims
 }
 
-// verifyMDOCPresentation validates an mdoc DeviceResponse. It checks the
-// doctype, the issuer signature and element digests, the holder signature
-// over the session transcript and the validity period.
-func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation, docType string, paths [][]any, log *checklist) (map[string]any, []map[string]any, error) {
-	check := log.record
+// verifyMDOCPresentation validates an mdoc DeviceResponse. It runs the shared
+// credential checks and checks the doctype, the holder signature over the
+// session transcript and the requested elements.
+func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation, docType string, paths [][]any, label string, trust validate.Trust, log *checklist) (map[string]any, error) {
+	check := func(name string, err error) error {
+		return log.record(label+name, err)
+	}
 	doc, err := mdoc.Parse(presentation)
 	if err = check("presentation parses as an mdoc DeviceResponse", err); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
 	// The wallet chose the credential, so check the doctype.
 	if err = check("credential type matches the request",
 		errIf(doc.DocType != docType, "doctype is %q, requested %q", doc.DocType, docType)); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
-	tlCerts := d.trustedIssuerCerts()
-	if len(tlCerts) == 0 {
-		return nil, log.entries, check("issuer certificate chains to a trusted CA", fmt.Errorf("this verifier has no CA certificate"))
+	result := validate.MDOC(doc, trust, credentialChecks)
+	if err = log.credential(label, result); err != nil {
+		return nil, err
 	}
-	issuerKey, err := validate.ExtractAndValidateMDOCX5Chain(doc, tlCerts)
-	if err == nil && issuerKey == nil {
-		err = fmt.Errorf("the credential carries no x5c certificate chain")
-	}
-	if err = check("issuer certificate chains to a trusted CA", err); err != nil {
-		return nil, log.entries, err
-	}
-
-	result := mdoc.Verify(doc, issuerKey)
-	if err = check("issuer signature verifies", errIf(!result.SignatureValid, "issuer signature is invalid: %s", strings.Join(result.Errors, ". "))); err != nil {
-		return nil, log.entries, err
-	}
-	for _, warning := range result.Warnings {
-		log.warn("mdoc MSO declares its required members", fmt.Errorf("%s", warning))
-	}
-	// ISO 18013-5 requires validityInfo and validUntil in the MSO. Without
-	// validUntil the validity check is reported as unchecked.
-	if result.ValidUntil == nil {
-		log.warn("credential is within its validity period",
-			fmt.Errorf("the mdoc MSO carries no validUntil, so its validity cannot be checked (ISO 18013-5 requires validityInfo)"))
-	} else if err = check("credential is within its validity period",
-		errIf(result.Expired || result.NotYetValid, "credential is expired or not yet valid")); err != nil {
-		return nil, log.entries, err
-	}
-
-	// The issuer signature covers only the MSO. The digest check binds the
-	// element values to it.
-	if err = check("disclosed elements match the digests the issuer signed", mdoc.VerifyValueDigests(doc)); err != nil {
-		return nil, log.entries, err
-	}
-	if err = d.checkRevocation(doc.StatusClaims(), statuslist.FormatCWT, check); err != nil {
-		return nil, log.entries, err
+	if result.MDOCVerify != nil {
+		for _, warning := range result.MDOCVerify.Warnings {
+			log.warn(label+"mdoc MSO declares its required members", fmt.Errorf("%s", warning))
+		}
 	}
 
 	// The holder signs the session transcript. Rebuilding it here binds the
 	// response to this request.
 	transcript, err := d.rebuildSessionTranscript(req)
 	if err = check("session transcript rebuilds", err); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	if err = check("holder signed this request", mdoc.VerifyDeviceAuth(doc, transcript)); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
 	// Paths name the namespace first, so an element of another namespace
@@ -1355,9 +1271,9 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation, docType
 	missing := missingClaimPaths(byNamespace, paths)
 	if err = check("the requested elements are present",
 		errIf(len(missing) > 0, "missing from the presentation: %s", strings.Join(missing, ", "))); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
-	return claims, log.entries, nil
+	return claims, nil
 }
 
 // encryptionJWKThumbprint is the RFC 7638 thumbprint of the response
@@ -1399,4 +1315,44 @@ func (c *checklist) warn(name string, err error) {
 		entry["warning"] = err.Error()
 	}
 	c.entries = append(c.entries, entry)
+}
+
+// decidingChecks are the shared credential checks that decide whether the
+// verifier accepts a credential.
+var decidingChecks = map[string]bool{
+	validate.CheckType:      true,
+	validate.CheckExpiry:    true,
+	validate.CheckIntegrity: true,
+	validate.CheckSignature: true,
+	validate.CheckStatus:    true,
+}
+
+// credential records the shared credential checks. The signature must verify,
+// and a fail of another deciding check rejects the credential. The findings of
+// the other checks are warnings. Another check that was skipped did not apply,
+// so the list leaves it out.
+func (c *checklist) credential(label string, result *validate.Result) error {
+	var rejection error
+	for _, check := range result.Checks {
+		name := label + check.Name
+		decides := decidingChecks[check.Name]
+		entry := map[string]any{"name": name, "ok": true}
+		switch {
+		case decides && (check.Status == validate.Fail || check.Name == validate.CheckSignature && check.Status != validate.Pass):
+			entry["ok"], entry["error"] = false, check.Detail
+			if rejection == nil {
+				rejection = fmt.Errorf("%s: %s", name, check.Detail)
+			}
+		case check.Status == validate.Pass:
+			entry["detail"] = check.Detail
+		case check.Status == validate.Skipped && decides:
+			entry["skipped"] = check.Detail
+		case check.Status == validate.Skipped:
+			continue
+		default:
+			entry["warning"] = check.Detail
+		}
+		c.entries = append(c.entries, entry)
+	}
+	return rejection
 }

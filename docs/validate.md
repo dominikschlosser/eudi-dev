@@ -15,13 +15,13 @@ eudi validate credential.txt
 
 ## Checks
 
-`validate` and the web decoder run the same checks in this order:
+`validate`, the web decoder and the [demo verifier](wallet/serve.md#wallet-serve) run the same checks in this order:
 
 | Check | What it checks |
 |---|---|
 | `type` | The `typ` header of an SD-JWT VC is `dc+sd-jwt` |
 | `expiry` | `exp`, `nbf` and `iat` of a JWT, `validFrom` and `validUntil` of an mdoc |
-| `integrity` | The disclosure digests of an SD-JWT, the value digests of an mdoc |
+| `integrity` | The disclosure digests of an SD-JWT. Every disclosed element of an mdoc must match a value digest of the MSO |
 | `trusted list` | Entries of the supplied trusted list that could not be read (only when there are some) |
 | `signature` | The issuer signature |
 | `trust` | Whether the trusted list of the credential's catalogue entry anchors it (SD-JWT VC and mdoc) |
@@ -44,7 +44,7 @@ An mdoc carries its chain in the x5chain header (RFC 9360). The protected header
 
 SD-JWT VC §3 inserts `/.well-known/jwt-vc-issuer` between the host and path of `iss`. For example, `https://example.com/tenant/1234` resolves to `https://example.com/.well-known/jwt-vc-issuer/tenant/1234`. The metadata's `issuer` must equal `iss`, and its keys must come from either `jwks` or `jwks_uri`.
 
-A credential with its certificate chain validates without network access. Without a key or a certificate, the signature check is skipped and the other checks still run.
+A credential with its certificate chain validates without network access. Without a key or a certificate, the signature check is skipped and the other checks still run. A trusted list without an issuance service supplies no key, so the signature check fails.
 
 ## Flags
 

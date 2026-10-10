@@ -85,6 +85,8 @@ For a local https origin without an external TLS terminator, add `--serve-tls`. 
 
 The demo verifier accepts a credential when its certificate chains to an issuance service on a credential provider list of the wallet's [list of trusted lists](#trusted-lists). That includes the wallet's own issuers, added providers and the providers on external lists. Its status list chains to a revocation service of such a list (ETSI TS 119 602 V1.1.1 Table D.3). `--demo-verifier-issuer-ca <pem>` (repeatable) adds more CAs directly (for example, the OIDF conformance suite signs its credentials under its own CAs).
 
+The demo verifier checks a presented credential with the [checks of `validate`](../validate.md#checks), for SD-JWT VCs and mdocs alike. The signature must verify. A failed `type`, `expiry`, `integrity` or `status` check rejects the presentation. HAIP findings and an unanchored status list are warnings. The verifier then checks the key binding, the nonce, the audience and the requested claims. It fetches status lists and issuer metadata with the wallet's HTTP client, so `--tls-ca`, `--tls-verify` and the proxy flags apply.
+
 ### Trusted lists
 
 *(new in 3.0.0)*

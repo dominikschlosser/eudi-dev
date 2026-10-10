@@ -123,9 +123,22 @@ func (v run) trustCheck(c catalogueState, r *Result) Check {
 	return check
 }
 
+// emptyTrust fails the signature when the supplied trust names no key and no
+// issuance service. Supplied trust is the only trust source, so the embedded
+// certificate cannot stand in for it.
+func (v run) emptyTrust() (Check, bool) {
+	if v.trust.Supplied && !v.trust.Pending && len(v.trust.Keys) == 0 && len(v.trust.Issuance) == 0 {
+		return Check{Name: CheckSignature, Status: Fail, Detail: "The supplied trust names no key and no issuance service"}, true
+	}
+	return Check{}, false
+}
+
 func (v run) jwtSignature(token *sdjwt.Token, c catalogueState, r *Result) Check {
 	if v.trust.Err != nil {
 		return Check{Name: CheckSignature, Status: Fail, Detail: v.trust.Err.Error()}
+	}
+	if check, empty := v.emptyTrust(); empty {
+		return check
 	}
 	// The catalogue reports AnchoredBy only after the credential's chain and
 	// signature verified with that list.
@@ -208,6 +221,9 @@ func failedDetail(source string, errs []string) string {
 func (v run) mdocSignature(doc *mdoc.Document, c catalogueState, r *Result) Check {
 	if v.trust.Err != nil {
 		return Check{Name: CheckSignature, Status: Fail, Detail: v.trust.Err.Error()}
+	}
+	if check, empty := v.emptyTrust(); empty {
+		return check
 	}
 	chain, err := ExtractMDOCX5ChainCertificates(doc)
 	if err != nil {

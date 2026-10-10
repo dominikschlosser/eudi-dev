@@ -1643,7 +1643,7 @@ func TestIssuerOffersRevocableTicket(t *testing.T) {
 	if result["status"] != "failed" {
 		t.Fatalf("a revoked ticket still verified: %v (checks: %v)", result, result["checks"])
 	}
-	if !strings.Contains(fmt.Sprint(result["error"]), "revoked") {
+	if !strings.Contains(fmt.Sprint(result["error"]), "status: INVALID") {
 		t.Errorf("verification failed for the wrong reason: %v", result["error"])
 	}
 }
@@ -1691,7 +1691,7 @@ func TestIssuerRevokesAWholeBatch(t *testing.T) {
 		if result["status"] != "failed" {
 			t.Fatalf("a revoked batch copy still verified on round %d: %v", round, result["checks"])
 		}
-		if !strings.Contains(fmt.Sprint(result["error"]), "revoked") {
+		if !strings.Contains(fmt.Sprint(result["error"]), "status: INVALID") {
 			t.Errorf("round %d failed for the wrong reason: %v", round, result["error"])
 		}
 	}

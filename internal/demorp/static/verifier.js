@@ -36,7 +36,11 @@ function renderResult(doc) {
     if (c.ok && c.warning) {
       return `<div class="warn" id="checks-${i}">! ${esc(c.name)}: ${esc(c.warning)}</div>`;
     }
-    return `<div class="${c.ok ? "ok" : "fail"}" id="checks-${i}">${c.ok ? "✓" : "✗"} ${esc(c.name)}${c.error ? ": " + esc(c.error) : ""}</div>`;
+    if (c.ok && c.skipped) {
+      return `<div class="skip" id="checks-${i}">– ${esc(c.name)}: ${esc(c.skipped)}</div>`;
+    }
+    const detail = c.error || c.detail;
+    return `<div class="${c.ok ? "ok" : "fail"}" id="checks-${i}">${c.ok ? "✓" : "✗"} ${esc(c.name)}${detail ? ": " + esc(detail) : ""}</div>`;
   }).join("");
   const claims = document.getElementById("claims");
   const label = document.getElementById("claims-label");

@@ -245,7 +245,7 @@ func TestTheVerifierRejectsARevokedMDoc(t *testing.T) {
 
 	request := createCustom(t, ts, `{"type":"custom","credentials":[{"format":"mso_mdoc","doctype":"`+PIDDocType+`","claims":[["`+PIDDocType+`","given_name"]]}]}`)
 	status := getJSONFrom(t, ts.URL+"/verifier/api/requests/"+request)
-	if status["status"] != "failed" || !strings.Contains(fmt.Sprint(status["checks"]), "revoked") {
+	if status["status"] != "failed" || !strings.Contains(fmt.Sprint(status["checks"]), "name:cred_0: status ok:false") {
 		t.Errorf("status = %v, want failed on the revocation check (checks %v)", status["status"], status["checks"])
 	}
 }

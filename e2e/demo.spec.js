@@ -1014,7 +1014,7 @@ test.describe("Consent credential selection", () => {
     const result = await verifierResult(req.id);
     expect(result.status).toBe("verified");
     expect(result.claims.ticket.event).toBe("EUDI Interop Fest");
-    expect(result.checks.map((c) => c.name)).toContain("ticket: issuer signature verifies");
+    expect(result.checks.map((c) => c.name)).toContain("ticket: signature");
   });
 
   test("a combined option presents PID and ticket together or the PID alone", async ({ page }) => {
