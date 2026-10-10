@@ -19,6 +19,9 @@ ENV PORT=8085
 # select file or Postgres storage and clear EUDI_DEV_SEED to generate random keys.
 ENV EUDI_DEV_STORAGE=memory
 ENV EUDI_DEV_SEED=eudi-dev
+# Verifiers under test run on the Docker host or in other containers, which are
+# private networks. --demo still reaches public addresses only.
+ENV EUDI_DEV_ALLOW_PRIVATE_NETWORKS=true
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
   CMD wget -q --spider http://localhost:${PORT}/healthz || exit 1
 ENTRYPOINT ["eudi"]

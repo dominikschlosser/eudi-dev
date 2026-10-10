@@ -46,6 +46,7 @@ import (
 
 type walletServeOptions struct {
 	Port                    int
+	AllowPrivateNetworks    bool
 	AutoAccept              bool
 	CredFiles               []string
 	CredentialsFile         string
@@ -158,7 +159,8 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&opts.DemoIssuerClientAuth, "demo-issuer-client-auth", string(demorp.ClientAuthRequired), "What the demo issuer's authorization server demands at its PAR and token endpoints: 'required' (HAIP 1.0 §4.4.1, the default) or 'optional' (also serves wallets that send no wallet attestation, for testing against them)")
 	cmd.Flags().StringVar(&opts.VCIClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&opts.VCIRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
-	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode debug, --haip, --arf and --vci-version 1.1 (all overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
+	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode debug, --haip, --arf and --vci-version 1.1 (all overridable), disables process/filesystem endpoints, blocks fetches to loopback and private networks")
+	addAllowPrivateNetworksFlag(cmd, &opts.AllowPrivateNetworks)
 	cmd.Flags().StringVar(&opts.DemoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&opts.ImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	cmd.Flags().StringVar(&opts.NewsFile, "news-file", "", "HTML snippet with news for visitors of a public demo, shown once in a popup and again from the footer link. Requires --demo")
@@ -558,16 +560,11 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		w.ServingOrigin = base
 	}
 
-	if opts.Demo {
-		// Install the address exceptions after resolving the serving URLs. The demo
-		// must reach its own issuer and verifier while other private addresses stay
-		// blocked.
-		format.SetFetchPolicy(format.AllowOwnOrigins(
-			format.BlockPrivateAddresses,
-			w.BaseURL,
-			w.IssuerURL,
-			fmt.Sprintf("http://localhost:%d", opts.Port),
-		))
+	// The serving URLs are resolved, so the policy can exempt them.
+	operatorURLs := append([]string{w.BaseURL, w.IssuerURL, fmt.Sprintf("http://localhost:%d", opts.Port)}, w.ConfiguredTrustedListURLs...)
+	operatorURLs = append(operatorURLs, format.ProxyURLs(format.ProxySettings{HTTPProxy: walletHTTPProxy, HTTPSProxy: walletHTTPSProxy})...)
+	if err := installFetchPolicy(cmd, opts.AllowPrivateNetworks, opts.Demo, operatorURLs...); err != nil {
+		return err
 	}
 
 	var startupFile *wallet.CredentialsFile

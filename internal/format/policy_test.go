@@ -143,6 +143,20 @@ func TestAllowOwnOrigins(t *testing.T) {
 	}
 }
 
+func TestAllowLoopback(t *testing.T) {
+	policy := AllowLoopback(BlockPrivateAddresses)
+	for _, addr := range []string{"127.0.0.1:8085", "127.0.0.2:80", "[::1]:443", "[::ffff:127.0.0.1]:80", "1.1.1.1:443"} {
+		if err := policy("tcp", addr); err != nil {
+			t.Errorf("policy(%q) = %v, want it allowed", addr, err)
+		}
+	}
+	for _, addr := range []string{"10.0.0.1:80", "192.168.1.10:443", "169.254.169.254:80", "[fc00::1]:80", "0.0.0.0:80"} {
+		if err := policy("tcp", addr); err == nil {
+			t.Errorf("policy(%q) = nil, want it blocked", addr)
+		}
+	}
+}
+
 // Without a resolvable origin the policy must stay unchanged.
 func TestAllowOwnOriginsKeepsBlockingWhenEmpty(t *testing.T) {
 	for _, urls := range [][]string{nil, {""}, {"not a url"}, {"ftp://example.test"}} {

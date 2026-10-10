@@ -24,7 +24,9 @@ Demo mode returns `403` for shutdown, error injection, log clearing and changes 
 
 ### Outbound connections
 
-Visitor URLs are restricted to public network addresses. The wallet checks resolved addresses when connecting and rejects loopback, private, link local, CGNAT and unique local ranges, including cloud metadata endpoints. The wallet's own advertised origins are exempt at their exact address and port. The bundled issuer and verifier connect to the wallet through these origins.
+Visitor URLs are restricted to public network addresses. The wallet checks resolved addresses when connecting and rejects loopback, private, link local, CGNAT and unique local ranges, including cloud metadata endpoints. The operator's destinations are exempt at their exact address and port: the wallet's own advertised origins, the `--trusted-list` URLs and the forward proxy. The bundled issuer and verifier connect to the wallet through these origins.
+
+A wallet without `--demo` also allows loopback, and `--allow-private-networks` lifts the limit (see [outbound address limits](wallet/serve.md#outbound-address-limits)). A demo ignores `EUDI_DEV_ALLOW_PRIVATE_NETWORKS` and refuses the flag.
 
 ### Validation
 

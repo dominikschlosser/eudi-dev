@@ -26,8 +26,9 @@ import (
 )
 
 var (
-	port             int
-	serveImprintFile string
+	port                      int
+	serveImprintFile          string
+	serveAllowPrivateNetworks bool
 )
 
 var serveCmd = &cobra.Command{
@@ -41,6 +42,7 @@ var serveCmd = &cobra.Command{
 func init() {
 	serveCmd.Flags().IntVar(&port, "port", config.DefaultServePort, "Port to listen on")
 	serveCmd.Flags().StringVar(&serveImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
+	addAllowPrivateNetworksFlag(serveCmd, &serveAllowPrivateNetworks)
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -55,6 +57,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		credential = raw
+	}
+	if err := installFetchPolicy(cmd, serveAllowPrivateNetworks, false, format.ProxyURLs(format.ProxySettings{})...); err != nil {
+		return err
 	}
 
 	// The decoder reads the catalogue of a stored wallet and creates none.

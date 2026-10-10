@@ -60,6 +60,35 @@ func NewProxyFunc(overrides ProxySettings) (ProxyFunc, error) {
 	}, nil
 }
 
+// ProxyURLs returns the forward proxies of the environment variables with the
+// overrides applied. A proxy without a scheme uses http, as in NewProxyFunc.
+func ProxyURLs(overrides ProxySettings) []string {
+	cfg := httpproxy.FromEnvironment()
+	var urls []string
+	for _, proxy := range []string{
+		firstNonBlank(overrides.HTTPProxy, cfg.HTTPProxy),
+		firstNonBlank(overrides.HTTPSProxy, cfg.HTTPSProxy),
+	} {
+		if proxy == "" {
+			continue
+		}
+		if !strings.Contains(proxy, "://") {
+			proxy = "http://" + proxy
+		}
+		urls = append(urls, proxy)
+	}
+	return urls
+}
+
+func firstNonBlank(values ...string) string {
+	for _, v := range values {
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func validateProxyURL(raw string) error {
 	withScheme := raw
 	if !strings.Contains(raw, "://") {

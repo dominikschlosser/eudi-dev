@@ -323,6 +323,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--http-proxy` | `$HTTP_PROXY` | Forward proxy for outbound `http://` requests |
 | `--https-proxy` | `$HTTPS_PROXY` | Forward proxy for outbound `https://` requests |
 | `--no-proxy` | `$NO_PROXY` | Hosts, domains and CIDRs that bypass the proxy |
+| `--allow-private-networks` | `$EUDI_DEV_ALLOW_PRIVATE_NETWORKS`, else `false` | Let outbound requests reach private networks. See [outbound address limits](#outbound-address-limits) |
 | `--key-attestation-level` | Issuer requirements | Test claims for key storage and user authentication: issuer requirements (default), `none`, or a level such as `iso_18045_high`. Change it in the Conformance panel. See [key attestation claims](#key-attestation-claims) |
 | `--preferred-format`    | None     | Preferred credential format when multiple match: `dc+sd-jwt`, `mso_mdoc`, or `jwt_vc_json` |
 | `--status-list`         | `false`  | Embed status list references in generated credentials |
@@ -339,7 +340,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--client-attestation`  | `false`  | Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise `attest_jwt_client_auth` (see [wallet attestation](issuing.md#wallet-attestation)) |
 | `--adhoc-display-images` | `false` | Fetch HTTPS display images on demand instead of storing them. The issuer sees each render. See [display images](#display-images) |
 | `--require-encrypted-request` | `false` | Refuse an unencrypted Request Object. The wallet always sends an encryption key in `wallet_metadata`, so this requires the Verifier to use it |
-| `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode debug`, `--haip`, `--arf` and `--vci-version 1.1` (all overridable), disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](../public-demo.md)) |
+| `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode debug`, `--haip`, `--arf` and `--vci-version 1.1` (all overridable), disables process and filesystem endpoints, blocks fetches to loopback and private networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](../public-demo.md)) |
 | `--demo-issuer-client-auth` | `required` | Client authentication required by the authorization server of the built-in demo issuer at its PAR and token endpoints: `required` (HAIP 1.0 §4.4.1) or `optional`, which also accepts wallets that send no wallet attestation (see [public demo hosting](../public-demo.md)) |
 | `--demo-verifier-issuer-ca` | None | PEM file with extra issuer CA certificates for the demo verifier. The demo verifier always accepts the wallet's own CA. The flag is repeatable. Use it for credentials issued outside this wallet, such as in an OIDF conformance suite run |
 | `--serve-tls`           | `false`  | Serve an https `--base-url` locally with the wallet's own TLS certificate instead of expecting an external TLS terminator. Requires an https base URL with an explicit port. The wallet also keeps listening on the HTTP port |
@@ -544,6 +545,18 @@ Requests to local hosts always bypass the proxy. A local host is `localhost`, an
 The wallet verifies the issuer or verifier certificate through the proxy too. If your proxy intercepts TLS traffic, add its CA with `--tls-ca` or disable verification with `--tls-verify=false`.
 
 A running wallet uses its startup proxy settings. `wallet accept` and `wallet scan` therefore reject proxy flags when they forward a request to a running wallet. Set them on `wallet serve` instead.
+
+## Outbound address limits
+
+Visitors hand the wallet URLs: credential offers, request URIs and the URLs inside them. So the wallet connects only to public addresses and to loopback by default. Loopback covers the usual setup with wallet, issuer and verifier on one machine. The wallet refuses private (RFC 1918), link local, CGNAT, unique local, unspecified and multicast addresses. Link local includes cloud metadata endpoints. The check runs on the resolved address of every connection, redirects included.
+
+Some destinations come from the operator, so the wallet always reaches them at their exact address and port. These are the wallet's own origins, the `--trusted-list` URLs and the forward proxy.
+
+Issuers and verifiers on a LAN, in Docker or in a cluster sit on private networks. Start the wallet with `--allow-private-networks` to reach them, or set `EUDI_DEV_ALLOW_PRIVATE_NETWORKS=true`. The flag wins over the variable. The [Docker image](../docker.md) sets the variable.
+
+A proxied request connects to the proxy only, which then reaches the destination. Only the proxy decides which addresses that request reaches.
+
+`--demo` connects to public addresses and the operator's destinations only. It ignores the variable and refuses the flag.
 
 ## JSON logs
 

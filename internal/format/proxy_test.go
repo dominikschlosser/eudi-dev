@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,6 +59,16 @@ func TestNewProxyFunc(t *testing.T) {
 				t.Fatalf("proxy for %s = %q, want %q", tc.target, gotString, tc.want)
 			}
 		})
+	}
+}
+
+func TestProxyURLs(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "env-proxy:3128")
+	t.Setenv("HTTPS_PROXY", "http://env-proxy:3129")
+	got := ProxyURLs(ProxySettings{HTTPSProxy: "socks5://flag-proxy:1080"})
+	want := []string{"http://env-proxy:3128", "socks5://flag-proxy:1080"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("ProxyURLs = %v, want %v", got, want)
 	}
 }
 

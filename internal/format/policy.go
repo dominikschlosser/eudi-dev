@@ -116,6 +116,17 @@ var extraBlockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("64:ff9b::/96"),
 }
 
+// AllowLoopback permits connections to loopback addresses and leaves every
+// other address to next.
+func AllowLoopback(next FetchPolicy) FetchPolicy {
+	return func(network, address string) error {
+		if addrPort, err := netip.ParseAddrPort(address); err == nil && addrPort.Addr().Unmap().IsLoopback() {
+			return nil
+		}
+		return next(network, address)
+	}
+}
+
 // BlockPrivateAddresses is a FetchPolicy that rejects connections to
 // loopback, private (RFC 1918), link-local (including cloud metadata
 // endpoints), CGNAT, unique-local, NAT64, unspecified and multicast addresses.

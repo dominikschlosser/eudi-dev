@@ -115,10 +115,12 @@ services:
     image: ghcr.io/dominikschlosser/eudi-dev:${STRICT_TAG:-latest}
     restart: unless-stopped
     logging: *logging
-    # Persist files and randomly generated keys on the mounted volume.
+    # Persist files and randomly generated keys on the mounted volume. The
+    # public host reaches no private network.
     environment:
       EUDI_DEV_STORAGE: file
       EUDI_DEV_SEED: ""
+      EUDI_DEV_ALLOW_PRIVATE_NETWORKS: "false"
     # Only ./deploy.sh strict starts it. A production up or push leaves it
     # alone.
     profiles: ["strict"]
