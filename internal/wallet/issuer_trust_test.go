@@ -97,16 +97,27 @@ func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 		name, list string
 		operator   *Wallet
 		want       string
+		// added puts the operator's CA on trusted-list-ca instead of
+		// --trusted-list-ca.
+		added bool
 	}{
-		{"the issuer's list", serveList(issuer), issuer, ""},
-		{"a list of an unknown operator", serveList(issuer), nil, "does not chain to a trusted list operator"},
-		{"another wallet's list", serveList(other), other, "does not validate"},
+		{"the issuer's list", serveList(issuer), issuer, "", false},
+		{"the issuer's list with its CA on trusted-list-ca", serveList(issuer), issuer, "", true},
+		{"a list of an unknown operator", serveList(issuer), nil, "does not chain to a trusted list CA", false},
+		{"another wallet's list", serveList(other), other, "does not validate", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := generateTestWallet(t)
 			w.RequireARF = true
 			if tc.operator != nil {
-				w.TrustListCAPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: tc.operator.TrustAnchorCertificate().Raw})
+				anchor := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: tc.operator.TrustAnchorCertificate().Raw})
+				if tc.added {
+					if _, err := w.AddTrustedEntity(trustedListCAID, "", string(anchor)); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					w.TrustListCAPEM = anchor
+				}
 			}
 			if _, err := w.Registrar().AddCatalogAttestation(registrar.CatalogAttestation{
 				Name:        "Diploma",

@@ -151,7 +151,7 @@ eudi wallet serve --arf --trusted-list-ca lists-ca.pem --trusted-list https://li
 - `--trusted-list-ca` is the CA of the list operator, which signs the lists. The wallet uses a list only if its signer chains to this CA or to the wallet CA (ARF PPNot_05, TLPub_05 and TLPub_07).
 - `--trusted-list` adds a list or a list of trusted lists. The wallet follows the pointers of a list of trusted lists and takes the anchors from each list according to its type.
 
-A running wallet adds lists with `eudi wallet trust add-list <url>` or `POST /api/trust/lists`. `--trusted-list-ca` can only be set on `wallet serve`. `eudi wallet trust` and **Trust & certificates** in the UI show each list and whether the wallet could read it. The built-in registrar keeps working next to the external one.
+A running wallet, the public demo included, takes the same setup at runtime: `eudi wallet trust add-ca --list trusted-list-ca --ca lists-ca.pem` (or **Add CA** with `trusted-list-ca` in the UI), then `eudi wallet trust add-list <url>`. `eudi wallet trust` and **Trust & certificates** in the UI show each list and whether the wallet could read it. The built-in registrar keeps working next to the external one.
 
 Another eudi-dev wallet can be the external registrar, for example one at `https://other-wallet.example`. Its wallet CA signs its lists, and its list of trusted lists points to its `access-ca` and `registrar` lists:
 

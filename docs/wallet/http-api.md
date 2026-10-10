@@ -499,7 +499,7 @@ When a live instance serves the same wallet directory and no remote target is co
 
 Use `--remote local` or an explicit `--templates-dir` to bypass routing and access storage directly. While a server is running, prefer routing so the server sees each change immediately.
 
-A routed command uses the settings of the running wallet for every step of a flow, including a credential collected later. So it refuses `--mode`, `--haip`, `--arf`, `--key-attestation-level`, `--relying-party-ca`, `--trusted-list-ca` and `--trusted-list`. Set the mode, HAIP, ARF and key attestation level on `wallet serve` or with `PUT /api/config/conformance`. Put CAs and lists on the wallet's trusted lists with `wallet trust`. `--trusted-list-ca` can only be set on `wallet serve`.
+A routed command uses the settings of the running wallet for every step of a flow, including a credential collected later. So it refuses `--mode`, `--haip`, `--arf`, `--key-attestation-level`, `--relying-party-ca`, `--trusted-list-ca` and `--trusted-list`. Set the mode, HAIP, ARF and key attestation level on `wallet serve` or with `PUT /api/config/conformance`. Put CAs and lists on the wallet's trusted lists with `wallet trust`. `wallet trust add-ca --list trusted-list-ca` adds the CA of a list operator.
 
 `wallet info` compares a running instance's configuration with the wallet file and warns when they differ (the file changed after the server started). Restarting `wallet serve` reloads the file.
 

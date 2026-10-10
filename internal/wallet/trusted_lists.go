@@ -55,8 +55,11 @@ const (
 	registrarIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/WRPRC/Issuance"
 	registrarRevocationServiceType = "http://uri.etsi.org/19602/SvcType/WRPRC/Revocation"
 
-	accessCAListID   = "access-ca"
-	registrarListID  = "registrar"
+	accessCAListID  = "access-ca"
+	registrarListID = "registrar"
+	// trustedListCAID takes the CAs of trusted list operators. It is no list
+	// the wallet publishes. Its CAs join those of --trusted-list-ca.
+	trustedListCAID  = "trusted-list-ca"
 	walletProviderID = "wallet-provider"
 	// listOfListsID is the list that points to all of the wallet's trusted
 	// lists (ETSI TS 119 602 V1.1.1 §6.3.13).
@@ -124,7 +127,7 @@ var ErrTrustNotFound = errors.New("not on the wallet's trusted lists")
 
 // TrustedEntityLists are the wallet lists that take trusted entities.
 func TrustedEntityLists() []string {
-	return append(slices.Clone(credtemplate.Categories), walletProviderID, accessCAListID, registrarListID)
+	return append(slices.Clone(credtemplate.Categories), walletProviderID, accessCAListID, registrarListID, trustedListCAID)
 }
 
 // AddTrustedEntity puts a provider with the certificates in PEM on the list.

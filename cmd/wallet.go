@@ -957,7 +957,7 @@ func checkRemoteConformanceFlags(flags []string) error {
 	if len(flags) == 0 {
 		return nil
 	}
-	return fmt.Errorf("a running wallet keeps its own settings, so %s can't change them. Change --mode, --haip, --arf and --key-attestation-level on 'wallet serve' or through PUT /api/config/conformance. Add CAs and lists with 'eudi wallet trust'. Set --trusted-list-ca on 'wallet serve'", strings.Join(flags, ", "))
+	return fmt.Errorf("a running wallet keeps its own settings, so %s can't change them. Change --mode, --haip, --arf and --key-attestation-level on 'wallet serve' or through PUT /api/config/conformance. Add CAs, list CAs and lists with 'eudi wallet trust'", strings.Join(flags, ", "))
 }
 
 func checkRemoteOutboundFlags() error {

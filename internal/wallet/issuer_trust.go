@@ -225,7 +225,7 @@ func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
 		return errors.New("the trusted list's signature does not verify")
 	}
 	if err := verifyToAnchor(chain, operators); err != nil {
-		return fmt.Errorf("the trusted list's signer does not chain to a trusted list operator: %w", err)
+		return fmt.Errorf("the list's signer does not chain to a trusted list CA. Add the CA of the list operator on trusted-list-ca, or start the wallet with --trusted-list-ca: %w", err)
 	}
 	return nil
 }

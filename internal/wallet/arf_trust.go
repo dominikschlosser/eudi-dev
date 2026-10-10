@@ -17,6 +17,7 @@ package wallet
 import (
 	"crypto/ecdsa"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -102,7 +103,7 @@ func (w *Wallet) RegistrationStatusCAs() []*x509.Certificate {
 // TrustListCAs are the CAs --arf trusts for the signer of a trusted list. The
 // wallet's list operator key, certified by the wallet CA, signs the wallet's
 // own lists, like the seal of the Commission on the lists it compiles (ARF
-// TLPub_07). --trusted-list-ca adds others.
+// TLPub_07). --trusted-list-ca and the trusted-list-ca entities add others.
 func (w *Wallet) TrustListCAs() []*x509.Certificate {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -112,6 +113,18 @@ func (w *Wallet) TrustListCAs() []*x509.Certificate {
 	}
 	if configured, err := keys.ParseCertificatesPEM(w.TrustListCAPEM); err == nil {
 		cas = append(cas, configured...)
+	}
+	for _, entity := range w.TrustedEntities {
+		if entity.List != trustedListCAID {
+			continue
+		}
+		for _, encoded := range entity.Certificates {
+			if der, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+				if cert, err := x509.ParseCertificate(der); err == nil {
+					cas = append(cas, cert)
+				}
+			}
+		}
 	}
 	return cas
 }

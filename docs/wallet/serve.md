@@ -140,13 +140,14 @@ To check the relying parties of another registrar, see [Use an external registra
 ```bash
 eudi wallet trust add-ca --list pid --name "Example PID Provider" --ca pid-ca.pem
 eudi wallet trust add-ca --list registrar --ca registrar-ca.pem
+eudi wallet trust add-ca --list trusted-list-ca --ca lists-ca.pem
 eudi wallet trust add-list https://lists.example/pid
-eudi wallet trust                       # or: eudi wallet trusted list
+eudi wallet trust                       # or: eudi wallet trust list
 eudi wallet trust rm-ca fc390242d2ad08ab
 eudi wallet trust rm-list https://lists.example/pid
 ```
 
-`add-ca` takes a PEM file with CA certificates and one of the list IDs above. The wallet adds the CA to that list as a provider with an issuance and a revocation service, and signs the list. The CA is then a trust anchor for certificates issued under it and for their status lists. Adding the same certificates to the same list again replaces the earlier entry. The name defaults to the CA's common name.
+`add-ca` takes a PEM file with CA certificates and one of the list IDs above. The wallet adds the CA to that list as a provider with an issuance and a revocation service, and signs the list. The CA is then a trust anchor for certificates issued under it and for their status lists. Adding the same certificates to the same list again replaces the earlier entry. The name defaults to the CA's common name. `trusted-list-ca` is no published list. Its CAs may sign trusted lists, like those from `--trusted-list-ca`, so the wallet accepts external lists signed under them.
 
 `add-list` puts an external list of trusted entities on the list of trusted lists. With `--arf` the providers on the external list are trust anchors for the checks of its list type. For example, a PID provider list anchors the checks of received PIDs. The list signer must chain to the wallet CA or to a CA from `--trusted-list-ca`. In `--mode strict` the wallet refuses an unreadable list. In `--mode debug` it adds the list and reports the reason. `wallet serve --trusted-list <url>` (repeatable) adds lists at startup. They can't be removed through the API.
 

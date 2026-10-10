@@ -3284,7 +3284,8 @@
     try {
       const state = await registrarRequest('GET', 'api/trust');
       const current = select.value;
-      select.innerHTML = (state.entity_lists || []).map(id => '<option value="' + escHtml(id) + '">' + escHtml(id) + '</option>').join('');
+      select.innerHTML = (state.entity_lists || []).map(id => '<option value="' + escHtml(id) + '">' +
+        escHtml(id === 'trusted-list-ca' ? 'trusted-list-ca (CA of a list operator, for external lists)' : id) + '</option>').join('');
       if (current) select.value = current;
       entities.innerHTML = (state.entities || []).map(e =>
         '<li id="trust-entity-' + escHtml(e.id) + '"><span>' + escHtml(e.name) + ' <span class="trust-list-name">' + escHtml(e.list) + '</span></span>' +
