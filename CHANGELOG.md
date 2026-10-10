@@ -79,6 +79,12 @@ Version 3.0.0 adds a registrar, ARF checks, a catalogue of attestations and a tr
 - **Card images in the demo issuer metadata.** The issuer metadata lists the logo and card image of each template (see [templates](docs/templates.md)).
 - **`wallet trust-list --id lists`.** It prints the list of trusted lists.
 
+## [2.7.0] - 2026-10-10
+
+### Added
+
+- **News for demo visitors.** `wallet serve --demo --news-file news.html` shows an HTML snippet in a popup on the first visit and links it as **News** in the footer. A changed file opens once more (see [public demo hosting](docs/public-demo.md#news)).
+
 ## [2.6.1] - 2026-10-06
 
 ### Fixed
